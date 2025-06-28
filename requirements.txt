@@ -1,6 +1,7 @@
 blinker==1.9.0
 click==8.2.1
 dtaidistance==2.3.13
+et_xmlfile==2.0.0
 Flask==3.1.1
 flask-cors==6.0.1
 gunicorn==23.0.0
@@ -10,6 +11,7 @@ lasio==0.31
 MarkupSafe==3.0.2
 narwhals==1.44.0
 numpy==2.3.1
+openpyxl==3.1.5
 packaging==25.0
 pandas==2.3.0
 plotly==6.2.0

@@ -449,6 +449,31 @@ def plot_flag(df_well, fig, axes, key, n_seq):
     colors = list(flag_colors.values())
     colorscale = discrete_colorscale(bvals, colors)
 
+    custom_data = []
+    flag_names = df_well[col].map(flags_names.get)
+    for i in flag_names:
+        custom_data.append([i]*int(max_val+1))
+
+    fig.add_trace(
+        go.Heatmap(z=fill, zmin=0, zmax=1, y=df_well[depth], name=col,
+                   customdata=custom_data, colorscale=colorscale, showscale=False, hovertemplate="%{customdata}"),
+        row=1, col=n_seq, )
+
+    xaxis = "xaxis"+str(n_seq)
+    xaxis = "xaxis"+str(n_seq)
+    fig.update_layout(
+        **{xaxis: dict(
+            side="top",
+            showticklabels=False,
+        )}
+    )
+
+    axes[key].append('yaxis'+str(n_seq))
+    axes[key].append('xaxis'+str(n_seq))
+
+    return fig, axes
+
+
 def discrete_colorscale(bvals, colors):
     """
     bvals - list of values bounding intervals/ranges of interest

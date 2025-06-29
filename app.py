@@ -15,8 +15,7 @@ import logging
 app = Flask(__name__)
 CORS(app)
 
-PERSISTENT_DATA_DIR = '/data'
-
+PERSISTENT_DATA_DIR = os.getenv('DATA_DIR', './data')
 WELLS_DIR = os.path.join(PERSISTENT_DATA_DIR, 'wells')
 LAS_DIR = os.path.join(PERSISTENT_DATA_DIR, 'las')
 
@@ -430,6 +429,71 @@ def plot_log_default(df, df_marker, df_well_marker):
     return fig
 
 
+# --- THIS IS THE NEW, ONE-TIME-USE ENDPOINT ---
+@app.route('/api/seed-data-volume', methods=['POST'])
+def seed_data_volume():
+    """
+    Receives a single ZIP file, unpacks it, and saves the entire
+    directory structure and its contents into the persistent volume.
+    This is intended for one-time setup.
+    """
+    app.logger.info("Received request to seed data volume.")
+    
+    # Simple security check to prevent unauthorized use.
+    # You must send this header from your frontend.
+    if request.headers.get('X-Seed-Auth') != 'your-secret-key-123':
+        app.logger.warning("Seed attempt without valid auth header.")
+        return jsonify({"error": "Unauthorized"}), 403
+
+    if 'file' not in request.files:
+        return jsonify({"error": "No 'file' part in the request"}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    if file and file.filename.lower().endswith('.zip'):
+        filename = secure_filename(file.filename)
+        app.logger.info(f"Processing seed file: {filename}")
+        
+        try:
+            # Read the entire ZIP file into memory
+            zip_content = io.BytesIO(file.read())
+            
+            with zipfile.ZipFile(zip_content, 'r') as z:
+                # Get the list of all files and directories in the zip
+                member_list = z.infolist()
+                for member in member_list:
+                    # Construct the full extraction path inside the volume
+                    # e.g., /data/sample_data/wells/ABB-035.csv
+                    target_path = os.path.join(PERSISTENT_DATA_DIR, member.filename)
+                    
+                    # This is crucial for security, prevents 'zip slip' vulnerabilities
+                    if not os.path.realpath(target_path).startswith(os.path.realpath(PERSISTENT_DATA_DIR)):
+                        app.logger.warning(f"Skipping potentially malicious file path: {member.filename}")
+                        continue
+
+                    # If it's a directory, create it
+                    if member.is_dir():
+                        os.makedirs(target_path, exist_ok=True)
+                        app.logger.info(f"Created directory: {target_path}")
+                    # If it's a file, extract it
+                    else:
+                        # Ensure the parent directory exists before extracting
+                        parent_dir = os.path.dirname(target_path)
+                        os.makedirs(parent_dir, exist_ok=True)
+                        with open(target_path, "wb") as f_out:
+                            f_out.write(z.read(member.filename))
+                        app.logger.info(f"Extracted file: {target_path}")
+                        
+            return jsonify({"message": f"Successfully seeded volume with contents of {filename}"}), 200
+
+        except Exception as e:
+            app.logger.exception("Failed to process seed ZIP file.")
+            return jsonify({"error": str(e)}), 500
+
+    return jsonify({"error": "Invalid file type. Please upload a ZIP file."}), 400
+
 # --- API Routes with Error Logging ---
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -565,7 +629,7 @@ def list_wells():
     try:
         if not os.path.exists(WELLS_DIR):
             # This might happen on the very first run before any files are there
-            return jsonify([]), 200
+            return jsonify({"error": 'no file found'}), 200
 
         well_files = [f.replace('.csv', '') for f in os.listdir(WELLS_DIR) if f.endswith('.csv')]
         well_files.sort()

@@ -492,30 +492,6 @@ def discrete_colorscale(bvals, colors):
         dcolorscale.extend([[nvals[k], colors[k]], [nvals[k+1], colors[k]]])
     return dcolorscale
 
-    custom_data = []
-    flag_names = df_well[col].map(flags_names.get)
-    for i in flag_names:
-        custom_data.append([i]*int(max_val+1))
-
-    fig.add_trace(
-        go.Heatmap(z=fill, zmin=0, zmax=1, y=df_well[depth], name=col,
-                   customdata=custom_data, colorscale=colorscale, showscale=False, hovertemplate="%{customdata}"),
-        row=1, col=n_seq, )
-
-    xaxis = "xaxis"+str(n_seq)
-    xaxis = "xaxis"+str(n_seq)
-    fig.update_layout(
-        **{xaxis: dict(
-            side="top",
-            showticklabels=False,
-        )}
-    )
-
-    axes[key].append('yaxis'+str(n_seq))
-    axes[key].append('xaxis'+str(n_seq))
-
-    return fig, axes
-
 def encode_with_nan(df, col):
     encoding_dict = {}
     df_encoded = df.copy()
@@ -688,10 +664,9 @@ def run_quality_control(files_data: list, logger):
     all_markers_df = pd.DataFrame()
 
     # First, collect marker files
-    las_files = [f for f in files_data if f['name'].lower().endswith('.las')]
-    for file_info in las_files:
-        filename = file_info['name'].lower()
-        if filename.endswith('.csv') and 'marker' in filename:
+    for file_info in files_data:
+        name_lower = file_info['name'].lower()
+        if name_lower.endswith('.csv') and 'marker' in name_lower:
             logger.debug(f"run_quality_control: Processing marker file '{file_info['name']}'")
             try:
                 marker_df = pd.read_csv(

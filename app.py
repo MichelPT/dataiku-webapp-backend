@@ -1,3 +1,5 @@
+# my backend api/app.py 
+
 from flask import Flask, request, jsonify, current_app, Response
 from flask_cors import CORS
 import pandas as pd
@@ -21,6 +23,16 @@ app.logger.setLevel(logging.DEBUG)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+import base64
+
+# Add these helper functions
+def encode_base64(content: str) -> str:
+    """Encode string to Base64"""
+    return base64.b64encode(content.encode('utf-8')).decode('ascii')
+
+def decode_base64(content: str) -> str:
+    """Decode Base64 to string"""
+    return base64.b64decode(content).decode('utf-8', errors='ignore')
 
 # --- Global Error Handler ---
 @app.errorhandler(Exception)
@@ -276,6 +288,138 @@ def handle_null_values(csv_content: str) -> str:
         raise
 
 
+def extract_markers_with_mean_depth(df):
+    """
+    Membuat dataframe baru yang berisi nilai unik dari marker (sebagai 'surface')
+    dan rata-rata depth untuk setiap marker.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame yang berisi kolom 'MARKER' dan 'DEPTH'
+
+    Returns:
+    --------
+    pandas.DataFrame
+        DataFrame baru dengan kolom 'surface' (nama marker) dan 'mean_depth'
+    """
+    # Pastikan df memiliki kolom 'MARKER' dan 'DEPTH'
+    required_cols = ['MARKER', 'DEPTH']
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"DataFrame tidak memiliki kolom '{col}'")
+
+    # Mengelompokkan berdasarkan MARKER dan menghitung rata-rata DEPTH
+    markers_mean_depth = df.groupby('MARKER')['DEPTH'].mean().reset_index()
+
+    # Mengganti nama kolom
+    markers_mean_depth.columns = ['Surface', 'Mean Depth']
+
+    return markers_mean_depth
+
+
+
+def normalize_xover(df_well, log_1, log_2):
+
+    # Salin DataFrame untuk menghindari modifikasi pada original
+    df = df_well.copy()
+    log_merge = log_1 + '_' + log_2
+    log_1_norm = log_1 + '_NORM'
+    log_2_norm = log_2 + '_NORM_' + log_1
+
+    # Range untuk visualisasi
+    log_1_range = range_col[log_merge][0]
+    log_2_range = range_col[log_merge][1]
+
+    # 1. Normalisasi NPHI agar sesuai dengan rentang visualisasi
+    # Nilai NPHI biasanya dalam desimal (misalnya 0.3 untuk 30% porositas)
+    # NPHI_NORM tetap dalam skala aslinya
+    df[log_1_norm] = df[log_1]
+
+    # 2. Konversi RHOB ke skala NPHI untuk visualisasi crossover
+    # Ini membuat RHOB sesuai dengan skala NPHI agar crossover terlihat
+    min_log_2 = log_2_range[0]  # 1.71
+    max_log_2 = log_2_range[1]  # 2.71
+    min_log_1 = log_1_range[0]  # 0.6
+    max_log_1 = log_1_range[1]  # 0
+
+    # Normalisasi RHOB dengan rumus interpolasi linier untuk pemetaan rentang
+    df[log_2_norm] = min_log_1 + \
+        (df[log_2] - min_log_2) * (max_log_1 -
+                                   min_log_1) / (max_log_2 - min_log_2)
+
+    return df
+
+
+
+def plot_log_default(df, df_marker, df_well_marker):
+    sequence = ['MARKER', 'GR', 'RT_RHOB', 'NPHI_RHOB']
+    plot_sequence = {i+1: v for i, v in enumerate(sequence)}
+    print(plot_sequence)
+
+    ratio_plots_seq = []
+    for key in plot_sequence.values():
+        ratio_plots_seq.append(ratio_plots[key])
+
+    subplot_col = len(plot_sequence.keys())
+
+    fig = make_subplots(
+        rows=1, cols=subplot_col,
+        shared_yaxes=True,
+        column_widths=ratio_plots_seq,
+        horizontal_spacing=0.0
+    )
+
+    counter = 0
+    axes = {}
+    for i in plot_sequence.values():
+        axes[i] = []
+
+    for n_seq, col in plot_sequence.items():
+        if col == 'GR':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
+        elif col == 'RT':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RT', n_seq=n_seq, col=col, label=col)
+        elif col == 'NPHI_RHOB':
+            fig, axes, counter = plot_xover_log_normal(df, fig, axes, col, n_seq, counter, n_plots=subplot_col,
+                                                       y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
+        elif col == 'RT_RHOB':
+            fig, axes, counter = plot_xover_log_normal(df, fig, axes, col, n_seq, counter, n_plots=subplot_col,
+                                                       y_color='limegreen', n_color='lightgray', type=1, exclude_crossover=False)
+        elif col in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB']:
+            fig, axes, counter = plot_xover_thres(
+                df, fig, axes, col, n_seq, counter=counter)
+        elif col == 'MARKER':
+            fig, axes = plot_flag(df_well_marker, fig, axes, col, n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker, df_well_marker['DEPTH'].max(), fig, axes, col, n_seq)
+
+    fig = layout_range_all_axis(fig, axes, plot_sequence)
+
+    fig.update_layout(
+        margin=dict(l=20, r=20, t=40, b=20), height=1500,
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        showlegend=False,
+        hovermode='y unified', hoverdistance=-1,
+        title_text="Well Log Selected",
+        title_x=0.5,
+        modebar_remove=['lasso', 'autoscale', 'zoom',
+                        'zoomin', 'zoomout', 'pan', 'select']
+    )
+
+    fig.update_yaxes(showspikes=True,  # tickangle=90,
+                     range=[df[depth].max(), df[depth].min()])
+    fig.update_traces(yaxis='y')
+
+    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=0)
+
+    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+    return fig
+
+
 # --- API Routes with Error Logging ---
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -405,6 +549,42 @@ def handle_nulls_endpoint():
     except Exception as e:
         app.logger.exception("handle_nulls_endpoint: Failed to process CSV data")
         return jsonify({"error": "Failed to process CSV data."}), 500
+    
+
+@app.route('/api/get-plot', methods=['POST'])
+def get_plot():
+    try:
+        request_data = request.get_json()
+        well_data_map = request_data.get('well_data')
+
+        if not well_data_map:
+            return jsonify({"error": "No well data provided"}), 400
+
+        print(f"Received request to plot data for wells: {list(well_data_map.keys())}")
+
+        list_of_dataframes = []
+        for well_name, csv_content in well_data_map.items():
+            df = pd.read_csv(io.StringIO(csv_content))
+            if 'WELL_NAME' not in df.columns:
+                df['WELL_NAME'] = well_name
+            list_of_dataframes.append(df)
+            
+        if not list_of_dataframes:
+            return jsonify({"error": "No valid data could be processed"}), 404
+
+        # The rest of your logic is the same!
+        df = pd.concat(list_of_dataframes, ignore_index=True)
+        df_marker = extract_markers_with_mean_depth(df)
+        df = normalize_xover(df, 'NPHI', 'RHOB')
+        df = normalize_xover(df, 'RT', 'RHOB')
+        fig = plot_log_default(df=df, df_marker=df_marker, df_well_marker=df)
+        
+        return jsonify(fig.to_json())
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/')

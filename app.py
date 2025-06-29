@@ -145,9 +145,10 @@ def run_quality_control(files_data: list, logger):
     all_markers_df = pd.DataFrame()
 
     # First, collect marker files
-    for file_info in files_data:
-        name_lower = file_info['name'].lower()
-        if name_lower.endswith('.csv') and 'marker' in name_lower:
+    las_files = [f for f in files_data if f['name'].lower().endswith('.las')]
+    for file_info in las_files:
+        filename = file_info['name'].lower()
+        if filename.endswith('.csv') and 'marker' in filename:
             logger.debug(f"run_quality_control: Processing marker file '{file_info['name']}'")
             try:
                 marker_df = pd.read_csv(

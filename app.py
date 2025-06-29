@@ -15,6 +15,15 @@ import logging
 app = Flask(__name__)
 CORS(app)
 
+PERSISTENT_DATA_DIR = '/data'
+
+WELLS_DIR = os.path.join(PERSISTENT_DATA_DIR, 'wells')
+LAS_DIR = os.path.join(PERSISTENT_DATA_DIR, 'las')
+
+os.makedirs(WELLS_DIR, exist_ok=True)
+os.makedirs(LAS_DIR, exist_ok=True)
+
+
 # Configure logging to DEBUG
 logging.basicConfig(level=logging.DEBUG,
                     format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
@@ -551,6 +560,18 @@ def handle_nulls_endpoint():
         app.logger.exception("handle_nulls_endpoint: Failed to process CSV data")
         return jsonify({"error": "Failed to process CSV data."}), 500
     
+@app.route('/api/list-wells', methods=['GET'])
+def list_wells():
+    try:
+        if not os.path.exists(WELLS_DIR):
+            # This might happen on the very first run before any files are there
+            return jsonify([]), 200
+
+        well_files = [f.replace('.csv', '') for f in os.listdir(WELLS_DIR) if f.endswith('.csv')]
+        well_files.sort()
+        return jsonify(well_files)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/get-plot', methods=['POST'])
 def get_plot():

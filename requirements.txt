@@ -7,6 +7,7 @@ flask-cors==6.0.1
 gunicorn==23.0.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
+joblib==1.5.1
 lasio==0.31
 MarkupSafe==3.0.2
 narwhals==1.44.0
@@ -17,8 +18,10 @@ pandas==2.3.0
 plotly==6.2.0
 python-dateutil==2.9.0.post0
 pytz==2025.2
+scikit-learn==1.7.0
 scipy==1.16.0
 six==1.17.0
+threadpoolctl==3.6.0
 typing==3.7.4.3
 tzdata==2025.2
 Werkzeug==3.1.3

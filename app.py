@@ -1,6 +1,5 @@
 # my backend api/app.py 
 
-
 from sklearn.linear_model import LinearRegression
 from typing import Optional
 from flask import Flask, request, jsonify, current_app, Response
@@ -2059,20 +2058,17 @@ def depth_matching(ref_las_path: str, lwd_las_path: str, num_chunks: int = 10):
     return ref_df, lwd_df, final_df
 
 
+import shutil
 
-
-# --- THIS IS THE NEW, ONE-TIME-USE ENDPOINT ---
 @app.route('/api/seed-data-volume', methods=['POST'])
 def seed_data_volume():
     """
-    Receives a single ZIP file, unpacks it, and saves the entire
-    directory structure and its contents into the persistent volume.
-    This is intended for one-time setup.
+    Receives a single ZIP file, clears the existing data in the persistent volume,
+    then unpacks the ZIP and saves the entire structure into the volume.
     """
     app.logger.info("Received request to seed data volume.")
     
     # Simple security check to prevent unauthorized use.
-    # You must send this header from your frontend.
     if request.headers.get('X-Seed-Auth') != 'your-secret-key-123':
         app.logger.warning("Seed attempt without valid auth header.")
         return jsonify({"error": "Unauthorized"}), 403
@@ -2087,44 +2083,48 @@ def seed_data_volume():
     if file and file.filename.lower().endswith('.zip'):
         filename = secure_filename(file.filename)
         app.logger.info(f"Processing seed file: {filename}")
-        
+
         try:
-            # Read the entire ZIP file into memory
+            # === NEW: Clear the persistent volume before extracting ===
+            if os.path.exists(PERSISTENT_DATA_DIR):
+                app.logger.info(f"Clearing existing data in {PERSISTENT_DATA_DIR}")
+                for item in os.listdir(PERSISTENT_DATA_DIR):
+                    item_path = os.path.join(PERSISTENT_DATA_DIR, item)
+                    if os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                        app.logger.info(f"Deleted directory: {item_path}")
+                    else:
+                        os.remove(item_path)
+                        app.logger.info(f"Deleted file: {item_path}")
+
+            # Read the ZIP into memory
             zip_content = io.BytesIO(file.read())
             
             with zipfile.ZipFile(zip_content, 'r') as z:
-                # Get the list of all files and directories in the zip
-                member_list = z.infolist()
-                for member in member_list:
-                    # Construct the full extraction path inside the volume
-                    # e.g., /data/sample_data/wells/ABB-035.csv
+                for member in z.infolist():
                     target_path = os.path.join(PERSISTENT_DATA_DIR, member.filename)
-                    
-                    # This is crucial for security, prevents 'zip slip' vulnerabilities
+                    # Prevent zip slip
                     if not os.path.realpath(target_path).startswith(os.path.realpath(PERSISTENT_DATA_DIR)):
                         app.logger.warning(f"Skipping potentially malicious file path: {member.filename}")
                         continue
-
-                    # If it's a directory, create it
                     if member.is_dir():
                         os.makedirs(target_path, exist_ok=True)
                         app.logger.info(f"Created directory: {target_path}")
-                    # If it's a file, extract it
                     else:
-                        # Ensure the parent directory exists before extracting
                         parent_dir = os.path.dirname(target_path)
                         os.makedirs(parent_dir, exist_ok=True)
                         with open(target_path, "wb") as f_out:
                             f_out.write(z.read(member.filename))
                         app.logger.info(f"Extracted file: {target_path}")
-                        
-            return jsonify({"message": f"Successfully seeded volume with contents of {filename}"}), 200
+
+            return jsonify({"message": f"Successfully cleared and seeded volume with contents of {filename}"}), 200
 
         except Exception as e:
             app.logger.exception("Failed to process seed ZIP file.")
             return jsonify({"error": str(e)}), 500
 
     return jsonify({"error": "Invalid file type. Please upload a ZIP file."}), 400
+
 
 # --- API Routes with Error Logging ---
 @app.route('/api/upload', methods=['POST'])

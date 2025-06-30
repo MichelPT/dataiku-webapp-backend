@@ -1,5 +1,8 @@
 # my backend api/app.py 
 
+
+from sklearn.linear_model import LinearRegression
+from typing import Optional
 from flask import Flask, request, jsonify, current_app, Response
 from flask_cors import CORS
 import pandas as pd
@@ -14,6 +17,8 @@ import logging
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+from scipy.interpolate import interp1d
+from dtaidistance import dtw
 
 # --- Basic App Setup ---
 app = Flask(__name__)
@@ -1540,6 +1545,31 @@ def plot_gsa_crossover(df_well, fig, axes, key, n_seq, counter, n_plots, fill_co
 
     return fig, axes, counter
 
+def min_max_normalize(log_in,
+                      calib_min=40, calib_max=140,
+                      pct_min=3, pct_max=97,
+                      cutoff_min=0, cutoff_max=250):
+    """
+    Geolog-style MIN-MAX normalization using percentiles
+    """
+    log = np.array(log_in, dtype=float)
+
+    if cutoff_min is not None:
+        log[log < cutoff_min] = np.nan
+    if cutoff_max is not None:
+        log[log > cutoff_max] = np.nan
+
+    min_pnt = np.nanpercentile(log, pct_min)
+    max_pnt = np.nanpercentile(log, pct_max)
+
+    # Hindari pembagian dengan nol jika semua data sama
+    if max_pnt == min_pnt:
+        return np.full_like(log, calib_min)
+
+    m = (calib_max - calib_min) / (max_pnt - min_pnt)
+    log_out = calib_min + m * (log - min_pnt)
+
+    return log_out
 
 def layout_range_all_axis(fig, axes, plot_sequence):
     for key, axess in axes.items():
@@ -1701,6 +1731,83 @@ def plot_xover_thres(df_well, fig, axes, key, n_seq, counter, y_color=colors_dic
 
     return fig, axes, counter
 
+def plot_depth_matching_results(ref_df, lwd_df, final_df):
+    """
+    Menerima 3 DataFrame dan membuat plot 4-panel yang komprehensif.
+    """
+    if ref_df is None or lwd_df is None or final_df is None:
+        raise ValueError("Data input untuk plotting tidak boleh None.")
+
+    # Buat 4 subplot dengan sumbu Y yang sama
+    fig = make_subplots(
+        rows=1, cols=4,
+        shared_yaxes=True,
+        subplot_titles=("Reference Log", "LWD Log (Original)",
+                        "Before Alignment", "After Alignment (DTW)")
+    )
+
+    # --- Panel 1 (Paling Kiri): Reference Log ---
+    fig.add_trace(go.Scattergl(
+        x=ref_df["GR"], y=ref_df["Depth"], name='REF GR',
+        line=dict(color='black')
+    ), row=1, col=1)
+
+    # --- Panel 2: LWD Log Asli ---
+    fig.add_trace(go.Scattergl(
+        x=lwd_df["DGRCC"], y=lwd_df["Depth"], name='LWD GR',
+        line=dict(color='red')
+    ), row=1, col=2)
+
+    # --- Panel 3: Sebelum Alignment (Ditumpuk) ---
+    fig.add_trace(go.Scattergl(
+        x=ref_df["GR"], y=ref_df["Depth"], name='REF GR (Before)',
+        line=dict(color='black'), legendgroup='before'
+    ), row=1, col=3)
+    fig.add_trace(go.Scattergl(
+        x=lwd_df["DGRCC"], y=lwd_df["Depth"], name='LWD GR (Before)',
+        line=dict(color='red', dash='dash'), legendgroup='before'
+    ), row=1, col=3)
+
+    # --- Panel 4 (Paling Kanan): Setelah Alignment (Ditumpuk) ---
+    fig.add_trace(go.Scattergl(
+        x=final_df["REF_GR"], y=final_df["Depth"], name='REF GR (After)',
+        line=dict(color='black'), legendgroup='after'
+    ), row=1, col=4)
+    fig.add_trace(go.Scattergl(
+        x=final_df["LWD_DGRCC_Aligned"], y=final_df[
+            "Depth"], name='LWD Aligned (After)',
+        line=dict(color='red', dash='dash'), legendgroup='after'
+    ), row=1, col=4)
+
+    fig.update_layout(
+        title_text="Depth Matching Analysis",
+        height=8600,
+        showlegend=False,
+        template="plotly_white",
+        yaxis=dict(autorange='reversed', title_text="Depth (m)"),
+        hovermode="y unified",
+    )
+
+    fig.update_yaxes(
+        showgrid=True,
+        gridwidth=1,
+        gridcolor='red',
+        dtick=15,
+        griddash='dot',
+        showline=True,
+        linewidth=1.5,
+        linecolor='black',
+        mirror=True
+    )
+
+    fig.update_xaxes(
+        showline=True,
+        linewidth=1.5,
+        linecolor='black',
+        mirror=True
+    )
+
+    return fig
 
 def plot_xover_log_normal(df_well, fig, axes, key, n_seq, counter, n_plots, y_color='limegreen', n_color='lightgray', type=1, exclude_crossover=False):
     axes[key] = ['yaxis'+str(n_seq), 'xaxis'+str(n_seq)]  # Initialize
@@ -1767,6 +1874,189 @@ def plot_texts_marker(df_text, depth_btm, fig, axes, key, n_seq):
 
     return fig, axes
 
+def plot_normalization(df, df_marker, df_well_marker):
+    sequence = ['MARKER', 'GR', 'GR_NORM', 'GR_DUAL']
+    plot_sequence = {i+1: v for i, v in enumerate(sequence)}
+    print(plot_sequence)
+
+    ratio_plots_seq = []
+    ratio_plots_seq.append(ratio_plots['MARKER'])
+    sequence_keys = list(plot_sequence.values())
+    for key in sequence_keys[1:]:
+        ratio_plots_seq.append(ratio_plots[key])
+
+    subplot_col = len(plot_sequence.keys())
+
+    fig = make_subplots(
+        rows=1, cols=subplot_col,
+        shared_yaxes=True,
+        column_widths=ratio_plots_seq,
+        horizontal_spacing=0.0
+    )
+
+    counter = 0
+    axes = {}
+    for i in plot_sequence.values():
+        axes[i] = []
+
+    # Plot Marker
+    fig, axes = plot_flag(df_well_marker, fig, axes,
+                          "MARKER", 1)  # n_seq=1 for marker
+    fig, axes = plot_texts_marker(
+        df_marker, df_well_marker['DEPTH'].max(), fig, axes, "MARKER", 1)
+
+    # Plot GR - start from n_seq=2 which is 'GR' in your sequence
+    for n_seq, col in plot_sequence.items():
+        if n_seq > 1:
+            if col == 'GR':  # Skip n_seq=1 which is 'MARKER'
+                fig, axes = plot_line(
+                    df, fig, axes, base_key=col, n_seq=n_seq, col=col, label=col)
+            elif col == 'GR_NORM':  # Skip n_seq=1 which is 'MARKER'
+                fig, axes = plot_line(
+                    df, fig, axes, base_key=col, n_seq=n_seq, col=col, label=col)
+            elif col == 'GR_DUAL':
+                fig, axes, counter = plot_dual_gr(
+                    df, fig, axes, col, n_seq, counter, subplot_col)
+
+    fig = layout_range_all_axis(fig, axes, plot_sequence)
+
+    fig.update_layout(
+        margin=dict(l=20, r=20, t=40, b=20), height=1500,
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        showlegend=False,
+        hovermode='y unified', hoverdistance=-1,
+        title_text="Normalization",
+        title_x=0.5,
+        modebar_remove=['lasso', 'autoscale', 'zoom',
+                        'zoomin', 'zoomout', 'pan', 'select']
+    )
+
+    fig.update_yaxes(showspikes=True,
+                     range=[df[depth].max(), df[depth].min()])
+    fig.update_traces(yaxis='y')
+
+    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=0)
+
+    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+
+    print(axes)
+
+    return fig
+
+def normalize(series):
+    std_dev = np.std(series)
+    if std_dev == 0:
+        # Jika semua nilai sama, kembalikan array berisi nol
+        return np.zeros_like(series)
+    return (series - np.mean(series)) / std_dev
+
+def calculate_vsh_from_gr(df: pd.DataFrame, gr_log: str, gr_ma: float, gr_sh: float, output_col: str) -> pd.DataFrame:
+    """
+    Menghitung VSH dari Gamma Ray menggunakan metode linear.
+
+    Args:
+        df (pd.DataFrame): DataFrame input yang berisi data log.
+        gr_log (str): Nama kolom Gamma Ray yang akan digunakan.
+        gr_ma (float): Nilai GR matriks (zona bersih).
+        gr_sh (float): Nilai GR shale.
+        output_col (str): Nama kolom baru untuk menyimpan hasil VSH.
+
+    Returns:
+        pd.DataFrame: DataFrame asli dengan tambahan kolom VSH.
+    """
+    # Pastikan kolom yang dibutuhkan ada
+    if gr_log not in df.columns:
+        print(
+            f"Peringatan: Kolom '{gr_log}' tidak ditemukan. Melewatkan kalkulasi VSH.")
+        df[output_col] = np.nan
+        return df
+
+    # Salin untuk menghindari SettingWithCopyWarning
+    df_processed = df.copy()
+
+    # Hitung VSH dengan rumus linear
+    v_gr = (df_processed[gr_log] - gr_ma) / (gr_sh - gr_ma)
+
+    # Batasi nilai antara 0 dan 1
+    df_processed[output_col] = v_gr.clip(0, 1)
+
+    return df_processed
+
+def depth_matching(ref_las_path: str, lwd_las_path: str, num_chunks: int = 10):
+    """
+    Menjalankan logika DTW dan mengembalikan tiga DataFrame: 
+    data referensi, data LWD asli, dan data hasil alignment.
+    """
+    try:
+        ref_las = lasio.read(ref_las_path)
+        lwd_las = lasio.read(lwd_las_path)
+
+        ref_df = ref_las.df().reset_index()[["DEPTH", "GR_CAL"]].dropna()
+        ref_df.columns = ["Depth", "GR"]
+
+        lwd_df = lwd_las.df().reset_index()[["DEPTH", "DGRCC"]].dropna()
+        lwd_df.columns = ["Depth", "DGRCC"]
+
+        N_ref = len(ref_df)
+        N_lwd = len(lwd_df)
+
+        ref_chunk_size = N_ref // num_chunks
+        lwd_chunk_size = N_lwd // num_chunks
+
+        all_chunks = []
+
+        for i in range(num_chunks):
+            ref_start = i * ref_chunk_size
+            ref_end = N_ref if i == num_chunks - \
+                1 else (i + 1) * ref_chunk_size
+            ref_chunk = ref_df.iloc[ref_start:ref_end]
+
+            lwd_start = i * lwd_chunk_size
+            lwd_end = N_lwd if i == num_chunks - \
+                1 else (i + 1) * lwd_chunk_size
+            lwd_chunk = lwd_df.iloc[lwd_start:lwd_end]
+
+            if len(ref_chunk) < 2 or len(lwd_chunk) < 2:
+                continue
+
+            ref_signal = normalize(ref_chunk["GR"].values)
+            lwd_signal = normalize(lwd_chunk["DGRCC"].values)
+
+            path = dtw.warping_path(lwd_signal, ref_signal)
+
+            aligned_depths = []
+            aligned_dgrcc = []
+            for lwd_idx, ref_idx in path:
+                aligned_depths.append(ref_chunk.iloc[ref_idx]["Depth"])
+                aligned_dgrcc.append(lwd_chunk.iloc[lwd_idx]["DGRCC"])
+
+            aligned_df = pd.DataFrame({
+                "Depth": aligned_depths,
+                "Aligned_DGRCC": aligned_dgrcc
+            }).sort_values(by="Depth")
+
+            interp_func = interp1d(aligned_df["Depth"], aligned_df["Aligned_DGRCC"],
+                                   kind='linear', bounds_error=False, fill_value="extrapolate")
+            interp_dgrcc = interp_func(ref_chunk["Depth"].values)
+
+            chunk_result = pd.DataFrame({
+                "Depth": ref_chunk["Depth"].values,
+                "REF_GR": ref_chunk["GR"].values,
+                "LWD_DGRCC_Aligned": interp_dgrcc
+            })
+
+            all_chunks.append(chunk_result)
+
+            final_df = pd.concat(all_chunks, ignore_index=True)
+            final_df = final_df.drop_duplicates(
+                subset="Depth").sort_values(by="Depth")
+
+    except Exception as e:
+        print(f"Error di dalam depth_matching_logic: {e}")
+        return None, None, None
+
+    return ref_df, lwd_df, final_df
 
 
 
@@ -1978,6 +2268,7 @@ def list_wells():
         return jsonify(well_files)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 
 @app.route('/api/get-plot', methods=['POST'])
 def get_plot():
@@ -2022,6 +2313,1581 @@ def get_plot():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+    
+
+@app.route('/api/get-normalization-plot', methods=['POST', 'OPTIONS'])
+def get_normalization_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih"}), 400
+
+            # Baca dan gabungkan HANYA data dari sumur yang dipilih
+            df_list = []
+            for well_name in selected_wells:
+                file_path = os.path.join(
+                    WELLS_DIR, f"{well_name}.csv")
+                if os.path.exists(file_path):
+                    df_list.append(pd.read_csv(file_path))
+
+            if not df_list:
+                return jsonify({"error": "Data untuk sumur yang dipilih tidak ditemukan."}), 404
+
+            df = pd.concat(df_list, ignore_index=True)
+
+            log_in_col = 'GR'
+            log_out_col = 'GR_NORM'
+
+            # Validasi kolom hasil normalisasi
+            if log_out_col not in df.columns or df[log_out_col].isnull().all():
+                return jsonify({"error": f"Tidak ada data normalisasi yang valid untuk sumur yang dipilih. Jalankan proses pada interval yang benar."}), 400
+
+            # Siapkan data marker dari DataFrame gabungan
+            df_marker_info = extract_markers_with_mean_depth(df)
+
+            # ==========================================================
+            # FIX: Panggil `plot_normalization` dengan argumen yang benar
+            # ==========================================================
+            fig_result = plot_normalization(
+                df=df,                 # DataFrame lengkap dengan semua data log
+                df_marker=df_marker_info,      # DataFrame khusus untuk teks marker
+                df_well_marker=df      # DataFrame lengkap untuk plot latar belakang marker
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+# @app.route('/api/list-wells', methods=['GET'])
+# def list_wells():
+#     try:
+#         if not os.path.exists(WELLS_DIR):
+#             return jsonify({"error": "Folder 'wells' tidak ditemukan."}), 404
+
+#         # Ambil semua file .csv, hapus ekstensinya
+#         well_files = [f.replace('.csv', '') for f in os.listdir(
+#             WELLS_DIR) if f.endswith('.csv')]
+#         well_files.sort()  # Urutkan nama sumur
+
+#         return jsonify(well_files)
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-interval-normalization', methods=['POST', 'OPTIONS'])
+def run_interval_normalization():
+
+    if request.method == 'OPTIONS':
+        # Respons ini sudah cukup untuk memberitahu browser bahwa permintaan POST diizinkan
+        return jsonify({'status': 'ok'}), 200
+
+    try:
+        # 1. Terima semua data dari frontend: params, sumur, dan interval
+        payload = request.get_json()
+        params = payload.get('params', {})
+        selected_wells = payload.get('selected_wells', [])
+        selected_intervals = payload.get('selected_intervals', [])
+
+        if not selected_wells or not selected_intervals:
+            return jsonify({"error": "Sumur dan Interval harus dipilih."}), 400
+
+        print(
+            f"Memulai normalisasi untuk {len(selected_wells)} sumur pada {len(selected_intervals)} interval...")
+
+        # Ekstrak parameter normalisasi dari payload
+        log_in_col = params.get('LOG_IN', 'GR')
+        log_out_col = params.get('LOG_OUT', 'GR_NORM')
+        calib_min = float(params.get('CALIB_MIN', 40))
+        calib_max = float(params.get('CALIB_MAX', 140))
+        pct_min = int(params.get('PCT_MIN', 3))
+        pct_max = int(params.get('PCT_MAX', 97))
+        cutoff_min = float(params.get('CUTOFF_MIN', 0.0))
+        cutoff_max = float(params.get('CUTOFF_MAX', 250.0))
+
+        processed_dfs = []
+
+        # 2. LOOPING PERTAMA: Iterasi untuk setiap sumur yang dipilih
+        for well_name in selected_wells:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if not os.path.exists(file_path):
+                print(
+                    f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                continue
+
+            df_well = pd.read_csv(file_path)
+            # Buat kolom output baru berisi NaN (Not a Number)
+            df_well[log_out_col] = np.nan
+
+            # 3. LOOPING KEDUA: Iterasi untuk setiap interval di dalam sumur saat ini
+            for interval in selected_intervals:
+                # Filter dataframe untuk mendapatkan baris yang sesuai dengan interval ini
+                interval_mask = df_well['MARKER'] == interval
+
+                # Jika tidak ada data untuk interval ini di sumur saat ini, lewati
+                if interval_mask.sum() == 0:
+                    continue
+
+                # Ambil data log HANYA dari subset interval ini
+                log_to_normalize = df_well.loc[interval_mask, log_in_col].dropna(
+                ).values
+
+                if len(log_to_normalize) == 0:
+                    continue
+
+                # 4. JALANKAN NORMALISASI pada data subset
+                normalized_values = min_max_normalize(
+                    log_in=log_to_normalize,
+                    calib_min=calib_min,
+                    calib_max=calib_max,
+                    pct_min=pct_min,
+                    pct_max=pct_max,
+                    cutoff_min=cutoff_min,
+                    cutoff_max=cutoff_max
+                )
+
+                # 5. SIMPAN HASIL kembali ke dataframe utama pada baris yang benar
+                df_well.loc[interval_mask, log_out_col] = normalized_values
+
+            processed_dfs.append(df_well)
+            df_well.to_csv(file_path, index=False)
+            print(
+                f"Hasil normalisasi untuk sumur '{well_name}' telah disimpan ke {file_path}")
+
+        # 6. Gabungkan semua dataframe yang sudah diproses
+        if not processed_dfs:
+            return jsonify({"error": "Tidak ada data yang berhasil diproses."}), 400
+
+        final_df = pd.concat(processed_dfs, ignore_index=True)
+
+        # 7. Kembalikan data yang sudah dinormalisasi sebagai JSON
+        # Format 'records' mudah dibaca oleh JavaScript
+        result_json = final_df.to_json(orient='records')
+
+        return jsonify({
+            "message": f"Normalisasi selesai untuk {len(processed_dfs)} sumur.",
+            "data": result_json
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-depth-matching', methods=['POST', 'OPTIONS'])
+def run_depth_matching_endpoint():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            ref_las_path = os.path.join(LAS_DIR, 'ref.las')
+            lwd_las_path = os.path.join(LAS_DIR, 'lwd.las')
+
+            if not os.path.exists(ref_las_path):
+                return jsonify({"error": f"File tidak ditemukan: {ref_las_path}"}), 404
+            if not os.path.exists(lwd_las_path):
+                return jsonify({"error": f"File tidak ditemukan: {lwd_las_path}"}), 404
+
+            # 1. Panggil fungsi logika untuk mendapatkan data
+            ref_data, lwd_data, aligned_data = depth_matching(
+                ref_las_path=ref_las_path,
+                lwd_las_path=lwd_las_path,
+                num_chunks=8
+            )
+
+            if aligned_data is None:
+                raise ValueError("Proses komputasi Depth Matching gagal.")
+
+            # 2. Panggil fungsi plotting dengan data yang sudah diolah
+            fig_result = plot_depth_matching_results(
+                ref_df=ref_data,
+                lwd_df=lwd_data,
+                final_df=aligned_data
+            )
+
+            # 3. Kirim plot yang sudah jadi sebagai JSON
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-vsh-calculation', methods=['POST', 'OPTIONS'])
+def run_vsh_calculation():
+    """
+    Endpoint untuk menjalankan kalkulasi VSH berdasarkan parameter dari frontend,
+    dan menyimpan hasilnya kembali ke file CSV.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            print(
+                f"Memulai kalkulasi VSH untuk {len(selected_wells)} sumur...")
+
+            # Ekstrak parameter dari frontend, dengan nilai default
+            gr_ma = float(params.get('gr_ma', 30))
+            gr_sh = float(params.get('gr_sh', 120))
+            input_log = params.get('input_log', 'GR')
+            output_log = params.get('output_log', 'VSH_GR')
+
+            # Loop melalui setiap sumur yang dipilih
+            for well_name in selected_wells:
+                file_path = os.path.join(
+                    WELLS_DIR, f"{well_name}.csv")
+
+                if not os.path.exists(file_path):
+                    print(
+                        f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                    continue
+
+                # Baca data sumur
+                df_well = pd.read_csv(file_path)
+
+                # Panggil fungsi logika untuk menghitung VSH
+                df_updated = calculate_vsh_from_gr(
+                    df_well, input_log, gr_ma, gr_sh, output_log)
+
+                # Simpan (overwrite) file CSV dengan data yang sudah diperbarui
+                df_updated.to_csv(file_path, index=False)
+                print(f"Hasil VSH untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi VSH berhasil untuk {len(selected_wells)} sumur."})
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+def dn_xplot(rho0, nphi0, rho_ma, rho_max, rho_fl):
+    """(Internal) Menghitung porositas dan densitas matriks dari crossplot D-N."""
+    try:
+        phid = (rho_ma - rho0 * 1000) / (rho_ma - rho_fl)
+        if nphi0 >= phid:
+            pda = (rho_ma - rho_max) / (rho_ma - rho_fl)
+            pna = 0.7 - 10 ** (-5 * nphi0 - 0.16)
+        else:
+            pda = 1.0
+            pna = -2.06 * nphi0 - 1.17 + 10 ** (-16 * nphi0 - 0.4)
+
+        denom = pda - pna
+        if np.isclose(denom, 0) or np.isnan(denom):
+            return np.nan, np.nan
+
+        phix = (pda * nphi0 - phid * pna) / denom
+        if np.isclose(1 - phix, 0) or np.isnan(phix):
+            return np.nan, np.nan
+
+        rma = (rho0 * 1000 - phix * rho_fl) / (1 - phix)
+        return phix, rma
+    except Exception:
+        return np.nan, np.nan
+
+
+def _klasifikasi_reservoir_numeric(phie):
+    """(Internal) Memberikan KODE kelas reservoir berdasarkan nilai PHIE."""
+    if pd.isna(phie):
+        return 0  # NoData
+    elif phie >= 0.20:
+        return 4  # Prospek Kuat
+    elif phie >= 0.15:
+        return 3  # Zona Menarik
+    elif phie >= 0.10:
+        return 2  # Zona Lemah
+    else:
+        return 1  # Non Prospek
+
+
+def calculate_porosity(df: pd.DataFrame, params: dict) -> pd.DataFrame:
+    """
+    Menghitung berbagai jenis porositas berdasarkan parameter yang diberikan.
+    """
+    df_processed = df.copy()
+
+    # Ekstrak parameter dengan nilai default
+    RHO_FL = params.get('rho_fl', 1.00)
+    RHO_W = params.get('rho_w', 1.00)
+    RHO_SH = params.get('rho_sh', 2.45)
+    RHO_DSH = params.get('rho_dsh', 2.60)
+    NPHI_SH = params.get('nphi_sh', 0.35)
+    PHIE_MAX = params.get('phie_max', 0.3)
+    RHO_MA_BASE = params.get('rho_ma_base', 2.71) * 1000
+    RHO_MAX = params.get('rho_max', 4.00) * 1000
+
+    # Pastikan kolom VSH ada, jika tidak, hitung terlebih dahulu
+    if 'VSH' not in df_processed.columns:
+        # Asumsi VSH_GR adalah representasi VSH utama
+        if 'VSH_GR' in df_processed.columns:
+            df_processed['VSH'] = df_processed['VSH_GR']
+        else:
+            raise ValueError("Kolom VSH atau VSH_GR tidak ditemukan.")
+
+    # Perhitungan
+    PHIT_SH = (RHO_DSH - RHO_SH) / (RHO_DSH - RHO_W)
+    df_processed["RHOB_SR"] = (
+        df_processed["RHOB"] - df_processed["VSH"] * RHO_SH) / (1 - df_processed["VSH"])
+    df_processed["NPHI_SR"] = (
+        df_processed["NPHI"] - df_processed["VSH"] * NPHI_SH) / (1 - df_processed["VSH"])
+    df_processed["NPHI_SR"] = df_processed["NPHI_SR"].clip(
+        lower=-0.015, upper=1)
+
+    phix_vals, rma_vals = [], []
+    for i, row in df_processed.iterrows():
+        if pd.notna(row["RHOB_SR"]) and pd.notna(row["NPHI_SR"]):
+            phix, rma = dn_xplot(
+                row["RHOB_SR"], row["NPHI_SR"], RHO_MA_BASE, RHO_MAX, RHO_FL * 1000)
+        else:
+            phix, rma = np.nan, np.nan
+        phix_vals.append(phix)
+        rma_vals.append(rma)
+
+    df_processed["PHIE_DN"] = np.array(phix_vals) * (1 - df_processed["VSH"])
+    df_processed["PHIT_DN"] = df_processed["PHIE_DN"] + \
+        df_processed["VSH"] * PHIT_SH
+    df_processed["PHIE"] = df_processed["PHIE_DN"].clip(
+        lower=0, upper=PHIE_MAX * (1 - df_processed["VSH"]))
+    df_processed["PHIT"] = df_processed["PHIE"] + df_processed["VSH"] * PHIT_SH
+    df_processed["RHO_MAT"] = np.array(rma_vals) / 1000
+
+    df_processed.rename(
+        columns={"PHIE_DN": "PHIE_DEN", "PHIT_DN": "PHIT_DEN"}, inplace=True)
+
+    df_processed["RESERVOIR_CLASS"] = df_processed["PHIE"].apply(
+        _klasifikasi_reservoir_numeric)
+
+    print("Kolom Porosity baru telah ditambahkan: PHIE, PHIT, PHIE_DN, RHO_MAT")
+    return df_processed
+
+
+@app.route('/api/run-porosity-calculation', methods=['POST', 'OPTIONS'])
+def run_porosity_calculation():
+    """
+    Endpoint untuk menjalankan kalkulasi Porositas dan menyimpan hasilnya.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Loop melalui setiap sumur yang dipilih
+            for well_name in selected_wells:
+                file_path = os.path.join(
+                    WELLS_DIR, f"{well_name}.csv")
+                if not os.path.exists(file_path):
+                    continue
+
+                df_well = pd.read_csv(file_path)
+
+                # Panggil fungsi logika untuk menghitung Porositas
+                df_updated = calculate_porosity(df_well, params)
+
+                # Simpan (overwrite) file CSV dengan data yang sudah diperbarui
+                df_updated.to_csv(file_path, index=False)
+                print(
+                    f"Hasil Porositas untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi Porositas berhasil untuk {len(selected_wells)} sumur."})
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+def plot_two_features_simple(df_well, fig, axes, key, n_seq, counter, n_plots, log_scale=False):
+    """
+    Plot dua feature dengan dual x-axis untuk range yang berbeda.
+    Feature kedua menggunakan x-axis overlay dengan garis putus-putus.
+    """
+
+    # Tambahkan axis info ke dictionary
+    axes[key].append('yaxis'+str(n_seq))
+    axes[key].append('xaxis'+str(n_seq))
+
+    # Plot kurva pertama (solid line) - menggunakan axis pertama
+    fig.add_trace(
+        go.Scattergl(
+            x=df_well[data_col[key][0]],
+            y=df_well[depth],
+            line=dict(
+                color=color_col[key][0],
+                width=line_width
+            ),
+            name=data_col[key][0],
+            legend=legends[n_seq-1],
+            showlegend=True,
+            xaxis='x'+str(n_seq),
+            yaxis='y'+str(n_seq),
+        )
+    )
+
+    # PERBAIKAN: Increment counter dan tambah axis kedua ke dictionary
+    counter += 1
+    axes[key].append('xaxis'+str(n_plots+counter))
+
+    # Plot kurva kedua (dashed line) - menggunakan axis kedua
+    fig.add_trace(
+        go.Scattergl(
+            x=df_well[data_col[key][1]],
+            y=df_well[depth],
+            line=dict(
+                color=color_col[key][1],
+                width=line_width,
+                # dash='dash'
+            ),
+            name=data_col[key][1],
+            legend=legends[n_seq-1],
+            showlegend=True,
+            xaxis='x'+str(n_plots+counter),  # PERBAIKAN: Gunakan axis kedua
+            yaxis='y'+str(n_seq),
+        )
+    )
+
+    # Update axis layout untuk axis pertama
+    xaxis1 = "xaxis"+str(n_seq)
+    if log_scale:
+        fig.update_layout(
+            **{xaxis1: dict(
+                side="top",
+                type="log",
+                range=[np.log10(range_col[key][0][0]),
+                       np.log10(range_col[key][0][1])]
+            )}
+        )
+    else:
+        fig.update_layout(
+            **{xaxis1: dict(
+                side="top",
+                range=range_col[key][0]
+            )}
+        )
+
+    # Update axis layout untuk axis kedua (overlay)
+    xaxis2 = "xaxis"+str(n_plots+counter)
+    if log_scale and len(range_col[key]) > 1:
+        fig.update_layout(
+            **{xaxis2: dict(
+                overlaying='x'+str(n_seq),
+                side="top",
+                type="log",
+                range=[np.log10(range_col[key][1][0]),
+                       np.log10(range_col[key][1][1])]
+            )}
+        )
+    elif len(range_col[key]) > 1:
+        fig.update_layout(
+            **{xaxis2: dict(
+                overlaying='x'+str(n_seq),
+                side="top",
+                range=range_col[key][1]
+            )}
+        )
+
+    return fig, axes, counter
+
+
+def plot_three_features_simple(df_well, fig, axes, key, n_seq, counter, n_plots, log_scale=False):
+    """
+    Plot tiga feature dengan triple x-axis untuk range yang berbeda.
+    Feature kedua dan ketiga menggunakan x-axis overlay dengan garis putus-putus dan titik-titik.
+    """
+
+    # Tambahkan axis info ke dictionary untuk feature pertama
+    axes[key].append('yaxis'+str(n_seq))
+    axes[key].append('xaxis'+str(n_seq))
+
+    # Plot kurva pertama (solid line) - menggunakan axis pertama
+    fig.add_trace(
+        go.Scattergl(
+            x=df_well[data_col[key][0]],
+            y=df_well[depth],
+            line=dict(
+                color=color_col[key][0],
+                width=line_width
+            ),
+            name=data_col[key][0],
+            legend=legends[n_seq-1],
+            showlegend=True,
+            xaxis='x'+str(n_seq),
+            yaxis='y'+str(n_seq),
+        )
+    )
+
+    # PERBAIKAN: Increment counter dan tambah axis kedua ke dictionary
+    counter += 1
+    axes[key].append('xaxis'+str(n_plots+counter))
+
+    # Plot kurva kedua (dashed line) - menggunakan axis kedua
+    fig.add_trace(
+        go.Scattergl(
+            x=df_well[data_col[key][1]],
+            y=df_well[depth],
+            line=dict(
+                color=color_col[key][1],
+                width=line_width,
+                dash='dash'
+            ),
+            name=data_col[key][1],
+            legend=legends[n_seq-1],
+            showlegend=True,
+            xaxis='x'+str(n_plots+counter),
+            yaxis='y'+str(n_seq),
+        )
+    )
+
+    # PERBAIKAN: Increment counter lagi dan tambah axis ketiga ke dictionary
+    counter += 1
+    axes[key].append('xaxis'+str(n_plots+counter))
+
+    # Plot kurva ketiga (dotted line) - menggunakan axis ketiga
+    fig.add_trace(
+        go.Scattergl(
+            x=df_well[data_col[key][2]],
+            y=df_well[depth],
+            line=dict(
+                color=color_col[key][2],
+                width=line_width,
+                dash='dot'
+            ),
+            name=data_col[key][2],
+            legend=legends[n_seq-1],
+            showlegend=True,
+            xaxis='x'+str(n_plots+counter),
+            yaxis='y'+str(n_seq),
+        )
+    )
+
+    # Update axis layout untuk axis pertama
+    xaxis1 = "xaxis"+str(n_seq)
+    if log_scale:
+        fig.update_layout(
+            **{xaxis1: dict(
+                side="top",
+                type="log",
+                range=[np.log10(range_col[key][0][0]),
+                       np.log10(range_col[key][0][1])]
+            )}
+        )
+    else:
+        fig.update_layout(
+            **{xaxis1: dict(
+                side="top",
+                range=range_col[key][0]
+            )}
+        )
+
+    # Update axis layout untuk axis kedua (overlay)
+    # counter-1 karena sudah di-increment
+    xaxis2 = "xaxis"+str(n_plots+counter-1)
+    if log_scale and len(range_col[key]) > 1:
+        fig.update_layout(
+            **{xaxis2: dict(
+                overlaying='x'+str(n_seq),
+                side="top",
+                type="log",
+                range=[np.log10(range_col[key][1][0]),
+                       np.log10(range_col[key][1][1])]
+            )}
+        )
+    elif len(range_col[key]) > 1:
+        fig.update_layout(
+            **{xaxis2: dict(
+                overlaying='x'+str(n_seq),
+                side="top",
+                range=range_col[key][1]
+            )}
+        )
+
+    # Update axis layout untuk axis ketiga (overlay)
+    xaxis3 = "xaxis"+str(n_plots+counter)
+    if log_scale and len(range_col[key]) > 2:
+        fig.update_layout(
+            **{xaxis3: dict(
+                overlaying='x'+str(n_seq),
+                side="top",
+                type="log",
+                range=[np.log10(range_col[key][2][0]),
+                       np.log10(range_col[key][2][1])]
+            )}
+        )
+    elif len(range_col[key]) > 2:
+        fig.update_layout(
+            **{xaxis3: dict(
+                overlaying='x'+str(n_seq),
+                side="top",
+                range=range_col[key][2]
+            )}
+        )
+
+    return fig, axes, counter
+
+
+def plot_four_features_simple(df_well, fig, axes, key, n_seq, counter, n_plots, log_scale=False):
+    """
+    Plot empat feature dengan semua garis solid (tidak putus-putus).
+    Semua menggunakan overlay x-axis dengan range yang berbeda.
+    """
+
+    # Tambahkan axis info ke dictionary
+    axes[key].append('yaxis'+str(n_seq))
+    axes[key].append('xaxis'+str(n_seq))
+
+    # Plot semua 4 kurva dengan loop
+    for i in range(4):
+        # Plot kurva
+        fig.add_trace(
+            go.Scattergl(
+                x=df_well[data_col[key][i]],
+                y=df_well[depth],
+                line=dict(
+                    color=color_col[key][i],
+                    width=line_width
+                ),
+                name=data_col[key][i],
+                legend=legends[n_seq-1],
+                showlegend=True,
+                xaxis='x'+str(n_seq if i == 0 else n_plots+counter+i),
+                yaxis='y'+str(n_seq),
+            )
+        )
+
+        # Tambah axis ke dictionary (kecuali yang pertama, sudah ditambah di atas)
+        if i > 0:
+            axes[key].append('xaxis'+str(n_plots+counter+i))
+
+    # Setup axis layout untuk semua 4 axis
+    for i in range(4):
+        if i == 0:
+            # Axis pertama (main axis)
+            xaxis_name = "xaxis"+str(n_seq)
+            axis_config = dict(
+                side="top",
+                range=range_col[key][0]
+            )
+        else:
+            # Axis overlay
+            xaxis_name = "xaxis"+str(n_plots+counter+i)
+            axis_config = dict(
+                overlaying='x'+str(n_seq),
+                side="top",
+                range=range_col[key][i] if len(
+                    range_col[key]) > i else range_col[key][0]
+            )
+
+        # Apply log scale jika diperlukan
+        if log_scale and len(range_col[key]) > i:
+            axis_config.update({
+                "type": "log",
+                "range": [np.log10(range_col[key][i][0]), np.log10(range_col[key][i][1])]
+            })
+
+        fig.update_layout(**{xaxis_name: axis_config})
+
+    # Update counter
+    # Tambah 3 karena menambah 3 axis baru (yang pertama sudah ada)
+    counter += 3
+
+    return fig, axes, counter
+
+def plot_phie_den(df, df_marker, df_well_marker):
+    """
+    Membuat plot multi-panel untuk visualisasi hasil kalkulasi Porositas.
+    """
+    # FIX: Urutan plot disesuaikan dan RESERVOIR_CLASS dihapus
+    sequence = ['MARKER', 'GR', 'RHOB',
+                'PHIE_DEN', 'PHIT_DEN', 'RESERVOIR_CLASS']
+    plot_sequence = {i+1: v for i, v in enumerate(sequence)}
+
+    ratio_plots_seq = [ratio_plots.get(key, 1)
+                       for key in plot_sequence.values()]
+    subplot_col = len(plot_sequence)
+
+    fig = make_subplots(
+        rows=1, cols=subplot_col,
+        shared_yaxes=True,
+        column_widths=ratio_plots_seq,
+        horizontal_spacing=0.01
+    )
+
+    counter = 0
+    axes = {key: [] for key in plot_sequence.values()}
+
+    # Loop untuk memanggil plotter yang sesuai
+    for n_seq, key in plot_sequence.items():
+        if key == 'MARKER':
+            fig, axes = plot_flag(df_well_marker, fig, axes, key, n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker, df_well_marker['DEPTH'].max(), fig, axes, key, n_seq)
+        elif key in ['GR', 'RHOB']:
+            fig, axes = plot_line(
+                df, fig, axes, base_key=key, n_seq=n_seq, col=key, label=key)
+        elif key in ['PHIE_DEN', 'PHIT_DEN']:
+            fig, axes, counter = plot_two_features_simple(
+                df, fig, axes, key, n_seq, counter, n_plots=subplot_col)
+        elif key == 'RESERVOIR_CLASS':
+            fig, axes = plot_flag(df, fig, axes, key, n_seq)
+
+    # Panggil fungsi-fungsi layout akhir
+    fig = layout_range_all_axis(fig, axes, plot_sequence)
+    fig = layout_draw_lines(fig, ratio_plots_seq, df,
+                            xgrid_intv=50)  # Memberi grid interval 50
+    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+
+    # Atur layout global
+    fig.update_layout(
+        margin=dict(l=40, r=20, t=80, b=40),
+        height=1600,
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        showlegend=False,
+        hovermode='y unified',
+        title_text="Porosity from Density (RHOB)",
+        title_x=0.5,
+    )
+    fig.update_yaxes(autorange='reversed', range=[
+                     df[depth].max(), df[depth].min()])
+    fig.update_traces(yaxis='y')
+
+    return fig
+
+@app.route('/api/get-porosity-plot', methods=['POST', 'OPTIONS'])
+def get_porosity_plot():
+    """
+    Endpoint untuk membuat dan menampilkan plot hasil kalkulasi porositas.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data dari sumur yang dipilih
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            # Validasi: Pastikan kolom hasil kalkulasi sebelumnya (VSH, PHIE) sudah ada
+            required_cols = ['VSH', 'PHIE', 'PHIT',
+                             'PHIE_DEN', 'PHIT_DEN', 'RESERVOIR_CLASS']
+            if not all(col in df.columns for col in required_cols):
+                return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi VSH dan Porosity terlebih dahulu."}), 400
+
+            df_marker_info = extract_markers_with_mean_depth(df)
+
+            # Panggil fungsi plotting yang baru
+            fig_result = plot_phie_den(
+                df=df,
+                df_marker=df_marker_info,
+                df_well_marker=df
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+def process_rgsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.DataFrame]:
+    """
+    Memproses RGSA untuk satu DataFrame sumur menggunakan parameter dinamis.
+    """
+    # --- STEP 1: SIAPKAN DATA & VALIDASI ---
+    required_cols = ['DEPTH', 'GR', 'RT']
+    if not all(col in df_well.columns for col in required_cols):
+        print(
+            f"Peringatan: Melewatkan sumur karena kolom {required_cols} tidak lengkap.")
+        return None
+
+    df_rgsa = df_well[required_cols].dropna().copy()
+
+    if len(df_rgsa) < 100:
+        print(
+            f"Peringatan: Data terlalu sedikit untuk regresi RGSA (hanya {len(df_rgsa)} baris)")
+        return None
+
+    # --- STEP 2: SLIDING WINDOW REGRESI DENGAN PARAMETER DINAMIS ---
+    # Ambil nilai dari dictionary params, gunakan default jika tidak ada
+    window_size = int(params.get('window_size', 106))
+    step = int(params.get('step', 20))
+    min_points_in_window = int(params.get('min_points_in_window', 30))
+    # Ambil filter dari dictionary params
+    filters = params.get('filters', {})
+    gr_filter = filters.get('GR', (5, 180))
+    rt_filter = filters.get('RT', (0.1, 1000))
+
+    coeffs = []
+
+    for start in range(0, len(df_rgsa) - window_size, step):
+        window = df_rgsa.iloc[start:start+window_size]
+        gr = window['GR'].values
+        rt = window['RT'].values
+
+        mask = (gr > gr_filter[0]) & (gr < gr_filter[1]) & (
+            rt > rt_filter[0]) & (rt < rt_filter[1])
+        gr_filtered = gr[mask]
+        rt_filtered = rt[mask]
+
+        if len(gr_filtered) < min_points_in_window:
+            continue
+
+        gr_scaled = 0.01 * gr_filtered
+        log_rt = np.log10(rt_filtered)
+
+        X = np.vstack([gr_scaled, gr_scaled**2, gr_scaled**3]).T
+        y = log_rt
+
+        try:
+            model = LinearRegression().fit(X, y)
+            if hasattr(model, 'coef_') and len(model.coef_) == 3:
+                coeffs.append({
+                    'DEPTH': window['DEPTH'].mean(),
+                    'b0': model.intercept_, 'b1': model.coef_[0],
+                    'b2': model.coef_[1], 'b3': model.coef_[2]
+                })
+        except Exception as e:
+            print(
+                f"Peringatan: Gagal melakukan regresi pada kedalaman sekitar {window['DEPTH'].mean()}: {e}")
+            continue
+
+    if not coeffs:
+        print("Peringatan: Tidak ada koefisien regresi yang berhasil dihitung.")
+        return None
+
+    coeff_df = pd.DataFrame(coeffs)
+
+    # --- STEP 3: INTERPOLASI & HITUNG RGSA ---
+    def interpolate_coeffs(depth):
+        if depth <= coeff_df['DEPTH'].min():
+            return coeff_df.iloc[0]
+        if depth >= coeff_df['DEPTH'].max():
+            return coeff_df.iloc[-1]
+        lower = coeff_df[coeff_df['DEPTH'] <= depth].iloc[-1]
+        upper = coeff_df[coeff_df['DEPTH'] > depth].iloc[0]
+        if upper['DEPTH'] == lower['DEPTH']:
+            return lower
+        weight = (depth - lower['DEPTH']) / (upper['DEPTH'] - lower['DEPTH'])
+        return lower + weight * (upper - lower)
+
+    rgsa_list = []
+    for _, row in df_rgsa.iterrows():
+        depth, gr = row['DEPTH'], row['GR']
+
+        if not (gr_filter[0] < gr < gr_filter[1]):
+            rgsa_list.append(np.nan)
+            continue
+
+        b0, b1, b2, b3 = interpolate_coeffs(
+            depth)[['b0', 'b1', 'b2', 'b3']].values
+        grfix = 0.01 * gr
+        log_rgsa = b0 + b1*grfix + b2*grfix**2 + b3*grfix**3
+        rgsa = 10**log_rgsa
+        rgsa_list.append(rgsa)
+
+    df_rgsa['RGSA'] = rgsa_list
+
+    # --- STEP 4: GABUNGKAN HASIL DAN ANALISIS ---
+    df_merged = pd.merge(
+        df_well, df_rgsa[['DEPTH', 'RGSA']], on='DEPTH', how='left')
+
+    if 'RT' in df_merged and 'RGSA' in df_merged:
+        df_merged['GAS_EFFECT_RT'] = (df_merged['RT'] > df_merged['RGSA'])
+        df_merged['RT_RATIO'] = df_merged['RT'] / df_merged['RGSA']
+        df_merged['RT_DIFF'] = df_merged['RT'] - df_merged['RGSA']
+
+    return df_merged
+
+def process_all_wells_rgsa(df_well: pd.DataFrame, params: dict):
+    """
+    Fungsi orkestrator utama: memproses RGSA untuk semua sumur dengan parameter kustom.
+    """
+
+    unique_wells = df_well['WELL_NAME'].unique()
+    print(f"📊 Memproses RGSA untuk {len(unique_wells)} sumur...")
+
+    processed_wells = []
+    failed_wells = []
+
+    for i, well_name in enumerate(unique_wells, 1):
+        print(f"\n🔍 Memproses sumur {i}/{len(unique_wells)}: {well_name}")
+        df_well = df_well[df_well['WELL_NAME'] ==
+                          well_name].copy().reset_index(drop=True)
+
+        # Teruskan dictionary `params` ke fungsi pemrosesan
+        result_df = process_rgsa_for_well(df_well, params)
+
+        if result_df is not None:
+            processed_wells.append(result_df)
+            print(f"✅ {well_name} - RGSA berhasil dihitung.")
+        else:
+            failed_wells.append(well_name)
+            print(f"❌ {well_name} - RGSA gagal dihitung.")
+
+    if processed_wells:
+        df_final = pd.concat(processed_wells, ignore_index=True)
+        print(
+            f"\n✅ Proses selesai. Hasil gabungan pada file asli.")
+
+        # print_summary_statistics(df_final, len(processed_wells), failed_wells)
+    else:
+        print("\n❌ Tidak ada sumur yang berhasil diproses!")
+
+    return df_final
+
+def _interpolate_coeffs(depth, coeff_df):
+    """(Internal) Melakukan interpolasi linear pada koefisien regresi."""
+    if coeff_df.empty:
+        return np.array([np.nan] * 4)
+
+    target_cols = ['b0', 'b1', 'b2', 'b3']
+
+    if depth <= coeff_df['DEPTH'].min():
+        return coeff_df.iloc[0][target_cols].values
+    if depth >= coeff_df['DEPTH'].max():
+        return coeff_df.iloc[-1][target_cols].values
+
+    lower = coeff_df[coeff_df['DEPTH'] <= depth].iloc[-1]
+    upper = coeff_df[coeff_df['DEPTH'] > depth].iloc[0]
+
+    if upper['DEPTH'] == lower['DEPTH']:
+        return lower[target_cols].values
+
+    weight = (depth - lower['DEPTH']) / (upper['DEPTH'] - lower['DEPTH'])
+    interpolated = lower[target_cols] + weight * \
+        (upper[target_cols] - lower[target_cols])
+
+    return interpolated.values
+
+def process_ngsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.DataFrame]:
+    """
+    Memproses NGSA untuk satu DataFrame sumur menggunakan parameter dinamis.
+    """
+    # --- STEP 1: SIAPKAN DATA & VALIDASI ---
+    required_cols = ['DEPTH', 'GR', 'NPHI']
+    if not all(col in df_well.columns for col in required_cols):
+        print(
+            f"Peringatan: Melewatkan sumur karena kolom {required_cols} tidak lengkap.")
+        return None
+
+    df_ngsa = df_well[required_cols].dropna().copy()
+
+    if len(df_ngsa) < 100:
+        print(
+            f"Peringatan: Data terlalu sedikit untuk regresi NGSA (hanya {len(df_ngsa)} baris)")
+        return None
+
+    # --- STEP 2: SLIDING WINDOW REGRESI DENGAN PARAMETER DINAMIS ---
+    window_size = int(params.get('window_size', 106))
+    step = int(params.get('step', 20))
+    min_points_in_window = int(params.get('min_points_in_window', 30))
+    filters = params.get('filters', {})
+    gr_filter = filters.get('GR', (5, 180))
+    nphi_filter = filters.get('NPHI', (0.05, 0.6))
+
+    coeffs = []
+
+    for start in range(0, len(df_ngsa) - window_size, step):
+        window = df_ngsa.iloc[start:start+window_size]
+        gr = window['GR'].values
+        nphi = window['NPHI'].values
+
+        mask = (gr > gr_filter[0]) & (gr < gr_filter[1]) & (
+            nphi > nphi_filter[0]) & (nphi < nphi_filter[1])
+        gr_filtered = gr[mask]
+        nphi_filtered = nphi[mask]
+
+        if len(gr_filtered) < min_points_in_window:
+            continue
+
+        gr_scaled = 0.01 * gr_filtered
+
+        X = np.vstack([gr_scaled, gr_scaled**2, gr_scaled**3]).T
+        # Untuk NGSA, y adalah nilai NPHI langsung (bukan log)
+        y = nphi_filtered
+
+        try:
+            model = LinearRegression().fit(X, y)
+            if hasattr(model, 'coef_') and len(model.coef_) == 3:
+                coeffs.append({
+                    'DEPTH': window['DEPTH'].mean(),
+                    'b0': model.intercept_, 'b1': model.coef_[0],
+                    'b2': model.coef_[1], 'b3': model.coef_[2]
+                })
+        except Exception as e:
+            print(
+                f"Peringatan: Gagal melakukan regresi pada kedalaman sekitar {window['DEPTH'].mean()}: {e}")
+            continue
+
+    if not coeffs:
+        print("Peringatan: Tidak ada koefisien regresi yang berhasil dihitung.")
+        return None
+
+    coeff_df = pd.DataFrame(coeffs)
+
+    # --- STEP 3: INTERPOLASI & HITUNG NGSA ---
+    ngsa_list = []
+    for _, row in df_ngsa.iterrows():
+        depth, gr = row['DEPTH'], row['GR']
+
+        if not (gr_filter[0] < gr < gr_filter[1]):
+            ngsa_list.append(np.nan)
+            continue
+
+        b0, b1, b2, b3 = _interpolate_coeffs(depth, coeff_df)
+        grfix = 0.01 * gr
+        ngsa = b0 + b1*grfix + b2*grfix**2 + b3*grfix**3
+        ngsa_list.append(ngsa)
+
+    df_ngsa['NGSA'] = ngsa_list
+
+    # --- STEP 4: GABUNGKAN HASIL DAN ANALISIS ---
+    df_merged = pd.merge(
+        df_well, df_ngsa[['DEPTH', 'NGSA']], on='DEPTH', how='left')
+
+    if 'NPHI' in df_merged and 'NGSA' in df_merged:
+        df_merged['GAS_EFFECT_NPHI'] = (df_merged['NPHI'] < df_merged['NGSA'])
+        df_merged['NPHI_DIFF'] = df_merged['NGSA'] - df_merged['NPHI']
+
+    return df_merged
+
+
+def process_all_wells_ngsa(df_well: pd.DataFrame, params: dict):
+    """
+    Fungsi orkestrator utama: memproses NGSA untuk semua sumur dengan parameter kustom.
+    """
+    unique_wells = df_well['WELL_NAME'].unique()
+    print(f"📊 Memproses NGSA untuk {len(unique_wells)} sumur...")
+
+    processed_wells = []
+    failed_wells = []
+
+    for i, well_name in enumerate(unique_wells, 1):
+        print(f"\n🔍 Memproses sumur {i}/{len(unique_wells)}: {well_name}")
+        df_well = df_well[df_well['WELL_NAME'] ==
+                          well_name].copy().reset_index(drop=True)
+
+        result_df = process_ngsa_for_well(df_well, params)
+
+        if result_df is not None:
+            processed_wells.append(result_df)
+            print(f"✅ {well_name} - NGSA berhasil dihitung.")
+        else:
+            failed_wells.append(well_name)
+            print(f"❌ {well_name} - NGSA gagal dihitung.")
+
+    if processed_wells:
+        df_final = pd.concat(processed_wells, ignore_index=True)
+
+        print(
+            f"\n✅ Proses selesai. Hasil gabungan pada file asli.")
+
+        # Menampilkan ringkasan statistik (opsional)
+        # print_summary_statistics_ngsa(df_final, len(processed_wells), failed_wells)
+    else:
+        print("\n❌ Tidak ada sumur yang berhasil diproses!")
+
+    return df_final
+
+def process_all_wells_ngsa(df_well: pd.DataFrame, params: dict):
+    """
+    Fungsi orkestrator utama: memproses NGSA untuk semua sumur dengan parameter kustom.
+    """
+    unique_wells = df_well['WELL_NAME'].unique()
+    print(f"📊 Memproses NGSA untuk {len(unique_wells)} sumur...")
+
+    processed_wells = []
+    failed_wells = []
+
+    for i, well_name in enumerate(unique_wells, 1):
+        print(f"\n🔍 Memproses sumur {i}/{len(unique_wells)}: {well_name}")
+        df_well = df_well[df_well['WELL_NAME'] ==
+                          well_name].copy().reset_index(drop=True)
+
+        result_df = process_ngsa_for_well(df_well, params)
+
+        if result_df is not None:
+            processed_wells.append(result_df)
+            print(f"✅ {well_name} - NGSA berhasil dihitung.")
+        else:
+            failed_wells.append(well_name)
+            print(f"❌ {well_name} - NGSA gagal dihitung.")
+
+    if processed_wells:
+        df_final = pd.concat(processed_wells, ignore_index=True)
+
+        print(
+            f"\n✅ Proses selesai. Hasil gabungan pada file asli.")
+
+        # Menampilkan ringkasan statistik (opsional)
+        # print_summary_statistics_ngsa(df_final, len(processed_wells), failed_wells)
+    else:
+        print("\n❌ Tidak ada sumur yang berhasil diproses!")
+
+    return df_final
+
+def process_dgsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.DataFrame]:
+    """
+    Memproses DGSA untuk satu DataFrame sumur menggunakan parameter dinamis.
+    """
+    # --- STEP 1: SIAPKAN DATA & VALIDASI ---
+    required_cols = ['DEPTH', 'GR', 'RHOB']
+    if not all(col in df_well.columns for col in required_cols):
+        print(
+            f"Peringatan: Melewatkan sumur karena kolom {required_cols} tidak lengkap.")
+        return None
+
+    df_dgsa = df_well[required_cols].dropna().copy()
+
+    if len(df_dgsa) < 100:
+        print(
+            f"Peringatan: Data terlalu sedikit untuk regresi DGSA (hanya {len(df_dgsa)} baris)")
+        return None
+
+    # --- STEP 2: SLIDING WINDOW REGRESI DENGAN PARAMETER DINAMIS ---
+    window_size = int(params.get('window_size', 106))
+    step = int(params.get('step', 20))
+    min_points_in_window = int(params.get('min_points_in_window', 30))
+    filters = params.get('filters', {})
+    gr_filter = filters.get('GR', (5, 180))
+    rhob_filter = filters.get('RHOB', (1.5, 3.0))
+
+    coeffs = []
+
+    for start in range(0, len(df_dgsa) - window_size, step):
+        window = df_dgsa.iloc[start:start+window_size]
+        gr = window['GR'].values
+        dens = window['RHOB'].values
+
+        mask = (gr > gr_filter[0]) & (gr < gr_filter[1]) & (
+            dens > rhob_filter[0]) & (dens < rhob_filter[1])
+        gr_filtered = gr[mask]
+        dens_filtered = dens[mask]
+
+        if len(gr_filtered) < min_points_in_window:
+            continue
+
+        gr_scaled = 0.01 * gr_filtered
+
+        X = np.vstack([gr_scaled, gr_scaled**2, gr_scaled**3]).T
+        y = dens_filtered
+
+        try:
+            model = LinearRegression().fit(X, y)
+            if hasattr(model, 'coef_') and len(model.coef_) == 3:
+                coeffs.append({
+                    'DEPTH': window['DEPTH'].mean(),
+                    'b0': model.intercept_, 'b1': model.coef_[0],
+                    'b2': model.coef_[1], 'b3': model.coef_[2]
+                })
+        except Exception as e:
+            print(
+                f"Peringatan: Gagal melakukan regresi pada kedalaman sekitar {window['DEPTH'].mean()}: {e}")
+            continue
+
+    if not coeffs:
+        print("Peringatan: Tidak ada koefisien regresi yang berhasil dihitung.")
+        return None
+
+    coeff_df = pd.DataFrame(coeffs)
+
+    # --- STEP 3: INTERPOLASI & HITUNG DGSA ---
+    dgsa_list = []
+    for _, row in df_dgsa.iterrows():
+        depth, gr = row['DEPTH'], row['GR']
+
+        if not (gr_filter[0] < gr < gr_filter[1]):
+            dgsa_list.append(np.nan)
+            continue
+
+        b0, b1, b2, b3 = _interpolate_coeffs(depth, coeff_df)
+        grfix = 0.01 * gr
+        dgsa = b0 + b1*grfix + b2*grfix**2 + b3*grfix**3
+        dgsa_list.append(dgsa)
+
+    df_dgsa['DGSA'] = dgsa_list
+
+    # --- STEP 4: GABUNGKAN HASIL DAN ANALISIS ---
+    df_merged = pd.merge(
+        df_well, df_dgsa[['DEPTH', 'DGSA']], on='DEPTH', how='left')
+
+    if 'RHOB' in df_merged and 'DGSA' in df_merged:
+        df_merged['GAS_EFFECT_RHOB'] = (df_merged['RHOB'] < df_merged['DGSA'])
+        df_merged['DENS_DIFF'] = df_merged['DGSA'] - df_merged['RHOB']
+
+    return df_merged
+
+def process_all_wells_dgsa(df_well: str, params: dict):
+    """
+    Fungsi orkestrator utama: memproses DGSA untuk semua sumur dengan parameter kustom.
+    """
+
+    unique_wells = df_well['WELL_NAME'].unique()
+    print(f"📊 Memproses DGSA untuk {len(unique_wells)} sumur...")
+
+    processed_wells = []
+    failed_wells = []
+
+    for i, well_name in enumerate(unique_wells, 1):
+        print(f"\n🔍 Memproses sumur {i}/{len(unique_wells)}: {well_name}")
+        df_well = df_well[df_well['WELL_NAME'] ==
+                          well_name].copy().reset_index(drop=True)
+
+        result_df = process_dgsa_for_well(df_well, params)
+
+        if result_df is not None:
+            processed_wells.append(result_df)
+            print(f"✅ {well_name} - DGSA berhasil dihitung.")
+        else:
+            failed_wells.append(well_name)
+            print(f"❌ {well_name} - DGSA gagal dihitung.")
+
+    if processed_wells:
+        df_final = pd.concat(processed_wells, ignore_index=True)
+
+        print(
+            f"\n✅ Proses selesai. Hasil gabungan pada file asli.")
+
+        # Menampilkan ringkasan statistik (opsional)
+        # print_summary_statistics_dgsa(df_final, len(processed_wells), failed_wells)
+    else:
+        print("\n❌ Tidak ada sumur yang berhasil diproses!")
+
+    return df_final
+
+@app.route('/api/run-gsa-calculation', methods=['POST', 'OPTIONS'])
+def run_gsa_calculation():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            for well_name in selected_wells:
+                file_path = os.path.join(
+                    WELLS_DIR, f"{well_name}.csv")
+
+                df_well = pd.read_csv(file_path)
+
+                # Panggil fungsi orkestrator GSA
+                df_rgsa = process_all_wells_rgsa(df_well, params)
+                df_ngsa = process_all_wells_ngsa(df_rgsa, params)
+                df_dgsa = process_all_wells_dgsa(df_ngsa, params)
+
+                # Validasi kolom penting
+                required_cols = ['GR', 'RT', 'NPHI',
+                                 'RHOB', 'RGSA', 'NGSA', 'DGSA']
+                df_dgsa = df_dgsa.dropna(subset=required_cols)
+
+                # Hitung anomali
+                df_dgsa['RGSA_ANOM'] = df_dgsa['RT'] > df_dgsa['RGSA']
+                df_dgsa['NGSA_ANOM'] = df_dgsa['NPHI'] < df_dgsa['NGSA']
+                df_dgsa['DGSA_ANOM'] = df_dgsa['RHOB'] < df_dgsa['DGSA']
+
+                # Skoring
+                df_dgsa['SCORE'] = df_dgsa[['RGSA_ANOM',
+                                            'NGSA_ANOM', 'DGSA_ANOM']].sum(axis=1)
+
+                # Klasifikasi zona
+                def classify_zone(score):
+                    if score == 3:
+                        return 'Zona Prospek Kuat'
+                    elif score == 2:
+                        return 'Zona Menarik'
+                    elif score == 1:
+                        return 'Zona Lemah'
+                    else:
+                        return 'Non Prospek'
+
+                df_dgsa['ZONA'] = df_dgsa['SCORE'].apply(classify_zone)
+
+                # Simpan kembali file CSV dengan kolom GSA baru
+                df_dgsa.to_csv(file_path, index=False)
+                print(f"Hasil GSA untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi GSA berhasil untuk {len(selected_wells)} sumur."}), 200
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+def plot_gsa_main(df_well):
+    """
+    Fungsi utama untuk membuat plot komprehensif Gas Show Anomaly.
+    """
+    # Lakukan pra-pemrosesan data yang diperlukan untuk plot ini
+    df_well = normalize_xover(df_well, 'NPHI', 'RHOB')
+    df_well = normalize_xover(df_well, 'RT', 'RHOB')
+    df_well = normalize_xover(df_well, 'RT', 'RGSA')
+    df_well = normalize_xover(df_well, 'NPHI', 'NGSA')
+    df_well = normalize_xover(df_well, 'RHOB', 'DGSA')
+
+    zona_mapping = {
+        'Zona Prospek Kuat': 3,
+        'Zona Menarik': 2,
+        'Zona Lemah': 1,
+        'Non Prospek': 0
+    }
+
+    df_well['ZONA'] = df_well['ZONA'].map(zona_mapping)
+    df_marker = extract_markers_with_mean_depth(df_well)
+    df_well_marker = df_well.copy()
+
+    # Definisikan urutan track untuk plot GSA
+    sequence = ['MARKER', 'GR', 'RT_RHOB', 'NPHI_RHOB',
+                'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA', 'ZONA']
+    plot_sequence = {i+1: v for i, v in enumerate(sequence)}
+
+    ratio_plots_seq = [ratio_plots.get(key, 1)
+                       for key in plot_sequence.values()]
+    subplot_col = len(plot_sequence)
+
+    fig = make_subplots(
+        rows=1, cols=subplot_col,
+        shared_yaxes=True,
+        column_widths=ratio_plots_seq,
+        horizontal_spacing=0.01
+    )
+
+    counter = 0
+    axes = {key: [] for key in plot_sequence.values()}
+
+    # Loop untuk memanggil plotter yang sesuai untuk setiap track
+    for n_seq, key in plot_sequence.items():
+        if key == 'MARKER':
+            fig, axes = plot_flag(df_well_marker, fig, axes, key, n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker, df_well_marker['DEPTH'].max(), fig, axes, key, n_seq)
+        elif key == 'GR':
+            fig, axes = plot_line(df_well, fig, axes, key, n_seq)
+        elif key in ['NPHI_RHOB', 'RT_RHOB']:
+            fig, axes, counter = plot_xover_log_normal(
+                df_well, fig, axes, key, n_seq, counter, subplot_col)
+        elif key in ['RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA']:
+            fig, axes, counter = plot_gsa_crossover(
+                df_well, fig, axes, key, n_seq, counter, subplot_col)
+        elif key == 'ZONA':
+            fig, axes = plot_flag(df_well, fig, axes, key, n_seq)
+
+    # Finalisasi Layout
+    fig = layout_range_all_axis(fig, axes, plot_sequence)
+    fig = layout_draw_lines(fig, ratio_plots_seq, df_well, xgrid_intv=50)
+    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+
+    fig.update_layout(
+        title_text="Gas Show Anomaly (GSA) Analysis",
+        yaxis=dict(autorange='reversed', range=[
+                   df_well[depth].max(), df_well[depth].min()]),
+        hovermode='y unified',
+        template='plotly_white',
+        showlegend=False,
+        height=1600,
+    )
+
+    return fig
+
+@app.route('/api/get-gsa-plot', methods=['POST', 'OPTIONS'])
+def get_gsa_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data dari sumur yang dipilih
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            # Panggil fungsi plotting GSA yang baru
+            fig_result = plot_gsa_main(df)
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+def trim_well_log(df, bottom_depth=None, top_depth=None, required_columns=None, mode='AUTO'):
+    """
+    Trim data well log berdasarkan validitas log dan (opsional) batas DEPTH dari user.
+
+    Parameters:
+    - df: DataFrame sumur
+    - bottom_depth: batas bawah DEPTH (opsional)
+    - top_depth: batas atas DEPTH (opsional)
+    - required_columns: list kolom yang dicek validitasnya (default ['GR', 'RT', 'NPHI', 'RHOB'])
+
+    Returns:
+    - DataFrame yang sudah di-trim
+    """
+    if required_columns is None:
+        required_columns = ['GR', 'RT', 'NPHI', 'RHOB']
+
+    # Validasi data berdasarkan required_columns
+    valid_index = {}
+    for col in required_columns:
+        valid_index[col] = df[(df[col] != -999.0) & (df[col].isna())].index
+
+    # Hitung batas default jika tidak ada input user
+    start_idx = min(idx.min()
+                    for idx in valid_index.values())
+    end_idx = max(idx.max()
+                  for idx in valid_index.values())
+
+    depth_min = df['DEPTH'].min()
+    depth_max = df['DEPTH'].max()
+
+    # Konversi input ke float jika diberikan
+    try:
+        if bottom_depth is not None:
+            bottom_depth = float(bottom_depth)
+        if top_depth is not None:
+            top_depth = float(top_depth)
+    except Exception as e:
+        raise ValueError(f"Gagal mengonversi DEPTH input ke float: {e}")
+
+    # Logika trimming berdasarkan mode
+    if mode == 'AUTO':
+        df = df.loc[start_idx:end_idx].copy()
+
+    elif mode == 'UNTIL_TOP':
+        if bottom_depth is None:
+            raise ValueError("BOTTOM_DEPTH harus diisi pada mode UNTIL_TOP")
+        df = df[~((df['DEPTH'] >= depth_min) & (
+            df['DEPTH'] <= bottom_depth))].copy()
+
+    elif mode == 'UNTIL_BOTTOM':
+        if top_depth is None:
+            raise ValueError("TOP_DEPTH harus diisi pada mode UNTIL_BOTTOM")
+        df = df[~((df['DEPTH'] >= top_depth) & (
+            df['DEPTH'] <= depth_max))].copy()
+
+    elif mode == 'CUSTOM':
+        if top_depth is None or bottom_depth is None:
+            raise ValueError(
+                "TOP_DEPTH dan BOTTOM_DEPTH harus diisi untuk mode CUSTOM")
+        if top_depth > bottom_depth:
+            raise ValueError(
+                "TOP_DEPTH tidak boleh lebih besar dari BOTTOM_DEPTH")
+        df = df[~((df['DEPTH'] >= top_depth) & (
+            df['DEPTH'] <= bottom_depth))].copy()
+
+    else:
+        raise ValueError(f"Mode tidak dikenali: {mode}")
+
+    return df
+
+@app.route('/api/trim-data', methods=['POST'])
+def run_trim_well_log():
+    try:
+        data = request.get_json()
+
+        well_names = data.get('selected_wells', [])
+        params = data.get('params', {})
+
+        trim_mode = params.get('TRIM_MODE', 'AUTO')
+        top_depth = params.get('TOP_DEPTH')
+        bottom_depth = params.get('BOTTOM_DEPTH')
+        required_columns = data.get(
+            'required_columns', ['GR', 'RT', 'NPHI', 'RHOB'])
+
+        if not well_names:
+            return jsonify({'error': 'Daftar well_name wajib diisi'}), 400
+
+        responses = []
+
+        for well_name in well_names:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if not os.path.exists(file_path):
+                return jsonify({'error': f"File {well_name}.csv tidak ditemukan."}), 404
+
+            df = pd.read_csv(file_path)
+
+            # Penentuan batas trimming tergantung mode
+            if trim_mode == 'AUTO':
+                trimmed_df = trim_well_log(
+                    df, None, None, required_columns, trim_mode)
+
+            elif trim_mode == 'UNTIL_TOP':
+                if not bottom_depth:
+                    return jsonify({'error': 'BOTTOM_DEPTH harus diisi untuk mode UNTIL_TOP'}), 400
+                trimmed_df = trim_well_log(
+                    df, bottom_depth, None, required_columns, trim_mode)
+
+            elif trim_mode == 'UNTIL_BOTTOM':
+                if not top_depth:
+                    return jsonify({'error': 'TOP_DEPTH harus diisi untuk mode UNTIL_BOTTOM'}), 400
+                trimmed_df = trim_well_log(
+                    df, None, top_depth, required_columns, trim_mode)
+
+            elif trim_mode == 'CUSTOM':
+                if not top_depth or not bottom_depth:
+                    return jsonify({'error': 'TOP_DEPTH dan BOTTOM_DEPTH harus diisi untuk mode CUSTOM'}), 400
+                trimmed_df = trim_well_log(
+                    df, bottom_depth, top_depth, required_columns, trim_mode)
+
+            else:
+                return jsonify({'error': f'Mode tidak dikenali: {trim_mode}'}), 400
+
+            # Simpan hasil
+            trimmed_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            trimmed_df.to_csv(trimmed_path, index=False)
+
+            responses.append({
+                'well': well_name,
+                'rows': len(trimmed_df),
+                'file_saved': f'{well_name}.csv'
+            })
+
+        return jsonify({'message': 'Trimming berhasil', 'results': responses}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/')

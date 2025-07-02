@@ -2285,7 +2285,7 @@ def upload_file():
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-@app.route('/api/qc/run', methods=['POST'])
+@app.route('/api/run-qc', methods=['POST'])
 def run_qc_endpoint():
     app.logger.info("Received /api/run-qc request")
     try:
@@ -2302,9 +2302,9 @@ def run_qc_endpoint():
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-@app.route('/api/qc/handle-nulls', methods=['POST'])
+@app.route('/api/handle-nulls', methods=['POST'])
 def handle_nulls_endpoint():
-    app.logger.info("Received /api/qc/handle-nulls request")
+    app.logger.info("Received /api/handle-nulls request")
     try:
         text = request.get_data(as_text=True)
         if not text:

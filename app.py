@@ -25,6 +25,13 @@ from services.rgsa import process_all_wells_rgsa
 from services.dgsa import process_all_wells_dgsa
 from services.ngsa import process_all_wells_ngsa
 from services.trim_data import trim_well_log
+from services.rgbe_rpbe import process_rgbe_rpbe, plot_rgbe_rpbe
+from services.rt_r0 import process_rt_r0
+from services.swgrad import process_swgrad
+from services.dns_dnsv import process_dns_dnsv
+from services.rt_r0_plot import plot_rt_r0
+from services.swgrad_plot import plot_swgrad
+from services.dns_dnsv_plot import plot_dns_dnsv
 
 app = Flask(__name__)
 
@@ -801,6 +808,325 @@ def get_smoothing_plot():
                 df_marker=df_marker_info,
                 df_well_marker=df
             )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-rgbe-rpbe', methods=['POST', 'OPTIONS'])
+def run_rgbe_rpbe_calculation():
+    """
+    Endpoint for running RGBE-RPBE calculations on selected wells
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                print("[ERROR] /api/run-rgbe-rpbe: No wells selected (selected_wells is empty)")
+                return jsonify({"error": "Tidak ada sumur yang dipilih.", "detail": "selected_wells array is empty"}), 400
+
+            print(f"[INFO] /api/run-rgbe-rpbe: Starting calculation for {len(selected_wells)} wells: {selected_wells}")
+
+            for well_name in selected_wells:
+                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+
+                if not os.path.exists(file_path):
+                    print(f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                    continue
+
+                # Read well data
+                df_well = pd.read_csv(file_path)
+
+                # Process RGBE-RPBE calculations
+                df_processed = process_rgbe_rpbe(df_well, params)
+
+                # Save back to CSV
+                df_processed.to_csv(file_path, index=False)
+                print(f"Hasil RGBE-RPBE untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi RGBE-RPBE berhasil untuk {len(selected_wells)} sumur."}), 200
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-rgbe-rpbe-plot', methods=['POST', 'OPTIONS'])
+def get_rgbe_rpbe_plot():
+    """
+    Endpoint for generating RGBE-RPBE visualization plot
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Read and combine data from selected wells
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            # Validate required columns
+            required_cols = ['DEPTH', 'GR', 'RT', 'NPHI', 'RHOB', 'VSH', 'IQUAL', 'RGBE', 'RPBE']
+            if not all(col in df.columns for col in required_cols):
+                return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RGBE-RPBE terlebih dahulu."}), 400
+
+            # Generate plot
+            fig_result = plot_rgbe_rpbe(df)
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+@app.route('/api/run-rt-r0', methods=['POST', 'OPTIONS'])
+def run_rt_r0_calculation():
+    """
+    Endpoint for running RT-R0 calculations on selected wells
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            print(f"Memulai kalkulasi RT-R0 untuk {len(selected_wells)} sumur...")
+
+            for well_name in selected_wells:
+                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+
+                if not os.path.exists(file_path):
+                    print(f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                    continue
+
+                # Read well data
+                df_well = pd.read_csv(file_path)
+
+                # Process RT-R0 calculations
+                df_processed = process_rt_r0(df_well, params)
+
+                # Save back to CSV
+                df_processed.to_csv(file_path, index=False)
+                print(f"Hasil RT-R0 untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi RT-R0 berhasil untuk {len(selected_wells)} sumur."}), 200
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+@app.route('/api/run-swgrad', methods=['POST', 'OPTIONS'])
+def run_swgrad_calculation():
+    """
+    Endpoint for running SWGRAD calculations on selected wells
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            print(f"Memulai kalkulasi SWGRAD untuk {len(selected_wells)} sumur...")
+
+            for well_name in selected_wells:
+                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+
+                if not os.path.exists(file_path):
+                    print(f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                    continue
+
+                # Read well data
+                df_well = pd.read_csv(file_path)
+
+                # Process SWGRAD calculations
+                df_processed = process_swgrad(df_well, params)
+
+                # Save back to CSV
+                df_processed.to_csv(file_path, index=False)
+                print(f"Hasil SWGRAD untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi SWGRAD berhasil untuk {len(selected_wells)} sumur."}), 200
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+@app.route('/api/run-dns-dnsv', methods=['POST', 'OPTIONS'])
+def run_dns_dnsv_calculation():
+    """
+    Endpoint for running DNS-DNSV calculations on selected wells
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            print(f"Memulai kalkulasi DNS-DNSV untuk {len(selected_wells)} sumur...")
+
+            for well_name in selected_wells:
+                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+
+                if not os.path.exists(file_path):
+                    print(f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                    continue
+
+                # Read well data
+                df_well = pd.read_csv(file_path)
+
+                # Process DNS-DNSV calculations
+                df_processed = process_dns_dnsv(df_well, params)
+
+                # Save back to CSV
+                df_processed.to_csv(file_path, index=False)
+                print(f"Hasil DNS-DNSV untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi DNS-DNSV berhasil untuk {len(selected_wells)} sumur."}), 200
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+@app.route('/api/get-rt-r0-plot', methods=['POST', 'OPTIONS'])
+def get_rt_r0_plot():
+    """
+    Endpoint for generating RT-R0 visualization plot
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Read and combine data from selected wells
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            # Validate required columns
+            required_cols = ['DEPTH', 'GR', 'RT', 'NPHI', 'RHOB', 'VSH', 'IQUAL', 'R0', 'RTR0', 'RWA']
+            if not all(col in df.columns for col in required_cols):
+                return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RT-R0 terlebih dahulu."}), 400
+
+            # Generate plot
+            fig_result = plot_rt_r0(df)
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+@app.route('/api/get-swgrad-plot', methods=['POST', 'OPTIONS'])
+def get_swgrad_plot():
+    """
+    Endpoint for generating SWGRAD visualization plot
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Read and combine data from selected wells
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            # Validate required columns
+            required_cols = ['DEPTH', 'GR', 'RT', 'VSH', 'NPHI', 'RHOB', 'SWGRAD'] + [f'SWARRAY_{i}' for i in range(1, 26)]
+            if not all(col in df.columns for col in required_cols):
+                return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi SWGRAD terlebih dahulu."}), 400
+
+            # Generate plot
+            fig_result = plot_swgrad(df)
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+@app.route('/api/get-dns-dnsv-plot', methods=['POST', 'OPTIONS'])
+def get_dns_dnsv_plot():
+    """
+    Endpoint for generating DNS-DNSV visualization plot
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Read and combine data from selected wells
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            # Validate required columns
+            required_cols = ['DEPTH', 'GR', 'RHOB', 'NPHI', 'VSH', 'DNS', 'DNSV']
+            if not all(col in df.columns for col in required_cols):
+                return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi DNS-DNSV terlebih dahulu."}), 400
+
+            # Generate plot
+            fig_result = plot_dns_dnsv(df)
 
             return jsonify(fig_result.to_json())
 

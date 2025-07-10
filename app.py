@@ -878,19 +878,23 @@ def get_rgbe_rpbe_plot():
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
-            # Read and combine data from selected wells
-            df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df_list = []
+            for well in selected_wells:
+                file_path = os.path.join(WELLS_DIR, f"{well}.csv")
+                # ✨ FIX APPLIED HERE: Handle bad lines gracefully
+                # This will read the file, warn about bad lines in the console,
+                # and skip them instead of crashing.
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
+                df_list.append(df_well)
+
             df = pd.concat(df_list, ignore_index=True)
 
-            # Validate required columns
             required_cols = ['DEPTH', 'GR', 'RT', 'NPHI', 'RHOB', 'VSH', 'IQUAL', 'RGBE', 'RPBE']
             if not all(col in df.columns for col in required_cols):
+                # This error will now be correctly shown if the calculation hasn't been run
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RGBE-RPBE terlebih dahulu."}), 400
 
-            # Generate plot
             fig_result = plot_rgbe_rpbe(df)
-
             return jsonify(fig_result.to_json())
 
         except Exception as e:
@@ -943,37 +947,34 @@ def run_rt_r0_calculation():
 
 @app.route('/api/run-swgrad', methods=['POST', 'OPTIONS'])
 def run_swgrad_calculation():
-    """
-    Endpoint for running SWGRAD calculations on selected wells
-    """
+    """Endpoint for running SWGRAD calculations on selected wells."""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
     if request.method == 'POST':
         try:
             payload = request.get_json()
-            params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
-            print(f"Memulai kalkulasi SWGRAD untuk {len(selected_wells)} sumur...")
-
             for well_name in selected_wells:
                 file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-
                 if not os.path.exists(file_path):
-                    print(f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
                     continue
 
-                # Read well data
-                df_well = pd.read_csv(file_path)
+                # 1. Read data robustly
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-                # Process SWGRAD calculations
-                df_processed = process_swgrad(df_well, params)
+                # 2. Make the process idempotent by dropping old results
+                cols_to_drop = ['SWGRAD'] + [f'SWARRAY_{i}' for i in range(1, 26)]
+                df_well.drop(columns=df_well.columns.intersection(cols_to_drop), inplace=True)
 
-                # Save back to CSV
+                # 3. Process SWGRAD calculations
+                df_processed = process_swgrad(df_well)
+
+                # 4. Save back to CSV
                 df_processed.to_csv(file_path, index=False)
                 print(f"Hasil SWGRAD untuk sumur '{well_name}' telah disimpan.")
 
@@ -1062,12 +1063,10 @@ def get_rt_r0_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
-
+        
 @app.route('/api/get-swgrad-plot', methods=['POST', 'OPTIONS'])
 def get_swgrad_plot():
-    """
-    Endpoint for generating SWGRAD visualization plot
-    """
+    """Endpoint for generating SWGRAD visualization plot."""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
@@ -1079,19 +1078,25 @@ def get_swgrad_plot():
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
-            # Read and combine data from selected wells
-            df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df_list = []
+            for well in selected_wells:
+                file_path = os.path.join(WELLS_DIR, f"{well}.csv")
+                # 1. Read data robustly
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
+                df_list.append(df_well)
+
             df = pd.concat(df_list, ignore_index=True)
 
-            # Validate required columns
+            # 2. Add the normalization step before plotting
+            df = normalize_xover(df, 'NPHI', 'RHOB')
+
+            # 3. Validate that all required columns now exist
             required_cols = ['DEPTH', 'GR', 'RT', 'VSH', 'NPHI', 'RHOB', 'SWGRAD'] + [f'SWARRAY_{i}' for i in range(1, 26)]
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi SWGRAD terlebih dahulu."}), 400
 
-            # Generate plot
+            # 4. Generate plot
             fig_result = plot_swgrad(df)
-
             return jsonify(fig_result.to_json())
 
         except Exception as e:
@@ -1134,6 +1139,9 @@ def get_dns_dnsv_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+        
+
+
 
 
 # This is for local development testing, Vercel will use its own server

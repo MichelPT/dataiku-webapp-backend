@@ -221,47 +221,46 @@ def run_smoothing():
 
 @app.route('/api/get-plot', methods=['POST'])
 def get_plot():
+    """
+    Handles requests to generate a default well log plot for multiple wells.
+    """
     try:
-        # 1. Terima daftar nama sumur dari frontend
         request_data = request.get_json()
         selected_wells = request_data.get('selected_wells')
 
-        if not selected_wells or len(selected_wells) == 0:
-            return jsonify({"error": "Tidak ada sumur yang dipilih"}), 400
+        if not selected_wells:
+            return jsonify({"error": "No wells were selected."}), 400
 
-        print(f"Menerima permintaan untuk memproses sumur: {selected_wells}")
+        print(f"Request received to plot wells: {selected_wells}")
 
-        list_of_dataframes = []
+        df_list = []
         for well_name in selected_wells:
             file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
             if os.path.exists(file_path):
-                list_of_dataframes.append(pd.read_csv(file_path))
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
+                df_list.append(df_well)
 
-        if not list_of_dataframes:
-            return jsonify({"error": "Tidak ada data yang valid untuk sumur yang dipilih"}), 404
+        if not df_list:
+            return jsonify({"error": "No valid data could be found for the selected wells."}), 404
 
-        # Gabungkan semua dataframe menjadi satu dataframe besar
-        df = pd.concat(list_of_dataframes, ignore_index=True)
+        df = pd.concat(df_list, ignore_index=True)
 
-        # 3. PROSES DATA (seperti sebelumnya, tapi pada dataframe gabungan)
         df_marker = extract_markers_with_mean_depth(df)
         df = normalize_xover(df, 'NPHI', 'RHOB')
         df = normalize_xover(df, 'RT', 'RHOB')
 
-        # 4. GENERATE PLOT
         fig = plot_log_default(
             df=df,
             df_marker=df_marker,
             df_well_marker=df
         )
 
-        # 5. KIRIM HASIL
         return jsonify(fig.to_json())
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"An unexpected server error occurred: {str(e)}"}), 500
 
 @app.route('/api/get-normalization-plot', methods=['POST', 'OPTIONS'])
 def get_normalization_plot():

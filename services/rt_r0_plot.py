@@ -13,61 +13,58 @@ from services.plotting_service import (
     layout_axis
 )
 
-def plot_rt_r0(df):
-    """Create RT-R0 visualization plot"""
+def plot_rt_r0(df, title="RT-R0 Analysis"):
+    """
+    Creates a comprehensive RT-R0 visualization plot,
+    incorporating the correct pre-processing from your Colab notebook.
+    """
+    # 1. Pre-process Data (from your working Colab code)
+    # This is the missing step that creates the '_NORM' columns.
+    df = normalize_xover(df, 'NPHI', 'RHOB')
+    df = normalize_xover(df, 'RT', 'RHOB') # Also include other normalizations from your Colab version
     df_marker = extract_markers_with_mean_depth(df)
-    df_well_marker = df.copy()
     
-    # Define plot sequence
-    sequence = ['MARKER', 'GR', 'RT', 'VSH', 'NPHI_RHOB', 'IQUAL', 'R0', 'RTR0', 'RWA']
+    # 2. Define Plot Sequence and Layout
+    # Using the sequence from your backend code as it's more comprehensive
+    sequence = ['MARKER','GR','RT','NPHI_RHOB','VSH','PHIE','IQUAL','RT_RO']
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
 
-    # Plot ratios
     ratio_plots = {
-        'MARKER': 0.1,
-        'GR': 0.2,
-        'RT': 0.2,
-        'VSH': 0.2,
-        'NPHI_RHOB': 0.2,
-        'IQUAL': 0.2,
-        'R0': 0.2,
-        'RTR0': 0.2,
-        'RWA': 0.2
+        'MARKER': 0.1, 'GR': 0.12, 'RT': 0.12, 'VSH': 0.12,
+        'NPHI_RHOB': 0.18, 'IQUAL': 0.1, 'R0': 0.12,
+        'RTR0': 0.12, 'RWA': 0.12
     }
-    
-    # Calculate ratios for subplot widths
-    ratio_plots_seq = [ratio_plots[key] for key in plot_sequence.values()]
+    ratio_plots_seq = [ratio_plots.get(key, 0.1) for key in plot_sequence.values()]
 
-    # Create subplot
-    subplot_col = len(plot_sequence.keys())
+    # 3. Create Subplots
     fig = make_subplots(
-        rows=1, cols=subplot_col,
+        rows=1, cols=len(plot_sequence),
         shared_yaxes=True,
         column_widths=ratio_plots_seq,
-        horizontal_spacing=0.0
+        horizontal_spacing=0.01
     )
 
-    # Initialize counters and axes
+    # 4. Plot Each Track
     counter = 0
-    axes = {i: [] for i in plot_sequence.values()}
+    axes = {val: [] for val in plot_sequence.values()}
 
-    # Plot each component
-    for n_seq, col in plot_sequence.items():
-        if col in ['GR', 'RT', 'VSH', 'R0', 'RTR0', 'RWA']:
-            fig, axes = plot_line(df, fig, axes, base_key=col, n_seq=n_seq, col=col, label=col)
-        elif col == 'NPHI_RHOB':
-            fig, axes, counter = plot_xover_log_normal(df, fig, axes, col, n_seq, counter, n_plots=subplot_col,
-                                                     y_color='rgba(0,0,0,0)', n_color='yellow', type=2)
-        elif col == 'IQUAL':
-            fig, axes = plot_flag(df_well_marker, fig, axes, col, n_seq)
-        elif col == 'MARKER':
-            fig, axes = plot_flag(df_well_marker, fig, axes, col, n_seq)
-            fig, axes = plot_texts_marker(df_marker, df_well_marker['DEPTH'].max(), fig, axes, col, n_seq)
+    for n_seq, key in plot_sequence.items():
+        if key in ['GR', 'RT', 'VSH', 'R0', 'RTR0', 'RWA']:
+            fig, axes = plot_line(df, fig, axes, key, n_seq)
+        
+        elif key == 'NPHI_RHOB':
+            # This call will now succeed because the data has been normalized
+            fig, axes, counter = plot_xover_log_normal(df, fig, axes, key, n_seq, counter, n_plots=len(plot_sequence))
+            
+        elif key == 'IQUAL':
+            fig, axes = plot_flag(df, fig, axes, key, n_seq)
+            
+        elif key == 'MARKER':
+            fig, axes = plot_flag(df, fig, axes, key, n_seq)
+            fig, axes = plot_texts_marker(df_marker, df['DEPTH'].max(), fig, axes, key, n_seq)
 
-    # Apply layouts
+    # 5. Finalize Layout
     fig = layout_range_all_axis(fig, axes, plot_sequence)
-
-    # Update figure layout
     fig.update_layout(
         margin=dict(l=20, r=20, t=40, b=20),
         height=1800,
@@ -75,21 +72,16 @@ def plot_rt_r0(df):
         plot_bgcolor='white',
         showlegend=False,
         hovermode='y unified',
-        hoverdistance=-1,
-        title_text="RT-R0 Analysis",
+        title_text=title,
         title_x=0.5,
-        modebar_remove=['lasso', 'autoscale', 'zoom', 'zoomin', 'zoomout', 'pan', 'select']
     )
-
-    # Update axes
     fig.update_yaxes(
         showspikes=True,
-        range=[df['DEPTH'].max(), df['DEPTH'].min()]
+        range=[df['DEPTH'].max(), df['DEPTH'].min()],
+        autorange=False
     )
     fig.update_traces(yaxis='y')
-
-    # Apply final layouts
-    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=0)
+    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=50)
     fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
 
     return fig

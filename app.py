@@ -15,6 +15,7 @@ from app.services.plotting_service import (
     normalize_xover,
     plot_gsa_main,
     plot_log_default,
+    plot_smoothing,
     plot_normalization,
     plot_phie_den,
     plot_gsa_main,
@@ -979,8 +980,8 @@ def run_trim_well_log():
         well_names = data.get('selected_wells', [])
         params = data.get('params', {})
         trim_mode = params.get('TRIM_MODE', 'AUTO')
-        depth_above = params.get('DEPTH_ABOVE')
-        depth_below = params.get('DEPTH_BELOW')
+        top_depth = params.get('TOP_DEPTH')
+        bottom_depth = params.get('BOTTOM_DEPTH')
         required_columns = data.get(
             'required_columns', ['GR', 'RT', 'NPHI', 'RHOB'])
 
@@ -1033,18 +1034,18 @@ def run_trim_well_log():
 
             else:
                 # Trim selain AUTO menggunakan helper `trim()`
-                above_flag = 1 if depth_above else 0
-                below_flag = 1 if depth_below else 0
+                above_flag = 1 if top_depth else 0
+                below_flag = 1 if bottom_depth else 0
 
-                if above_flag and depth_above is None:
-                    return jsonify({'error': 'depth_above harus diisi'}), 400
-                if below_flag and depth_below is None:
-                    return jsonify({'error': 'depth_below harus diisi'}), 400
+                if above_flag and top_depth is None:
+                    return jsonify({'error': 'top_depth harus diisi'}), 400
+                if below_flag and bottom_depth is None:
+                    return jsonify({'error': 'bottom_depth harus diisi'}), 400
 
                 trimmed_df = trim_data_depth(
                     df.copy(),
-                    depth_above=depth_above or 0,
-                    depth_below=depth_below or 0,
+                    top_depth=top_depth or 0,
+                    bottom_depth=bottom_depth or 0,
                     above=above_flag,
                     below=below_flag,
                     mode=trim_mode

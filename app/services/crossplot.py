@@ -5,7 +5,7 @@ from collections import Counter
 import math
 
 
-def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, gr_sh: float):
+def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, gr_sh: float, rho_ma: float, rho_sh: float, nphi_ma: float, nphi_sh: float):
     df_clean = df[[x_col, y_col]].dropna()
 
     if df_clean.empty:
@@ -106,20 +106,20 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
 
         fig.add_shape(
             type="line",
-            x0=-0.02, x1=1,
-            y0=2.65, y1=1,
+            x0=nphi_ma, x1=1,
+            y0=rho_ma, y1=1,
             line=dict(color="black", width=1, dash="solid"),
         )
         fig.add_shape(
             type="line",
-            x0=0.43, x1=1,
-            y0=2.4, y1=1,
+            x0=nphi_sh, x1=1,
+            y0=rho_sh, y1=1,
             line=dict(color="black", width=1, dash="solid"),
         )
         fig.add_shape(
             type="line",
-            x0=-0.02, x1=0.43,
-            y0=2.65, y1=2.4,
+            x0=nphi_ma, x1=nphi_sh,
+            y0=rho_ma, y1=rho_sh,
             line=dict(color="black", width=1, dash="solid"),
         )
     elif x_col == "NPHI" and y_col == "GR":

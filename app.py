@@ -30,6 +30,7 @@ from app.services.histogram import plot_histogram
 from app.services.crossplot import generate_crossplot
 from app.services.sw import calculate_sw
 from app.services.rwa import calculate_rwa
+from app.services.vsh_dn import calculate_vsh_dn
 
 app = Flask(__name__)
 
@@ -895,6 +896,10 @@ def get_crossplot():
         y_col = payload.get('y_col', 'RHOB')
         gr_ma = float(payload.get('GR_MA', 30))
         gr_sh = float(payload.get('GR_SH', 120))
+        rho_ma = float(payload.get('RHO_MA', 2.645))
+        rho_sh = float(payload.get('RHO_SH', 2.61))
+        nphi_ma = float(payload.get('NPHI_MA', -0.02))
+        nphi_sh = float(payload.get('NPHI_SH', 0.398))
 
         if not selected_wells:
             return jsonify({'error': 'Well belum dipilih'}), 400
@@ -903,7 +908,8 @@ def get_crossplot():
             WELLS_DIR, f"{w}.csv")) for w in selected_wells]
         df = pd.concat(df_list, ignore_index=True)
 
-        fig = generate_crossplot(df, x_col, y_col, gr_ma, gr_sh)
+        fig = generate_crossplot(
+            df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh)
         return jsonify(fig.to_dict())
 
     except Exception as e:
@@ -1099,6 +1105,39 @@ def get_rwa_plot():
             )
 
             return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-vsh-dn-calculation', methods=['POST', 'OPTIONS'])
+def run_vsh_dn_calculation():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            for well_name in selected_wells:
+                file_path = os.path.join(
+                    WELLS_DIR, f"{well_name}.csv")
+                if not os.path.exists(file_path):
+                    continue
+
+                df_well = pd.read_csv(file_path)
+                df_updated = calculate_vsh_dn(df_well, params)
+                df_updated.to_csv(file_path, index=False)
+                print(
+                    f"Hasil VSH-DN untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi VSH (D-N) berhasil untuk {len(selected_wells)} sumur."})
 
         except Exception as e:
             import traceback

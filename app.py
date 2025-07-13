@@ -1,19 +1,19 @@
 # /api/app.py
-from flask import Flask, request, jsonify, Response
-from services.qc_service import run_full_qc_pipeline
-from services.data_processing import handle_null_values, fill_null_values_in_marker_range, min_max_normalize, selective_normalize_handler, smoothing, trim_data_auto, trim_data_depth
-from services.vsh_calculation import calculate_vsh_from_gr
-import logging
-import os
-from flask_cors import CORS
-import pandas as pd
-import numpy as np
-from typing import Optional
-from services.plotting_service import (
+from app.services.vsh_dn import calculate_vsh_dn
+from app.services.rwa import calculate_rwa
+from app.services.sw import calculate_sw
+from app.services.crossplot import generate_crossplot
+from app.services.histogram import plot_histogram
+from app.services.ngsa import process_all_wells_ngsa
+from app.services.dgsa import process_all_wells_dgsa
+from app.services.rgsa import process_all_wells_rgsa
+from app.services.depth_matching import depth_matching, plot_depth_matching_results
+from app.services.porosity import calculate_porosity
+from app.routes.qc_routes import qc_bp
+from app.services.plotting_service import (
     extract_markers_with_mean_depth,
     normalize_xover,
     plot_gsa_main,
-    plot_smoothing,
     plot_log_default,
     plot_normalization,
     plot_phie_den,
@@ -40,6 +40,21 @@ from services.sw import calculate_sw
 from services.crossplot import generate_crossplot
 from services.histogram import plot_histogram
 
+from typing import Optional
+import numpy as np
+import pandas as pd
+from flask_cors import CORS
+import os
+import logging
+from app.services.vsh_calculation import calculate_vsh_from_gr
+from app.services.data_processing import fill_null_values_in_marker_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth
+from app.services.qc_service import run_full_qc_pipeline
+from services.vsh_calculation import calculate_vsh_from_gr
+from services.data_processing import handle_null_values, fill_null_values_in_marker_range, min_max_normalize, selective_normalize_handler, smoothing, trim_data_auto, trim_data_depth
+from services.qc_service import run_full_qc_pipeline
+from flask import Flask, request, jsonify, Response
+
+
 app = Flask(__name__)
 
 # Izinkan permintaan dari semua sumber (penting untuk development)
@@ -47,6 +62,7 @@ CORS(app)
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO)
+app.register_blueprint(qc_bp, url_prefix='/api/qc')
 
 
 @app.route('/')
@@ -117,6 +133,7 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 WELLS_DIR = os.path.join(PROJECT_ROOT, 'data', 'wells')
 LAS_DIR = os.path.join(PROJECT_ROOT, 'data', 'depth-matching')
 
+
 @app.route('/api/fill-null-marker', methods=['POST'])
 def fill_null_marker():
     try:
@@ -154,6 +171,159 @@ def fill_null_marker():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/get-plot', methods=['POST'])
+def get_plot():
+    try:
+        # 1. Terima daftar nama sumur dari frontend
+        request_data = request.get_json()
+        selected_wells = request_data.get('selected_wells')
+
+        if not selected_wells or len(selected_wells) == 0:
+            return jsonify({"error": "Tidak ada sumur yang dipilih"}), 400
+
+        print(f"Menerima permintaan untuk memproses sumur: {selected_wells}")
+
+        list_of_dataframes = []
+        for well_name in selected_wells:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if os.path.exists(file_path):
+                list_of_dataframes.append(pd.read_csv(file_path))
+
+        if not list_of_dataframes:
+            return jsonify({"error": "Tidak ada data yang valid untuk sumur yang dipilih"}), 404
+
+        # Gabungkan semua dataframe menjadi satu dataframe besar
+        df = pd.concat(list_of_dataframes, ignore_index=True)
+
+        # 3. PROSES DATA (seperti sebelumnya, tapi pada dataframe gabungan)
+        df_marker = extract_markers_with_mean_depth(df)
+        df = normalize_xover(df, 'NPHI', 'RHOB')
+        df = normalize_xover(df, 'RT', 'RHOB')
+
+        # 4. GENERATE PLOT
+        fig = plot_log_default(
+            df=df,
+            df_marker=df_marker,
+            df_well_marker=df
+        )
+
+        # 5. KIRIM HASIL
+        return jsonify(fig.to_json())
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-normalization-plot', methods=['POST', 'OPTIONS'])
+def get_normalization_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih"}), 400
+
+            # Baca dan gabungkan HANYA data dari sumur yang dipilih
+            df_list = []
+            for well_name in selected_wells:
+                file_path = os.path.join(
+                    WELLS_DIR, f"{well_name}.csv")
+                if os.path.exists(file_path):
+                    df_list.append(pd.read_csv(file_path))
+
+            if not df_list:
+                return jsonify({"error": "Data untuk sumur yang dipilih tidak ditemukan."}), 404
+
+            df = pd.concat(df_list, ignore_index=True)
+
+            log_in_col = 'GR'
+            log_out_col = 'GR_NORM'
+
+            # Validasi kolom hasil normalisasi
+            if log_out_col not in df.columns or df[log_out_col].isnull().all():
+                return jsonify({"error": f"Tidak ada data normalisasi yang valid untuk sumur yang dipilih. Jalankan proses pada interval yang benar."}), 400
+
+            fig_result = plot_normalization(
+                df=df,
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/list-intervals', methods=['GET'])
+def list_intervals():
+    """
+    Membaca file data utama, menemukan semua nilai unik di kolom 'MARKER',
+    dan mengembalikannya sebagai daftar JSON.
+    """
+    try:
+        if not os.path.exists(WELLS_DIR):
+            return jsonify({"error": f"File data utama tidak ditemukan di {WELLS_DIR}"}), 404
+
+        files = [f for f in os.listdir(WELLS_DIR) if f.endswith('.csv')]
+        if not files:
+            return jsonify({"error": "Tidak ada file CSV ditemukan di folder 'wells'."}), 404
+
+        data = []
+
+        for filename in files:
+            file_path = os.path.join(WELLS_DIR, filename)
+            try:
+                df_temp = pd.read_csv(file_path)
+                data.append(df_temp)
+            except Exception as read_error:
+                print(
+                    f"Peringatan: Gagal membaca file {file_path}. Error: {read_error}")
+
+        df = pd.concat(data, ignore_index=True)
+
+        if 'MARKER' not in df.columns:
+            return jsonify({"error": "Kolom 'MARKER' tidak ditemukan dalam file CSV."}), 404
+
+        if df.empty:
+            return jsonify({"error": "Data gabungan kosong setelah memproses semua file."}), 500
+
+        unique_markers = df['MARKER'].dropna().unique().tolist()
+        unique_markers.sort()
+
+        print(f"Mengirim {len(unique_markers)} interval unik ke frontend.")
+
+        return jsonify(unique_markers)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/list-wells', methods=['GET'])
+def list_wells():
+    try:
+        if not os.path.exists(WELLS_DIR):
+            return jsonify({"error": "Folder 'wells' tidak ditemukan."}), 404
+
+        # Ambil semua file .csv, hapus ekstensinya
+        well_files = [f.replace('.csv', '') for f in os.listdir(
+            WELLS_DIR) if f.endswith('.csv')]
+        well_files.sort()  # Urutkan nama sumur
+
+        return jsonify(well_files)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/get-well-columns', methods=['POST'])
 def get_well_columns():
     try:
@@ -173,7 +343,81 @@ def get_well_columns():
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    
+
+
+@app.route('/api/run-interval-normalization', methods=['POST', 'OPTIONS'])
+def run_interval_normalization():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    try:
+        # Ambil data dari frontend
+        payload = request.get_json()
+        params = payload.get('params', {})
+        selected_wells = payload.get('selected_wells', [])
+        selected_intervals = payload.get('selected_intervals', [])
+
+        if not selected_wells or not selected_intervals:
+            return jsonify({"error": "Sumur dan interval harus dipilih."}), 400
+
+        print(f"Mulai normalisasi untuk {len(selected_wells)} sumur...")
+
+        # Ambil parameter normalisasi
+        log_in_col = params.get('LOG_IN', 'GR')
+        low_ref = float(params.get('LOW_REF', 40))
+        high_ref = float(params.get('HIGH_REF', 140))
+        low_in = int(params.get('LOW_IN', 5))
+        high_in = int(params.get('HIGH_IN', 95))
+        cutoff_min = float(params.get('CUTOFF_MIN', 0.0))
+        cutoff_max = float(params.get('CUTOFF_MAX', 250.0))
+
+        processed_dfs = []
+
+        for well_name in selected_wells:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if not os.path.exists(file_path):
+                print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
+                continue
+
+            df = pd.read_csv(file_path)
+
+            # Jalankan handler normalisasi untuk marker terpilih
+            df_norm = selective_normalize_handler(
+                df=df,
+                log_column=log_in_col,
+                marker_column='MARKER',
+                target_markers=selected_intervals,
+                low_ref=low_ref,
+                high_ref=high_ref,
+                low_in=low_in,
+                high_in=high_in,
+                cutoff_min=cutoff_min,
+                cutoff_max=cutoff_max
+            )
+
+            # Simpan kembali ke file
+            df_norm.to_csv(file_path, index=False)
+            processed_dfs.append(df_norm)
+
+            print(f"Normalisasi selesai untuk {well_name}")
+
+        if not processed_dfs:
+            return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 400
+
+        # Gabungkan semua hasil jika diperlukan
+        final_df = pd.concat(processed_dfs, ignore_index=True)
+        result_json = final_df.to_json(orient='records')
+
+        return jsonify({
+            "message": f"Normalisasi selesai untuk {len(processed_dfs)} sumur.",
+            "data": result_json
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/run-smoothing', methods=['POST', 'OPTIONS'])
 def run_smoothing():
@@ -269,6 +513,7 @@ def get_plot():
         traceback.print_exc()
         return jsonify({"error": f"An unexpected server error occurred: {str(e)}"}), 500
 
+
 @app.route('/api/get-normalization-plot', methods=['POST', 'OPTIONS'])
 def get_normalization_plot():
     if request.method == 'OPTIONS':
@@ -329,12 +574,13 @@ def list_wells():
             # This might happen on the very first run before any files are there
             return jsonify({"error": 'no file found'}), 200
 
-        well_files = [f.replace('.csv', '') for f in os.listdir(WELLS_DIR) if f.endswith('.csv')]
+        well_files = [f.replace('.csv', '')
+                      for f in os.listdir(WELLS_DIR) if f.endswith('.csv')]
         well_files.sort()
         return jsonify(well_files)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
+
 
 @app.route('/api/run-interval-normalization', methods=['POST', 'OPTIONS'])
 def run_interval_normalization():
@@ -491,6 +737,7 @@ def run_vsh_calculation():
             payload = request.get_json()
             params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
+            selected_intervals = payload.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -499,8 +746,8 @@ def run_vsh_calculation():
                 f"Memulai kalkulasi VSH untuk {len(selected_wells)} sumur...")
 
             # Ekstrak parameter dari frontend, dengan nilai default
-            gr_ma = float(params.get('gr_ma', 30))
-            gr_sh = float(params.get('gr_sh', 120))
+            gr_ma = float(params.get('GR_MA', 30))
+            gr_sh = float(params.get('GR_SH', 120))
             input_log = params.get('input_log', 'GR')
             output_log = params.get('output_log', 'VSH_GR')
 
@@ -519,7 +766,11 @@ def run_vsh_calculation():
 
                 # Panggil fungsi logika untuk menghitung VSH
                 df_updated = calculate_vsh_from_gr(
-                    df_well, input_log, gr_ma, gr_sh, output_log)
+
+                    df_well, input_log, gr_ma, gr_sh, output_log,
+                    marker_column='MARKER',  # atau sesuaikan jika kolom marker berbeda
+                    target_markers=selected_intervals
+                )
 
                 # Simpan (overwrite) file CSV dengan data yang sudah diperbarui
                 df_updated.to_csv(file_path, index=False)
@@ -546,6 +797,7 @@ def run_porosity_calculation():
             payload = request.get_json()
             params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
+            selected_intervals = payload.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -560,7 +812,11 @@ def run_porosity_calculation():
                 df_well = pd.read_csv(file_path)
 
                 # Panggil fungsi logika untuk menghitung Porositas
-                df_updated = calculate_porosity(df_well, params)
+                df_updated = calculate_porosity(
+                    df_well, params,
+                    marker_column='MARKER',
+                    target_markers=selected_intervals
+                )
 
                 # Simpan (overwrite) file CSV dengan data yang sudah diperbarui
                 df_updated.to_csv(file_path, index=False)
@@ -597,8 +853,7 @@ def get_porosity_plot():
             df = pd.concat(df_list, ignore_index=True)
 
             # Validasi: Pastikan kolom hasil kalkulasi sebelumnya (VSH, PHIE) sudah ada
-            required_cols = ['VSH', 'PHIE', 'PHIT',
-                             'PHIE_DEN', 'PHIT_DEN']
+            required_cols = ['VSH', 'PHIE', 'PHIT', 'PHIE_DEN', 'PHIT_DEN']
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi VSH dan Porosity terlebih dahulu."}), 400
 
@@ -628,6 +883,8 @@ def run_gsa_calculation():
             payload = request.get_json()
             params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
+            selected_intervals = payload.get('selected_intervals', [])
+            print(selected_intervals)
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -639,14 +896,18 @@ def run_gsa_calculation():
                 df_well = pd.read_csv(file_path)
 
                 # Panggil fungsi orkestrator GSA
-                df_rgsa = process_all_wells_rgsa(df_well, params)
-                df_ngsa = process_all_wells_ngsa(df_rgsa, params)
-                df_dgsa = process_all_wells_dgsa(df_ngsa, params)
+                df_rgsa = process_all_wells_rgsa(
+                    df_well, params, selected_intervals)
+                df_ngsa = process_all_wells_ngsa(
+                    df_rgsa, params, selected_intervals)
+                df_dgsa = process_all_wells_dgsa(
+                    df_ngsa, params, selected_intervals)
 
                 # Validasi kolom penting
                 required_cols = ['GR', 'RT', 'NPHI',
                                  'RHOB', 'RGSA', 'NGSA', 'DGSA']
                 df_dgsa = df_dgsa.dropna(subset=required_cols)
+                # df_dgsa = df_dgsa.dropna(subset=required_cols)
 
                 # Hitung anomali
                 df_dgsa['RGSA_ANOM'] = df_dgsa['RT'] > df_dgsa['RGSA']
@@ -717,10 +978,9 @@ def run_trim_well_log():
 
         well_names = data.get('selected_wells', [])
         params = data.get('params', {})
-
         trim_mode = params.get('TRIM_MODE', 'AUTO')
-        top_depth = params.get('TOP_DEPTH')
-        bottom_depth = params.get('BOTTOM_DEPTH')
+        depth_above = params.get('DEPTH_ABOVE')
+        depth_below = params.get('DEPTH_BELOW')
         required_columns = data.get(
             'required_columns', ['GR', 'RT', 'NPHI', 'RHOB'])
 
@@ -743,7 +1003,9 @@ def run_trim_well_log():
 
             elif trim_mode == 'UNTIL_TOP':
                 if not bottom_depth:
-                    return jsonify({'error': 'BOTTOM_DEPTH harus diisi untuk mode UNTIL_TOP'}), 400
+                    responses.append(
+                        {'error': 'BOTTOM_DEPTH harus diisi untuk mode UNTIL_TOP', 'well': well_name})
+                    continue
                 trimmed_df = trim_well_log(
                     df, bottom_depth, None, required_columns, trim_mode)
 
@@ -761,6 +1023,35 @@ def run_trim_well_log():
 
             else:
                 return jsonify({'error': f'Mode tidak dikenali: {trim_mode}'}), 400
+            if 'DEPTH' not in df.columns:
+                return jsonify({'error': f"Kolom DEPTH tidak ditemukan di {well_name}"}), 400
+
+            df.set_index('DEPTH', inplace=True)
+
+            if trim_mode == 'AUTO':
+                trim_data_auto = trim_data_auto(df, required_columns)
+
+            else:
+                # Trim selain AUTO menggunakan helper `trim()`
+                above_flag = 1 if depth_above else 0
+                below_flag = 1 if depth_below else 0
+
+                if above_flag and depth_above is None:
+                    return jsonify({'error': 'depth_above harus diisi'}), 400
+                if below_flag and depth_below is None:
+                    return jsonify({'error': 'depth_below harus diisi'}), 400
+
+                trimmed_df = trim_data_depth(
+                    df.copy(),
+                    depth_above=depth_above or 0,
+                    depth_below=depth_below or 0,
+                    above=above_flag,
+                    below=below_flag,
+                    mode=trim_mode
+                )
+
+            # Reset index agar DEPTH kembali sebagai kolom
+            trimmed_df.reset_index(inplace=True)
 
             # Simpan hasil
             trimmed_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
@@ -838,16 +1129,19 @@ def run_rgbe_rpbe_calculation():
             selected_wells = payload.get('selected_wells', [])
 
             if not selected_wells:
-                print("[ERROR] /api/run-rgbe-rpbe: No wells selected (selected_wells is empty)")
+                print(
+                    "[ERROR] /api/run-rgbe-rpbe: No wells selected (selected_wells is empty)")
                 return jsonify({"error": "Tidak ada sumur yang dipilih.", "detail": "selected_wells array is empty"}), 400
 
-            print(f"[INFO] /api/run-rgbe-rpbe: Starting calculation for {len(selected_wells)} wells: {selected_wells}")
+            print(
+                f"[INFO] /api/run-rgbe-rpbe: Starting calculation for {len(selected_wells)} wells: {selected_wells}")
 
             for well_name in selected_wells:
                 file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
-                    print(f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                    print(
+                        f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
                     continue
 
                 # Read well data
@@ -858,7 +1152,8 @@ def run_rgbe_rpbe_calculation():
 
                 # Save back to CSV
                 df_processed.to_csv(file_path, index=False)
-                print(f"Hasil RGBE-RPBE untuk sumur '{well_name}' telah disimpan.")
+                print(
+                    f"Hasil RGBE-RPBE untuk sumur '{well_name}' telah disimpan.")
 
             return jsonify({"message": f"Kalkulasi RGBE-RPBE berhasil untuk {len(selected_wells)} sumur."}), 200
 
@@ -895,7 +1190,8 @@ def get_rgbe_rpbe_plot():
 
             df = pd.concat(df_list, ignore_index=True)
 
-            required_cols = ['DEPTH', 'GR', 'RT', 'NPHI', 'RHOB', 'VSH', 'IQUAL', 'RGBE', 'RPBE']
+            required_cols = ['DEPTH', 'GR', 'RT', 'NPHI',
+                             'RHOB', 'VSH', 'IQUAL', 'RGBE', 'RPBE']
             if not all(col in df.columns for col in required_cols):
                 # This error will now be correctly shown if the calculation hasn't been run
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RGBE-RPBE terlebih dahulu."}), 400
@@ -907,6 +1203,7 @@ def get_rgbe_rpbe_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/run-rt-r0', methods=['POST', 'OPTIONS'])
 def run_rt_r0_calculation():
@@ -925,13 +1222,15 @@ def run_rt_r0_calculation():
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
-            print(f"Memulai kalkulasi RT-R0 untuk {len(selected_wells)} sumur...")
+            print(
+                f"Memulai kalkulasi RT-R0 untuk {len(selected_wells)} sumur...")
 
             for well_name in selected_wells:
                 file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
-                    print(f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                    print(
+                        f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
                     continue
 
                 # Read well data
@@ -950,6 +1249,7 @@ def run_rt_r0_calculation():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/run-swgrad', methods=['POST', 'OPTIONS'])
 def run_swgrad_calculation():
@@ -974,15 +1274,18 @@ def run_swgrad_calculation():
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
                 # 2. Make the process idempotent by dropping old results
-                cols_to_drop = ['SWGRAD'] + [f'SWARRAY_{i}' for i in range(1, 26)]
-                df_well.drop(columns=df_well.columns.intersection(cols_to_drop), inplace=True)
+                cols_to_drop = ['SWGRAD'] + \
+                    [f'SWARRAY_{i}' for i in range(1, 26)]
+                df_well.drop(columns=df_well.columns.intersection(
+                    cols_to_drop), inplace=True)
 
                 # 3. Process SWGRAD calculations
                 df_processed = process_swgrad(df_well)
 
                 # 4. Save back to CSV
                 df_processed.to_csv(file_path, index=False)
-                print(f"Hasil SWGRAD untuk sumur '{well_name}' telah disimpan.")
+                print(
+                    f"Hasil SWGRAD untuk sumur '{well_name}' telah disimpan.")
 
             return jsonify({"message": f"Kalkulasi SWGRAD berhasil untuk {len(selected_wells)} sumur."}), 200
 
@@ -990,6 +1293,7 @@ def run_swgrad_calculation():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/run-dns-dnsv', methods=['POST', 'OPTIONS'])
 def run_dns_dnsv_calculation():
@@ -1008,13 +1312,15 @@ def run_dns_dnsv_calculation():
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
-            print(f"Memulai kalkulasi DNS-DNSV untuk {len(selected_wells)} sumur...")
+            print(
+                f"Memulai kalkulasi DNS-DNSV untuk {len(selected_wells)} sumur...")
 
             for well_name in selected_wells:
                 file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
-                    print(f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                    print(
+                        f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
                     continue
 
                 # Read well data
@@ -1025,7 +1331,8 @@ def run_dns_dnsv_calculation():
 
                 # Save back to CSV
                 df_processed.to_csv(file_path, index=False)
-                print(f"Hasil DNS-DNSV untuk sumur '{well_name}' telah disimpan.")
+                print(
+                    f"Hasil DNS-DNSV untuk sumur '{well_name}' telah disimpan.")
 
             return jsonify({"message": f"Kalkulasi DNS-DNSV berhasil untuk {len(selected_wells)} sumur."}), 200
 
@@ -1033,6 +1340,7 @@ def run_dns_dnsv_calculation():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/get-rt-r0-plot', methods=['POST', 'OPTIONS'])
 def get_rt_r0_plot():
@@ -1056,7 +1364,8 @@ def get_rt_r0_plot():
             df = pd.concat(df_list, ignore_index=True)
 
             # Validate required columns
-            required_cols = ['DEPTH', 'GR', 'RT', 'NPHI', 'RHOB', 'VSH', 'IQUAL', 'R0', 'RTR0', 'RWA']
+            required_cols = ['DEPTH', 'GR', 'RT', 'NPHI',
+                             'RHOB', 'VSH', 'IQUAL', 'R0', 'RTR0', 'RWA']
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RT-R0 terlebih dahulu."}), 400
 
@@ -1069,7 +1378,8 @@ def get_rt_r0_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
-        
+
+
 @app.route('/api/get-swgrad-plot', methods=['POST', 'OPTIONS'])
 def get_swgrad_plot():
     """Endpoint for generating SWGRAD visualization plot."""
@@ -1097,7 +1407,8 @@ def get_swgrad_plot():
             df = normalize_xover(df, 'NPHI', 'RHOB')
 
             # 3. Validate that all required columns now exist
-            required_cols = ['DEPTH', 'GR', 'RT', 'VSH', 'NPHI', 'RHOB', 'SWGRAD'] + [f'SWARRAY_{i}' for i in range(1, 26)]
+            required_cols = ['DEPTH', 'GR', 'RT', 'VSH', 'NPHI',
+                             'RHOB', 'SWGRAD'] + [f'SWARRAY_{i}' for i in range(1, 26)]
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi SWGRAD terlebih dahulu."}), 400
 
@@ -1109,6 +1420,7 @@ def get_swgrad_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/get-dns-dnsv-plot', methods=['POST', 'OPTIONS'])
 def get_dns_dnsv_plot():
@@ -1132,7 +1444,8 @@ def get_dns_dnsv_plot():
             df = pd.concat(df_list, ignore_index=True)
 
             # Validate required columns
-            required_cols = ['DEPTH', 'GR', 'RHOB', 'NPHI', 'VSH', 'DNS', 'DNSV']
+            required_cols = ['DEPTH', 'GR', 'RHOB',
+                             'NPHI', 'VSH', 'DNS', 'DNSV']
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi DNS-DNSV terlebih dahulu."}), 400
 
@@ -1145,6 +1458,7 @@ def get_dns_dnsv_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/get-histogram-plot', methods=['POST', 'OPTIONS'])
 def get_histogram_plot():
@@ -1193,6 +1507,10 @@ def get_crossplot():
         y_col = payload.get('y_col', 'RHOB')
         gr_ma = float(payload.get('GR_MA', 30))
         gr_sh = float(payload.get('GR_SH', 120))
+        rho_ma = float(payload.get('RHO_MA', 2.645))
+        rho_sh = float(payload.get('RHO_SH', 2.61))
+        nphi_ma = float(payload.get('NPHI_MA', -0.02))
+        nphi_sh = float(payload.get('NPHI_SH', 0.398))
 
         if not selected_wells:
             return jsonify({'error': 'Well belum dipilih'}), 400
@@ -1201,7 +1519,8 @@ def get_crossplot():
             WELLS_DIR, f"{w}.csv")) for w in selected_wells]
         df = pd.concat(df_list, ignore_index=True)
 
-        fig = generate_crossplot(df, x_col, y_col, gr_ma, gr_sh)
+        fig = generate_crossplot(
+            df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh)
         return jsonify(fig.to_dict())
 
     except Exception as e:
@@ -1234,14 +1553,13 @@ def get_vsh_plot():
             # Validasi: Pastikan kolom VSH sudah ada
             if 'VSH_LINEAR' not in df.columns:
                 # Jika menggunakan 'VSH' sebagai nama kolom utama
-                if 'VSH' in df.columns:
-                    df.rename(columns={'VSH': 'VSH_LINEAR'}, inplace=True)
+                if 'VSH_GR' in df.columns:
+                    df.rename(columns={'VSH_GR': 'VSH_LINEAR'}, inplace=True)
                 else:
-                    return jsonify({"error": "Data VSH belum dihitung. Jalankan modul VSH Calculation terlebih dahulu."}), 400
+                    return jsonify({"error": "Data VSH_GR belum dihitung. Jalankan modul VSH_GR Calculation terlebih dahulu."}), 400
 
             df_marker_info = extract_markers_with_mean_depth(df)
 
-            # Panggil fungsi plotting yang baru
             fig_result = plot_vsh_linear(
                 df=df,
                 df_marker=df_marker_info,
@@ -1398,6 +1716,39 @@ def get_rwa_plot():
             )
 
             return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-vsh-dn-calculation', methods=['POST', 'OPTIONS'])
+def run_vsh_dn_calculation():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            for well_name in selected_wells:
+                file_path = os.path.join(
+                    WELLS_DIR, f"{well_name}.csv")
+                if not os.path.exists(file_path):
+                    continue
+
+                df_well = pd.read_csv(file_path)
+                df_updated = calculate_vsh_dn(df_well, params)
+                df_updated.to_csv(file_path, index=False)
+                print(
+                    f"Hasil VSH-DN untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi VSH (D-N) berhasil untuk {len(selected_wells)} sumur."})
 
         except Exception as e:
             import traceback

@@ -1,0 +1,9 @@
+flask==3.1.0
+gunicorn==22.0.0
+pandas==2.3.0
+numpy==2.3.1
+flask-cors==6.0.1
+lasio==0.31
+plotly==6.1.2
+dtaidistance==2.3.13
+scipy==1.16.0

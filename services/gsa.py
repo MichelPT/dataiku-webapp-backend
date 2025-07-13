@@ -3,10 +3,9 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
-from app.services.rgsa import process_rgsa_for_well
-from app.services.ngsa import process_ngsa_for_well
-from app.services.dgsa import process_dgsa_for_well
-
+from services.rgsa import process_rgsa_for_well
+from services.ngsa import process_ngsa_for_well
+from services.dgsa import process_dgsa_for_well
 
 def _interpolate_coeffs(depth, coeff_df):
     """(Internal) Melakukan interpolasi linear pada koefisien regresi."""

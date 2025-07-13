@@ -2318,7 +2318,7 @@ def main_plot(df_well, title='Well Prediction', class_col=None, cutoff_dict=None
               exclude_xpt=False, exclude_perm=False, exclude_crossover=False, xgrid_intv=0, df_xpt=None, df_well_marker=None, df_marker=None):
     # convert ft to meter:
     # df_well = convert_depth_ft_to_m(df_well, column='DEPTH')
-    sequence = ['MARKER', 'GR', 'RT_RO', 'NPHI_RHOB', "XPT", 'VCL', 'PHIE_PHIT', 'SW', 'PERM',
+    sequence = ['MARKER', 'GR', 'RT_RHOB', 'NPHI_RHOB', "XPT", 'VCL', 'PHIE_PHIT', 'SW', 'PERM',
                 'X_RT_RO', 'RWAPP_RW', 'X_RWA_RW', 'RT_F', 'X_RT_F', 'RT_RHOB', 'X_RT_RHOB', 'TEST']
 
     if class_col:
@@ -2558,11 +2558,11 @@ def plot_log_default(df, df_marker, df_well_marker):
             fig, axes = plot_line(
                 df, fig, axes, base_key='RT', n_seq=n_seq, col=col, label=col)
         elif col == 'NPHI_RHOB':
-            fig, axes, counter = plot_xover_log_normal(df, fig, axes, col, n_seq, counter, n_plots=subplot_col,
-                                                       y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
+            fig, axes, counter = plot_xover_log_normal(
+                df, fig, axes, col, n_seq, counter, n_plots=subplot_col, y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
         elif col == 'RT_RHOB':
-            fig, axes, counter = plot_xover_log_normal(df, fig, axes, col, n_seq, counter, n_plots=subplot_col,
-                                                       y_color='limegreen', n_color='lightgray', type=1, exclude_crossover=False)
+            fig, axes, counter = plot_xover_log_normal(
+                df, fig, axes, col, n_seq, counter, n_plots=subplot_col, y_color='limegreen', n_color='lightgray', type=1, exclude_crossover=False)
         elif col in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB']:
             fig, axes, counter = plot_xover_thres(
                 df, fig, axes, col, n_seq, counter=counter)
@@ -2697,9 +2697,12 @@ def plot_phie_den(df, df_marker, df_well_marker):
             fig, axes = plot_flag(df_well_marker, fig, axes, key, n_seq)
             fig, axes = plot_texts_marker(
                 df_marker, df_well_marker['DEPTH'].max(), fig, axes, key, n_seq)
-        elif key in ['GR', 'RHOB']:
+        elif key == 'GR':
             fig, axes = plot_line(
-                df, fig, axes, base_key=key, n_seq=n_seq, col=key, label=key)
+                df, fig, axes, base_key='GR', n_seq=n_seq, col='GR', label='GR')
+        elif key == 'RHOB':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RHOB', n_seq=n_seq, col='RHOB', label='RHOB')
         elif key in ['PHIE_DEN', 'PHIT_DEN']:
             fig, axes, counter = plot_two_features_simple(
                 df, fig, axes, key, n_seq, counter, n_plots=subplot_col)
@@ -2805,7 +2808,180 @@ def plot_gsa_main(df_well):
 
     return fig
 
-# @title
+
+def plot_vsh_linear(df, df_marker, df_well_marker):
+    """
+    Membuat plot multi-panel untuk visualisasi hasil kalkulasi VSH.
+    """
+
+    df = normalize_xover(df, 'NPHI', 'RHOB')
+    df = normalize_xover(df, 'RT', 'RHOB')
+
+    sequence = ['MARKER', 'GR', 'RT_RHOB', 'NPHI_RHOB', 'VSH_LINEAR']
+    plot_sequence = {i + 1: v for i, v in enumerate(sequence)}
+
+    ratio_plots_seq = [ratio_plots.get(key, 1)
+                       for key in plot_sequence.values()]
+    subplot_col = len(plot_sequence)
+
+    fig = make_subplots(
+        rows=1, cols=subplot_col,
+        shared_yaxes=True,
+        column_widths=ratio_plots_seq,
+        horizontal_spacing=0.01
+    )
+
+    counter = 0
+    axes = {key: [] for key in plot_sequence.values()}
+
+    for n_seq, key in plot_sequence.items():
+        if key == 'MARKER':
+            fig, axes = plot_flag(df_well_marker, fig, axes, key, n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker, df_well_marker[depth].max(), fig, axes, key, n_seq)
+        elif key == 'GR':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='GR', n_seq=n_seq, col='GR', label='GR')
+        elif key in ['NPHI_RHOB', 'RT_RHOB']:
+            fig, axes, counter = plot_xover_log_normal(
+                df, fig, axes, key, n_seq, counter, subplot_col)
+        elif key == 'VSH_LINEAR':
+            fig, axes = plot_line(df, fig, axes, base_key='VSH_LINEAR',
+                                  n_seq=n_seq, col='VSH_LINEAR', label='VSH_LINEAR')
+
+    # Panggil fungsi-fungsi layout akhir
+    fig = layout_range_all_axis(fig, axes, plot_sequence)
+    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=50)
+    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+
+    # Atur layout global
+    fig.update_layout(
+        margin=dict(l=40, r=20, t=80, b=40),
+        height=1600,
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        showlegend=False,
+        hovermode='y unified',
+        title_text="VSH from Gamma Ray (Linear)",
+        title_x=0.5,
+    )
+    fig.update_yaxes(autorange='reversed', range=[
+                     df[depth].max(), df[depth].min()])
+    fig.update_traces(yaxis='y')
+
+    return fig
+
+
+
+def plot_sw_indo(df, df_marker, df_well_marker):
+    """
+    Membuat plot multi-panel untuk visualisasi hasil kalkulasi Saturasi Air (Indonesia).
+    """
+    df = normalize_xover(df, 'RT', 'RHOB')
+
+    sequence = ['MARKER', 'GR', 'VSH', 'RT_RHOB',
+                'PHIE_DEN', 'SW']
+    plot_sequence = {i + 1: v for i, v in enumerate(sequence)}
+
+    # Pastikan semua key di sequence ada di kamus ratio_plots
+    ratio_plots_seq = [ratio_plots.get(key, 1)
+                       for key in plot_sequence.values()]
+    subplot_col = len(plot_sequence)
+
+    fig = make_subplots(
+        rows=1, cols=subplot_col,
+        shared_yaxes=True,
+        column_widths=ratio_plots_seq,
+        horizontal_spacing=0.01
+    )
+
+    counter = 0
+    axes = {key: [] for key in plot_sequence.values()}
+
+    # Loop untuk memanggil plotter yang sesuai
+    for n_seq, key in plot_sequence.items():
+        if key == 'MARKER':
+            fig, axes = plot_flag(df_well_marker, fig, axes, key, n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker, df_well_marker[depth].max(), fig, axes, key, n_seq)
+        elif key in ['GR', 'VSH']:
+            fig, axes = plot_line(
+                df, fig, axes, base_key=key, n_seq=n_seq, col=key, label=key)
+        elif key == 'RT_RHOB':
+            fig, axes, counter = plot_xover_log_normal(
+                df, fig, axes, key, n_seq, counter, subplot_col)
+        elif key == 'PHIE_DEN':
+            fig, axes, counter = plot_two_features_simple(
+                df, fig, axes, 'PHIE_DEN', n_seq, counter, n_plots=subplot_col)
+        elif key == 'SW':
+            fig, axes = plot_line(
+                df, fig, axes, base_key=key, n_seq=n_seq, col=key, label=key)
+
+    # Finalisasi Layout
+    fig = layout_range_all_axis(fig, axes, plot_sequence)
+    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=50)
+    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+
+    fig.update_layout(
+        title_text="Water Saturation (Indonesia Method) Analysis",
+        yaxis=dict(autorange='reversed', range=[
+                   df[depth].max(), df[depth].min()]), showlegend=False,
+        hovermode='y unified', template='plotly_white', height=1600,
+    )
+    return fig
+
+
+def plot_rwa_indo(df, df_marker, df_well_marker):
+    """
+    Membuat plot multi-panel untuk visualisasi hasil kalkulasi RWA.
+    """
+    df = normalize_xover(df, 'RT', 'RHOB')
+
+    sequence = ['MARKER', 'GR', 'VSH', 'RT_RHOB', 'PHIE', 'RWA']
+    plot_sequence = {i + 1: v for i, v in enumerate(sequence)}
+
+    ratio_plots_seq = [ratio_plots.get(key, 1)
+                       for key in plot_sequence.values()]
+    subplot_col = len(plot_sequence)
+
+    fig = make_subplots(
+        rows=1, cols=subplot_col,
+        shared_yaxes=True,
+        column_widths=ratio_plots_seq,
+        horizontal_spacing=0.01
+    )
+
+    counter = 0
+    axes = {key: [] for key in plot_sequence.values()}
+
+    for n_seq, key in plot_sequence.items():
+        if key == 'MARKER':
+            fig, axes = plot_flag(df_well_marker, fig, axes, key, n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker, df_well_marker[depth].max(), fig, axes, key, n_seq)
+        elif key in ['GR', 'VSH', 'PHIE']:
+            fig, axes = plot_line(
+                df, fig, axes, base_key=key, n_seq=n_seq, col=key, label=key)
+        elif key == 'RT_RHOB':
+            fig, axes, counter = plot_xover_log_normal(
+                df, fig, axes, key, n_seq, counter, subplot_col)
+        elif key == 'RWA':
+            fig, axes, counter = plot_three_features_simple(
+                df, fig, axes, key, n_seq, counter, subplot_col, log_scale=True)
+
+    # Finalisasi Layout
+    fig = layout_range_all_axis(fig, axes, plot_sequence)
+    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=50)
+    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+
+    fig.update_layout(
+        title_text="Apparent Water Resistivity (RWA) Analysis",
+        yaxis=dict(autorange='reversed', range=[
+                   df[depth].max(), df[depth].min()]),
+        hovermode='y unified', template='plotly_white', height=1600,
+        showlegend=False
+    )
+    return fig
 
 
 def plot_smoothing(df, df_marker, df_well_marker):

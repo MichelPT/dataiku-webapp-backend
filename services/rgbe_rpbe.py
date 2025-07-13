@@ -100,7 +100,12 @@ def process_single_well(well_df):
 
     # Filter and select required columns
     df_results = df_results.query('IQUAL > 0').dropna()
-    df_results = df_results[['DEPTH', 'RGBE', 'R_RGBE', 'RPBE', 'R_RPBE']]
+    df_results = df_results[['DEPTH']]  # First select just DEPTH
+    # Now add the columns from df_results_fluid that we know exist
+    df_results['RGBE'] = df_results_fluid['RGBE']
+    df_results['R_RGBE'] = df_results_fluid['R_RGBE']
+    df_results['RPBE'] = df_results_fluid['RPBE']
+    df_results['R_RPBE'] = df_results_fluid['R_RPBE']
 
     return df_results
 
@@ -117,11 +122,27 @@ def process_rgbe_rpbe(df, params=None):
         
         if not well_results.empty:
             # Merge results back to original dataframe
-            df = df.merge(
-                well_results[['DEPTH', 'RGBE', 'R_RGBE', 'RPBE', 'R_RPBE']],
-                on=['DEPTH'],
-                how='left'
-            )
+            # First initialize the new columns with NaN
+            for col in ['RGBE', 'R_RGBE', 'RPBE', 'R_RPBE']:
+                if col not in df.columns:
+                    df[col] = np.nan
+            
+            # Now do the merge safely
+            if not well_results.empty:
+                # Create a temporary merge result
+                merge_cols = ['DEPTH'] + [col for col in ['RGBE', 'R_RGBE', 'RPBE', 'R_RPBE'] 
+                                        if col in well_results.columns]
+                merge_result = df.merge(
+                    well_results[merge_cols],
+                    on=['DEPTH'],
+                    how='left',
+                    suffixes=('', '_new')
+                )
+                
+                # Update only the columns that came from well_results
+                for col in ['RGBE', 'R_RGBE', 'RPBE', 'R_RPBE']:
+                    if col in well_results.columns:
+                        df[col] = merge_result[col + '_new'].fillna(df[col])
         
         # Ensure IQUAL column exists
         if 'IQUAL' not in df.columns:

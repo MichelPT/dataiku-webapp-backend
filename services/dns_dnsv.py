@@ -8,7 +8,7 @@ from services.dns_dnsv_plot import plot_dns_dnsv # Assuming your plot function i
 # --- Configuration ---
 app = Flask(__name__)
 # IMPORTANT: Make sure this path is correct for your project structure
-WELLS_DIR = 'path/to/your/wells' 
+WELLS_DIR = os.path.join('..', 'data', 'wells')
 
 # --- Calculation Functions (Your existing code) ---
 def dns(rhob_in, nphi_in):
@@ -30,6 +30,10 @@ def process_dns_dnsv(df, params=None):
         # Safely get parameters with defaults
         rhob_sh = float(params.get('RHOB_SH', 2.528)) 
         nphi_sh = float(params.get('NPHI_SH', 0.35))
+
+        # First rename VSH_LINEAR to VSH if it exists
+        if 'VSH_LINEAR' in df.columns and 'VSH' not in df.columns:
+            df['VSH'] = df['VSH_LINEAR']
 
         # Ensure required columns are numeric, coercing errors
         for col in ['RHOB', 'NPHI', 'VSH']:

@@ -17,7 +17,10 @@ from services.plotting_service import (
     plot_log_default,
     plot_normalization,
     plot_phie_den,
-    plot_gsa_main
+    plot_gsa_main,
+    plot_vsh_linear,
+    plot_sw_indo,
+    plot_rwa_indo
 )
 from services.porosity import calculate_porosity
 from services.depth_matching import depth_matching, plot_depth_matching_results
@@ -32,6 +35,10 @@ from services.dns_dnsv import process_dns_dnsv
 from services.rt_r0_plot import plot_rt_r0
 from services.swgrad_plot import plot_swgrad
 from services.dns_dnsv_plot import plot_dns_dnsv
+from services.rwa import calculate_rwa
+from services.sw import calculate_sw
+from services.crossplot import generate_crossplot
+from services.histogram import plot_histogram
 
 app = Flask(__name__)
 
@@ -1138,9 +1145,264 @@ def get_dns_dnsv_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
-        
+
+@app.route('/api/get-histogram-plot', methods=['POST', 'OPTIONS'])
+def get_histogram_plot():
+    """
+    Endpoint untuk membuat plot histogram berdasarkan sumur dan parameter
+    yang dipilih oleh pengguna.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            selected_wells = payload.get('selected_wells', [])
+            log_to_plot = payload.get('log_column')
+            num_bins = int(payload.get('bins', 50))
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+            if not log_to_plot:
+                return jsonify({"error": "Tidak ada log yang dipilih untuk dianalisis."}), 400
+
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            fig_result = plot_histogram(df, log_to_plot, num_bins)
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/get-crossplot', methods=['POST', 'OPTIONS'])
+def get_crossplot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    try:
+        payload = request.get_json()
+        selected_wells = payload.get('selected_wells', [])
+        x_col = payload.get('x_col', 'NPHI')
+        y_col = payload.get('y_col', 'RHOB')
+        gr_ma = float(payload.get('GR_MA', 30))
+        gr_sh = float(payload.get('GR_SH', 120))
+
+        if not selected_wells:
+            return jsonify({'error': 'Well belum dipilih'}), 400
+
+        df_list = [pd.read_csv(os.path.join(
+            WELLS_DIR, f"{w}.csv")) for w in selected_wells]
+        df = pd.concat(df_list, ignore_index=True)
+
+        fig = generate_crossplot(df, x_col, y_col, gr_ma, gr_sh)
+        return jsonify(fig.to_dict())
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/get-vsh-plot', methods=['POST', 'OPTIONS'])
+def get_vsh_plot():
+    """
+    Endpoint untuk membuat dan menampilkan plot hasil kalkulasi VSH.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data dari sumur yang dipilih
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            # Validasi: Pastikan kolom VSH sudah ada
+            if 'VSH_LINEAR' not in df.columns:
+                # Jika menggunakan 'VSH' sebagai nama kolom utama
+                if 'VSH' in df.columns:
+                    df.rename(columns={'VSH': 'VSH_LINEAR'}, inplace=True)
+                else:
+                    return jsonify({"error": "Data VSH belum dihitung. Jalankan modul VSH Calculation terlebih dahulu."}), 400
+
+            df_marker_info = extract_markers_with_mean_depth(df)
+
+            # Panggil fungsi plotting yang baru
+            fig_result = plot_vsh_linear(
+                df=df,
+                df_marker=df_marker_info,
+                df_well_marker=df
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-sw-calculation', methods=['POST', 'OPTIONS'])
+def run_sw_calculation():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            for well_name in selected_wells:
+                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                if not os.path.exists(file_path):
+                    continue
+
+                df_well = pd.read_csv(file_path)
+
+                df_updated = calculate_sw(df_well, params)
+
+                df_updated.to_csv(file_path, index=False)
+                print(f"Hasil SW untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi Saturasi Air berhasil untuk {len(selected_wells)} sumur."})
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-sw-plot', methods=['POST', 'OPTIONS'])
+def get_sw_plot():
+    """
+    Endpoint untuk membuat dan menampilkan plot hasil kalkulasi Saturasi Air.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data dari sumur yang dipilih
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            # Validasi: Pastikan kolom hasil kalkulasi sebelumnya sudah ada
+            required_cols = ['SWE_INDO']
+            if not all(col in df.columns for col in required_cols):
+                return jsonify({"error": "Data SW belum lengkap. Jalankan modul SW Calculation terlebih dahulu."}), 400
+
+            df_marker_info = extract_markers_with_mean_depth(df)
+
+            # Panggil fungsi plotting yang baru
+            fig_result = plot_sw_indo(
+                df=df,
+                df_marker=df_marker_info,
+                df_well_marker=df
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-rwa-calculation', methods=['POST', 'OPTIONS'])
+def run_rwa_calculation():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            selected_wells = payload.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            for well_name in selected_wells:
+                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                if not os.path.exists(file_path):
+                    continue
+
+                df_well = pd.read_csv(file_path)
+
+                # Panggil fungsi logika untuk menghitung RWA
+                df_updated = calculate_rwa(df_well, params)
+
+                # Simpan kembali file CSV dengan kolom RWA baru
+                df_updated.to_csv(file_path, index=False)
+                print(f"Hasil RWA untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi RWA berhasil untuk {len(selected_wells)} sumur."})
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-rwa-plot', methods=['POST', 'OPTIONS'])
+def get_rwa_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            required_cols = ['RWA_FULL', 'RWA_SIMPLE', 'RWA_TAR']
+            if not all(col in df.columns for col in required_cols):
+                return jsonify({"error": "Data RWA belum dihitung. Jalankan modul RWA Calculation terlebih dahulu."}), 400
+
+            df_marker_info = extract_markers_with_mean_depth(df)
+
+            # Panggil fungsi plotting RWA
+            fig_result = plot_rwa_indo(
+                df=df,
+                df_marker=df_marker_info,
+                df_well_marker=df
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
 
 # This is for local development testing, Vercel will use its own server

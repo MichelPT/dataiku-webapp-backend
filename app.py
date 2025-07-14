@@ -1,33 +1,29 @@
 # /api/app.py
-from app.services.vsh_dn import calculate_vsh_dn
-from app.services.rwa import calculate_rwa
-from app.services.sw import calculate_sw
-from app.services.crossplot import generate_crossplot
-from app.services.histogram import plot_histogram
-from app.services.ngsa import process_all_wells_ngsa
-from app.services.dgsa import process_all_wells_dgsa
-from app.services.rgsa import process_all_wells_rgsa
-from app.services.depth_matching import depth_matching, plot_depth_matching_results
-from app.services.porosity import calculate_porosity
-from app.routes.qc_routes import qc_bp
-from app.services.plotting_service import (
+from services.vsh_dn import calculate_vsh_dn
+from services.rwa import calculate_rwa
+from services.sw import calculate_sw
+from services.crossplot import generate_crossplot
+from services.histogram import plot_histogram
+from services.ngsa import process_all_wells_ngsa
+from services.dgsa import process_all_wells_dgsa
+from services.rgsa import process_all_wells_rgsa
+from services.depth_matching import depth_matching, plot_depth_matching_results
+from services.porosity import calculate_porosity
+from routes.qc_routes import qc_bp
+from services.plotting_service import (
     extract_markers_with_mean_depth,
     normalize_xover,
     plot_gsa_main,
     plot_log_default,
     plot_smoothing,
-    plot_normalization,
     plot_phie_den,
     plot_gsa_main,
     plot_vsh_linear,
     plot_sw_indo,
     plot_rwa_indo
 )
-from services.porosity import calculate_porosity
+from services.plotting_service import plot_normalization
 from services.depth_matching import depth_matching, plot_depth_matching_results
-from services.rgsa import process_all_wells_rgsa
-from services.dgsa import process_all_wells_dgsa
-from services.ngsa import process_all_wells_ngsa
 from services.trim_data import trim_well_log
 from services.rgbe_rpbe import process_rgbe_rpbe, plot_rgbe_rpbe
 from services.rt_r0 import process_rt_r0
@@ -38,8 +34,6 @@ from services.swgrad_plot import plot_swgrad
 from services.dns_dnsv_plot import plot_dns_dnsv
 from services.rwa import calculate_rwa
 from services.sw import calculate_sw
-from services.crossplot import generate_crossplot
-from services.histogram import plot_histogram
 
 from typing import Optional
 import numpy as np
@@ -131,7 +125,7 @@ def handle_nulls_route():
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(SCRIPT_DIR, 'data', 'pass_qc.csv')
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-WELLS_DIR = os.path.join(PROJECT_ROOT, 'data', 'wells')
+WELLS_DIR = 'api/data/wells'
 LAS_DIR = os.path.join(PROJECT_ROOT, 'data', 'depth-matching')
 
 
@@ -154,7 +148,7 @@ def fill_null_marker():
                     {'well': well_name, 'status': 'File tidak ditemukan'})
                 continue
 
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(file_path, on_bad_lines='warn')
 
             struktur = df['STRUKTUR'].iloc[0] if 'STRUKTUR' in df.columns else 'UNKNOWN'
 
@@ -171,96 +165,6 @@ def fill_null_marker():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/get-plot', methods=['POST'])
-def get_plot():
-    try:
-        # 1. Terima daftar nama sumur dari frontend
-        request_data = request.get_json()
-        selected_wells = request_data.get('selected_wells')
-
-        if not selected_wells or len(selected_wells) == 0:
-            return jsonify({"error": "Tidak ada sumur yang dipilih"}), 400
-
-        print(f"Menerima permintaan untuk memproses sumur: {selected_wells}")
-
-        list_of_dataframes = []
-        for well_name in selected_wells:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-            if os.path.exists(file_path):
-                list_of_dataframes.append(pd.read_csv(file_path))
-
-        if not list_of_dataframes:
-            return jsonify({"error": "Tidak ada data yang valid untuk sumur yang dipilih"}), 404
-
-        # Gabungkan semua dataframe menjadi satu dataframe besar
-        df = pd.concat(list_of_dataframes, ignore_index=True)
-
-        # 3. PROSES DATA (seperti sebelumnya, tapi pada dataframe gabungan)
-        df_marker = extract_markers_with_mean_depth(df)
-        df = normalize_xover(df, 'NPHI', 'RHOB')
-        df = normalize_xover(df, 'RT', 'RHOB')
-
-        # 4. GENERATE PLOT
-        fig = plot_log_default(
-            df=df,
-            df_marker=df_marker,
-            df_well_marker=df
-        )
-
-        # 5. KIRIM HASIL
-        return jsonify(fig.to_json())
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/get-normalization-plot', methods=['POST', 'OPTIONS'])
-def get_normalization_plot():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-
-    if request.method == 'POST':
-        try:
-            request_data = request.get_json()
-            selected_wells = request_data.get('selected_wells', [])
-
-            if not selected_wells:
-                return jsonify({"error": "Tidak ada sumur yang dipilih"}), 400
-
-            # Baca dan gabungkan HANYA data dari sumur yang dipilih
-            df_list = []
-            for well_name in selected_wells:
-                file_path = os.path.join(
-                    WELLS_DIR, f"{well_name}.csv")
-                if os.path.exists(file_path):
-                    df_list.append(pd.read_csv(file_path))
-
-            if not df_list:
-                return jsonify({"error": "Data untuk sumur yang dipilih tidak ditemukan."}), 404
-
-            df = pd.concat(df_list, ignore_index=True)
-
-            log_in_col = 'GR'
-            log_out_col = 'GR_NORM'
-
-            # Validasi kolom hasil normalisasi
-            if log_out_col not in df.columns or df[log_out_col].isnull().all():
-                return jsonify({"error": f"Tidak ada data normalisasi yang valid untuk sumur yang dipilih. Jalankan proses pada interval yang benar."}), 400
-
-            fig_result = plot_normalization(
-                df=df,
-            )
-
-            return jsonify(fig_result.to_json())
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/list-intervals', methods=['GET'])
@@ -282,7 +186,7 @@ def list_intervals():
         for filename in files:
             file_path = os.path.join(WELLS_DIR, filename)
             try:
-                df_temp = pd.read_csv(file_path)
+                df_temp = pd.read_csv(file_path, on_bad_lines='warn')
                 data.append(df_temp)
             except Exception as read_error:
                 print(
@@ -309,22 +213,6 @@ def list_intervals():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/list-wells', methods=['GET'])
-def list_wells():
-    try:
-        if not os.path.exists(WELLS_DIR):
-            return jsonify({"error": "Folder 'wells' tidak ditemukan."}), 404
-
-        # Ambil semua file .csv, hapus ekstensinya
-        well_files = [f.replace('.csv', '') for f in os.listdir(
-            WELLS_DIR) if f.endswith('.csv')]
-        well_files.sort()  # Urutkan nama sumur
-
-        return jsonify(well_files)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route('/api/get-well-columns', methods=['POST'])
 def get_well_columns():
     try:
@@ -336,7 +224,7 @@ def get_well_columns():
             file_path = os.path.join(WELLS_DIR, f"{well}.csv")
             if os.path.exists(file_path):
                 # Hanya baca baris pertama
-                df = pd.read_csv(file_path, nrows=1)
+                df = pd.read_csv(file_path, nrows=1, on_bad_lines='warn')
                 result[well] = df.columns.tolist()
             else:
                 result[well] = []
@@ -344,80 +232,6 @@ def get_well_columns():
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/run-interval-normalization', methods=['POST', 'OPTIONS'])
-def run_interval_normalization():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-
-    try:
-        # Ambil data dari frontend
-        payload = request.get_json()
-        params = payload.get('params', {})
-        selected_wells = payload.get('selected_wells', [])
-        selected_intervals = payload.get('selected_intervals', [])
-
-        if not selected_wells or not selected_intervals:
-            return jsonify({"error": "Sumur dan interval harus dipilih."}), 400
-
-        print(f"Mulai normalisasi untuk {len(selected_wells)} sumur...")
-
-        # Ambil parameter normalisasi
-        log_in_col = params.get('LOG_IN', 'GR')
-        low_ref = float(params.get('LOW_REF', 40))
-        high_ref = float(params.get('HIGH_REF', 140))
-        low_in = int(params.get('LOW_IN', 5))
-        high_in = int(params.get('HIGH_IN', 95))
-        cutoff_min = float(params.get('CUTOFF_MIN', 0.0))
-        cutoff_max = float(params.get('CUTOFF_MAX', 250.0))
-
-        processed_dfs = []
-
-        for well_name in selected_wells:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-            if not os.path.exists(file_path):
-                print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
-                continue
-
-            df = pd.read_csv(file_path)
-
-            # Jalankan handler normalisasi untuk marker terpilih
-            df_norm = selective_normalize_handler(
-                df=df,
-                log_column=log_in_col,
-                marker_column='MARKER',
-                target_markers=selected_intervals,
-                low_ref=low_ref,
-                high_ref=high_ref,
-                low_in=low_in,
-                high_in=high_in,
-                cutoff_min=cutoff_min,
-                cutoff_max=cutoff_max
-            )
-
-            # Simpan kembali ke file
-            df_norm.to_csv(file_path, index=False)
-            processed_dfs.append(df_norm)
-
-            print(f"Normalisasi selesai untuk {well_name}")
-
-        if not processed_dfs:
-            return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 400
-
-        # Gabungkan semua hasil jika diperlukan
-        final_df = pd.concat(processed_dfs, ignore_index=True)
-        result_json = final_df.to_json(orient='records')
-
-        return jsonify({
-            "message": f"Normalisasi selesai untuk {len(processed_dfs)} sumur.",
-            "data": result_json
-        })
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/run-smoothing', methods=['POST', 'OPTIONS'])
@@ -443,7 +257,7 @@ def run_smoothing():
                 print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
                 continue
 
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(file_path, on_bad_lines='warn')
 
             df_smooth = smoothing(df)
 
@@ -534,7 +348,7 @@ def get_normalization_plot():
                 file_path = os.path.join(
                     WELLS_DIR, f"{well_name}.csv")
                 if os.path.exists(file_path):
-                    df_list.append(pd.read_csv(file_path))
+                    df_list.append(pd.read_csv(file_path, on_bad_lines='warn'))
 
             if not df_list:
                 return jsonify({"error": "Data untuk sumur yang dipilih tidak ditemukan."}), 404
@@ -623,7 +437,7 @@ def run_interval_normalization():
                     f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
                 continue
 
-            df_well = pd.read_csv(file_path)
+            df_well = pd.read_csv(file_path, on_bad_lines='warn')
             # Buat kolom output baru berisi NaN (Not a Number)
             df_well[log_out_col] = np.nan
 
@@ -763,14 +577,14 @@ def run_vsh_calculation():
                     continue
 
                 # Baca data sumur
-                df_well = pd.read_csv(file_path)
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
                 # Panggil fungsi logika untuk menghitung VSH
                 df_updated = calculate_vsh_from_gr(
 
                     df_well, input_log, gr_ma, gr_sh, output_log,
-                    marker_column='MARKER',  # atau sesuaikan jika kolom marker berbeda
-                    target_markers=selected_intervals
+                    # marker_column='MARKER',  # atau sesuaikan jika kolom marker berbeda
+                    # target_markers=selected_intervals
                 )
 
                 # Simpan (overwrite) file CSV dengan data yang sudah diperbarui
@@ -810,7 +624,7 @@ def run_porosity_calculation():
                 if not os.path.exists(file_path):
                     continue
 
-                df_well = pd.read_csv(file_path)
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
                 # Panggil fungsi logika untuk menghitung Porositas
                 df_updated = calculate_porosity(
@@ -850,7 +664,7 @@ def get_porosity_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validasi: Pastikan kolom hasil kalkulasi sebelumnya (VSH, PHIE) sudah ada
@@ -894,7 +708,7 @@ def run_gsa_calculation():
                 file_path = os.path.join(
                     WELLS_DIR, f"{well_name}.csv")
 
-                df_well = pd.read_csv(file_path)
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
                 # Panggil fungsi orkestrator GSA
                 df_rgsa = process_all_wells_rgsa(
@@ -958,7 +772,7 @@ def get_gsa_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Panggil fungsi plotting GSA yang baru
@@ -995,7 +809,7 @@ def run_trim_well_log():
             if not os.path.exists(file_path):
                 return jsonify({'error': f"File {well_name}.csv tidak ditemukan."}), 404
 
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(file_path, on_bad_lines='warn')
 
             # Penentuan batas trimming tergantung mode
             if trim_mode == 'AUTO':
@@ -1090,7 +904,7 @@ def get_smoothing_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validasi: Pastikan kolom hasil kalkulasi sebelumnya (VSH, PHIE) sudah ada
@@ -1146,7 +960,7 @@ def run_rgbe_rpbe_calculation():
                     continue
 
                 # Read well data
-                df_well = pd.read_csv(file_path)
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
                 # Process RGBE-RPBE calculations
                 df_processed = process_rgbe_rpbe(df_well, params)
@@ -1235,7 +1049,7 @@ def run_rt_r0_calculation():
                     continue
 
                 # Read well data
-                df_well = pd.read_csv(file_path)
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
                 # Process RT-R0 calculations
                 df_processed = process_rt_r0(df_well, params)
@@ -1325,7 +1139,7 @@ def run_dns_dnsv_calculation():
                     continue
 
                 # Read well data
-                df_well = pd.read_csv(file_path)
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
                 # Process DNS-DNSV calculations
                 df_processed = process_dns_dnsv(df_well, params)
@@ -1361,7 +1175,7 @@ def get_rt_r0_plot():
 
             # Read and combine data from selected wells
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validate required columns
@@ -1441,7 +1255,7 @@ def get_dns_dnsv_plot():
 
             # Read and combine data from selected wells
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validate required columns
@@ -1483,7 +1297,7 @@ def get_histogram_plot():
                 return jsonify({"error": "Tidak ada log yang dipilih untuk dianalisis."}), 400
 
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             fig_result = plot_histogram(df, log_to_plot, num_bins)
@@ -1504,6 +1318,7 @@ def get_crossplot():
     try:
         payload = request.get_json()
         selected_wells = payload.get('selected_wells', [])
+        selected_intervals = payload.get('selected_intervals', [])
         x_col = payload.get('x_col', 'NPHI')
         y_col = payload.get('y_col', 'RHOB')
         gr_ma = float(payload.get('GR_MA', 30))
@@ -1517,11 +1332,11 @@ def get_crossplot():
             return jsonify({'error': 'Well belum dipilih'}), 400
 
         df_list = [pd.read_csv(os.path.join(
-            WELLS_DIR, f"{w}.csv")) for w in selected_wells]
+            WELLS_DIR, f"{w}.csv"), on_bad_lines='warn') for w in selected_wells]
         df = pd.concat(df_list, ignore_index=True)
 
         fig = generate_crossplot(
-            df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh)
+            df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, selected_intervals)
         return jsonify(fig.to_dict())
 
     except Exception as e:
@@ -1548,7 +1363,7 @@ def get_vsh_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validasi: Pastikan kolom VSH sudah ada
@@ -1593,7 +1408,7 @@ def run_sw_calculation():
                 if not os.path.exists(file_path):
                     continue
 
-                df_well = pd.read_csv(file_path)
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
                 df_updated = calculate_sw(df_well, params)
 
@@ -1626,7 +1441,7 @@ def get_sw_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validasi: Pastikan kolom hasil kalkulasi sebelumnya sudah ada
@@ -1669,7 +1484,7 @@ def run_rwa_calculation():
                 if not os.path.exists(file_path):
                     continue
 
-                df_well = pd.read_csv(file_path)
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
                 # Panggil fungsi logika untuk menghitung RWA
                 df_updated = calculate_rwa(df_well, params)
@@ -1700,7 +1515,7 @@ def get_rwa_plot():
 
             # Baca dan gabungkan data
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             required_cols = ['RWA_FULL', 'RWA_SIMPLE', 'RWA_TAR']
@@ -1743,7 +1558,7 @@ def run_vsh_dn_calculation():
                 if not os.path.exists(file_path):
                     continue
 
-                df_well = pd.read_csv(file_path)
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
                 df_updated = calculate_vsh_dn(df_well, params)
                 df_updated.to_csv(file_path, index=False)
                 print(

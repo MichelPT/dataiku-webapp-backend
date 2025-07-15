@@ -1445,7 +1445,7 @@ def get_sw_plot():
             df = pd.concat(df_list, ignore_index=True)
 
             # Validasi: Pastikan kolom hasil kalkulasi sebelumnya sudah ada
-            required_cols = ['SWE_INDO']
+            required_cols = ['SW']
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data SW belum lengkap. Jalankan modul SW Calculation terlebih dahulu."}), 400
 

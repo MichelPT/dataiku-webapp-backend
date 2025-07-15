@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 
+
 def calculate_sw(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     """
     Main function to calculate Water Saturation (SW Indonesia) and reservoir classification.
@@ -32,7 +33,7 @@ def calculate_sw(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     print("Calculating Water Saturation (SW Indonesia)...")
     v = df_processed[VSH] ** 2
     ff = A / df_processed[PHIE] ** M
-    
+
     # Avoid division by zero
     ff_times_rw_temp = ff * df_processed["RW_TEMP"]
     ff_times_rw_temp[ff_times_rw_temp == 0] = np.nan

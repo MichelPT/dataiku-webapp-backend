@@ -9,7 +9,7 @@ from services.dgsa import process_all_wells_dgsa
 from services.rgsa import process_all_wells_rgsa
 from services.depth_matching import depth_matching, plot_depth_matching_results
 from services.porosity import calculate_porosity
-from routes.qc_routes import qc_bp
+# from routes.qc_routes import qc_bp
 from services.plotting_service import (
     extract_markers_with_mean_depth,
     normalize_xover,
@@ -57,7 +57,7 @@ CORS(app)
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO)
-app.register_blueprint(qc_bp, url_prefix='/api/qc')
+# app.register_blueprint(qc_bp, url_prefix='/api/qc')
 
 
 @app.route('/')

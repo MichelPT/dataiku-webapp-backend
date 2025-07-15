@@ -125,7 +125,7 @@ def handle_nulls_route():
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(SCRIPT_DIR, 'data', 'pass_qc.csv')
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-WELLS_DIR = 'api/data/wells'
+WELLS_DIR = 'data/wells'
 LAS_DIR = os.path.join(PROJECT_ROOT, 'data', 'depth-matching')
 
 
@@ -629,8 +629,8 @@ def run_porosity_calculation():
                 # Panggil fungsi logika untuk menghitung Porositas
                 df_updated = calculate_porosity(
                     df_well, params,
-                    marker_column='MARKER',
-                    target_markers=selected_intervals
+                    # marker_column='MARKER',
+                    # target_markers=selected_intervals
                 )
 
                 # Simpan (overwrite) file CSV dengan data yang sudah diperbarui

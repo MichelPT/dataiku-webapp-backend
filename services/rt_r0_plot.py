@@ -48,8 +48,8 @@ def plot_rt_r0(df, title="RT-R0 Analysis"):
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
     ratio_plots = {
         'MARKER': 0.1, 'GR': 0.12, 'RT': 0.12, 'VSH': 0.12,
-        'NPHI_RHOB': 0.18, 'IQUAL': 0.1, 'R0': 0.12,
-        'RTR0': 0.12, 'RWA': 0.12, 'PHIE': 0.12, 'RT_RO': 0.12
+        'NPHI_RHOB': 0.18, 'IQUAL': 0.1, 'RO': 0.12,
+        'RT_RO': 0.12, 'RWA': 0.12, 'PHIE': 0.12, 'RT_RO': 0.12
     }
     ratio_plots_seq = [ratio_plots.get(key, 0.1)
                        for key in plot_sequence.values()]
@@ -70,16 +70,16 @@ def plot_rt_r0(df, title="RT-R0 Analysis"):
     for n_seq, col in plot_sequence.items():
         # Treat 'O' and '0' as equivalent in column names (e.g., RT_RO <-> RT_R0)
         col_variants = [col]
-        if 'O' in col:
-            col_variants.append(col.replace('O', '0'))
-        if '0' in col:
-            col_variants.append(col.replace('0', 'O'))
+        # if 'O' in col:
+        #     col_variants.append(col.replace('O', '0'))
+        # if '0' in col:
+        #     col_variants.append(col.replace('0', 'O'))
 
         # Find the first variant that exists in df.columns
         col_to_plot = next((c for c in col_variants if c in df.columns), None)
 
         # Only plot if the required column exists, or if it's a marker/flag/derived track
-        if col_to_plot or col in ['MARKER', 'IQUAL', 'RT_RO', 'RT_R0', 'NPHI_RHOB']:
+        if col_to_plot or col in ['MARKER', 'IQUAL', 'RT_RO', 'RT_O', 'NPHI_RHOB']:
             if col == 'GR' and col_to_plot:
                 fig, axes = plot_line(
                     df, fig, axes, base_key=col_to_plot, n_seq=n_seq, col=col, label=col)
@@ -100,7 +100,7 @@ def plot_rt_r0(df, title="RT-R0 Analysis"):
                                       fig, axes, 'IQUAL', n_seq)
                 fig, axes = plot_texts_marker(
                     df_marker_iqual, df_well_marker_iqual['DEPTH'].max(), fig, axes, col, n_seq)
-            elif col in ['RT_RO', 'RT_R0'] and (col_to_plot is not None):
+            elif col in 'RT_RO' and (col_to_plot is not None):
                 if 'plot_xover' in globals():
                     fig, axes, counter = plot_xover(
                         df, fig, axes, col_to_plot, n_seq, counter, n_plots=subplot_col, y_color='limegreen', n_color='lightgray')
@@ -121,7 +121,7 @@ def plot_rt_r0(df, title="RT-R0 Analysis"):
         plot_bgcolor='white',
         showlegend=False,
         hovermode='y unified', hoverdistance=-1,
-        title_text="RT R0",
+        title_text="RT RO",
         title_x=0.5,
         modebar_remove=['lasso', 'autoscale', 'zoom',
                         'zoomin', 'zoomout', 'pan', 'select']

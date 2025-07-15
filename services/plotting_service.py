@@ -2672,7 +2672,7 @@ def plot_phie_den(df, df_marker, df_well_marker):
     """
     # FIX: Urutan plot disesuaikan dan RESERVOIR_CLASS dihapus
     sequence = ['MARKER', 'GR', 'RHOB',
-                'PHIE_DEN', 'PHIT_DEN', 
+                'PHIE_DEN', 'PHIT_DEN',
                 # 'RESERVOIR_CLASS'
                 ]
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
@@ -2870,7 +2870,6 @@ def plot_vsh_linear(df, df_marker, df_well_marker):
     fig.update_traces(yaxis='y')
 
     return fig
-
 
 
 def plot_sw_indo(df, df_marker, df_well_marker):

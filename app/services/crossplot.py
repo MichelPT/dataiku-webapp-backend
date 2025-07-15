@@ -5,26 +5,31 @@ from collections import Counter
 import math
 
 
-def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, gr_sh: float, rho_ma: float, rho_sh: float, nphi_ma: float, nphi_sh: float):
-    df_clean = df[[x_col, y_col]].dropna()
+def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, gr_sh: float, rho_ma: float, rho_sh: float, nphi_ma: float, nphi_sh: float, selected_intervals: list):
+    """Generate crossplot visualization"""
+    if selected_intervals and 'MARKER' in df.columns:
+        print(f"Filtering data for intervals: {selected_intervals}")
+        df_filtered_by_interval = df[df['MARKER'].isin(
+            selected_intervals)].copy()
+    else:
+        df_filtered_by_interval = df.copy()
+
+    df_clean = df_filtered_by_interval[[x_col, y_col]].dropna()
 
     if df_clean.empty:
         raise ValueError("Tidak ada data valid untuk crossplot.")
 
-    # Tambahkan kolom warna
+    # Add color column
     if x_col == "NPHI" and y_col == "RHOB":
         if "GR" not in df.columns:
-            raise ValueError(
-                "Kolom GR diperlukan untuk plotting ini.")
+            raise ValueError("Kolom GR diperlukan untuk plotting ini.")
         df_clean = df_clean.copy()
         df_clean["COLOR"] = df.loc[df_clean.index, "GR"]
         color_label = "GR (API)"
         color_continuous_title = "Gamma Ray (API)"
         show_shapes = 1
-
         yaxis_range = [3, 1]
         yaxis_dtick = 0.2
-
     else:
         count = Counter(df_clean[x_col])
         freq = [min(count[x], 5) for x in df_clean[x_col]]
@@ -36,10 +41,7 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
         if y_col == "GR":
             y_min = df_clean["GR"].min()
             y_max = df_clean["GR"].max()
-            yaxis_range = [
-                0,
-                math.ceil(y_max / 20) * 20
-            ]
+            yaxis_range = [0, math.ceil(y_max / 20) * 20]
             yaxis_dtick = 20
         else:
             yaxis_range = None
@@ -120,8 +122,8 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
             type="line",
             x0=nphi_ma, x1=nphi_sh,
             y0=rho_ma, y1=rho_sh,
-            line=dict(color="black", width=1, dash="solid"),
-        )
+            line=dict(color="black", width=1, dash="solid")
+        ),
     elif x_col == "NPHI" and y_col == "GR":
         fig.update_layout(
             xaxis=dict(
@@ -154,22 +156,22 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
         fig.add_shape(
             type="line",
             x0=1, y0=0,
-            x1=-0.02, y1=gr_ma,  # y1 digantikan input user GR_MA kalau ada, jika tidak ada tetap 30
+            x1=-0.02, y1=gr_ma,
             xref='x', yref='y',
             line=dict(color="black", width=2, dash="solid"),
             layer='above'
         )
         fig.add_shape(
             type="line",
-            x0=-0.02, y0=gr_ma,  # y0 digantikan input user GR_MA kalau ada, jika tidak ada tetap 30
-            x1=0.4, y1=gr_sh,  # y1 digantikan input user GR_SH kalau ada, jika tidak ada tetap 120
+            x0=-0.02, y0=gr_ma,
+            x1=0.4, y1=gr_sh,
             xref='x', yref='y',
             line=dict(color="black", width=2, dash="solid"),
             layer='above'
         )
         fig.add_shape(
             type="line",
-            x0=0.4, y0=gr_sh,  # y0 digantikan input user GR_SH kalau ada, jika tidak ada tetap 120
+            x0=0.4, y0=gr_sh,
             x1=1, y1=0,
             xref='x', yref='y',
             line=dict(color="black", width=2, dash="solid"),

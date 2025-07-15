@@ -34,7 +34,9 @@ def _interpolate_coeffs(depth, coeff_df):
     return interpolated.values
 
 
-def process_ngsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.DataFrame]:
+def process_ngsa_for_well(df_well: pd.DataFrame, params: dict,
+                          marker_column: str = 'MARKER',
+                          selected_intervals: list = None) -> Optional[pd.DataFrame]:
     """
     Memproses NGSA untuk satu DataFrame sumur menggunakan parameter dinamis.
     """
@@ -45,7 +47,19 @@ def process_ngsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.Da
             f"Peringatan: Melewatkan sumur karena kolom {required_cols} tidak lengkap.")
         return None
 
-    df_ngsa = df_well[required_cols].dropna().copy()
+    # --- Buat mask marker dahulu ---
+    if marker_column in df_well.columns:
+        marker_mask = df_well[marker_column].isin(selected_intervals)
+        df_filtered = df_well[marker_mask].copy()
+    else:
+        df_filtered = df_well.copy()
+
+    # --- Simpan nilai NGSA lama (jika ada) ---
+    ngsa_old = df_filtered['NGSA'].copy() if 'NGSA' in df_filtered.columns else pd.Series([
+        np.nan]*len(df_filtered), index=df_filtered.index)
+
+    # --- Ambil kolom yang dibutuhkan dan dropna ---
+    df_ngsa = df_filtered[required_cols].dropna().copy()
 
     if len(df_ngsa) < 100:
         print(
@@ -118,7 +132,26 @@ def process_ngsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.Da
 
     # --- STEP 4: GABUNGKAN HASIL DAN ANALISIS ---
     df_merged = pd.merge(
-        df_well, df_ngsa[['DEPTH', 'NGSA']], on='DEPTH', how='left')
+        df_well.drop(columns=['NGSA'], errors='ignore'),
+        df_ngsa[['DEPTH', 'NGSA']],
+        on='DEPTH',
+        how='left'
+    )
+
+    # Ambil nilai NGSA lama jika ada
+    ngsa_old = df_well['NGSA'] if 'NGSA' in df_well.columns else pd.Series(
+        [np.nan] * len(df_well), index=df_well.index)
+
+    # Gabungkan NGSA: jika hasil baru NaN, pertahankan nilai lama
+    # Gunakan DEPTH sebagai index agar tidak terjadi mismatched assignment
+    df_merged.set_index('DEPTH', inplace=True)
+    ngsa_old.index = df_well.set_index('DEPTH').index
+
+    # Isi nilai baru hanya jika tidak NaN, selain itu pertahankan nilai lama
+    df_merged['NGSA'] = df_merged['NGSA'].combine_first(ngsa_old)
+
+    # Kembalikan index numerik
+    df_merged.reset_index(inplace=True)
 
     if 'NPHI' in df_merged and 'NGSA' in df_merged:
         df_merged['GAS_EFFECT_NPHI'] = (df_merged['NPHI'] < df_merged['NGSA'])
@@ -127,7 +160,7 @@ def process_ngsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.Da
     return df_merged
 
 
-def process_all_wells_ngsa(df_well: pd.DataFrame, params: dict):
+def process_all_wells_ngsa(df_well: pd.DataFrame, params: dict, selected_intervals: list):
     """
     Fungsi orkestrator utama: memproses NGSA untuk semua sumur dengan parameter kustom.
     """
@@ -142,7 +175,9 @@ def process_all_wells_ngsa(df_well: pd.DataFrame, params: dict):
         df_well = df_well[df_well['WELL_NAME'] ==
                           well_name].copy().reset_index(drop=True)
 
-        result_df = process_ngsa_for_well(df_well, params)
+        result_df = process_ngsa_for_well(df_well, params,
+                                          marker_column='MARKER',
+                                          selected_intervals=selected_intervals)
 
         if result_df is not None:
             processed_wells.append(result_df)

@@ -41,9 +41,9 @@ import pandas as pd
 from flask_cors import CORS
 import os
 import logging
-from app.services.vsh_calculation import calculate_vsh_from_gr
-from app.services.data_processing import fill_null_values_in_marker_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth
-from app.services.qc_service import run_full_qc_pipeline
+from services.vsh_calculation import calculate_vsh_from_gr
+from services.data_processing import fill_null_values_in_marker_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth
+from services.qc_service import run_full_qc_pipeline
 from services.vsh_calculation import calculate_vsh_from_gr
 from services.data_processing import handle_null_values, fill_null_values_in_marker_range, min_max_normalize, selective_normalize_handler, smoothing, trim_data_auto, trim_data_depth
 from services.qc_service import run_full_qc_pipeline
@@ -126,7 +126,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(SCRIPT_DIR, 'data', 'pass_qc.csv')
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 WELLS_DIR = 'data/wells'
-LAS_DIR = os.path.join(PROJECT_ROOT, 'data', 'depth-matching')
+LAS_DIR = 'data/depth-matching'
 
 
 @app.route('/api/fill-null-marker', methods=['POST'])
@@ -234,57 +234,6 @@ def get_well_columns():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/run-smoothing', methods=['POST', 'OPTIONS'])
-def run_smoothing():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-
-    try:
-        payload = request.get_json()
-        selected_wells = payload.get('selected_wells', [])
-        selected_intervals = payload.get('selected_intervals', [])
-
-        if not selected_wells or not selected_intervals:
-            return jsonify({"error": "Sumur dan interval harus dipilih."}), 400
-
-        print(f"Mulai smoothing untuk {len(selected_wells)} sumur...")
-
-        processed_dfs = []
-
-        for well_name in selected_wells:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-            if not os.path.exists(file_path):
-                print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
-                continue
-
-            df = pd.read_csv(file_path, on_bad_lines='warn')
-
-            df_smooth = smoothing(df)
-
-            # Simpan kembali ke file
-            df_smooth.to_csv(file_path, index=False)
-            processed_dfs.append(df_smooth)
-
-            print(f"Smoothing selesai untuk {well_name}")
-
-        if not processed_dfs:
-            return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 400
-
-        # Gabungkan semua hasil jika diperlukan
-        final_df = pd.concat(processed_dfs, ignore_index=True)
-        result_json = final_df.to_json(orient='records')
-
-        return jsonify({
-            "message": f"Smoothing selesai untuk {len(processed_dfs)} sumur.",
-            "data": result_json
-        })
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route('/api/get-plot', methods=['POST'])
 def get_plot():
     """
@@ -370,8 +319,8 @@ def get_normalization_plot():
             # ==========================================================
             fig_result = plot_normalization(
                 df=df,                 # DataFrame lengkap dengan semua data log
-                df_marker=df_marker_info,      # DataFrame khusus untuk teks marker
-                df_well_marker=df      # DataFrame lengkap untuk plot latar belakang marker
+                # df_marker=df_marker_info,      # DataFrame khusus untuk teks marker
+                # df_well_marker=df      # DataFrame lengkap untuk plot latar belakang marker
             )
 
             return jsonify(fig_result.to_json())
@@ -399,95 +348,119 @@ def list_wells():
 
 @app.route('/api/run-interval-normalization', methods=['POST', 'OPTIONS'])
 def run_interval_normalization():
-
     if request.method == 'OPTIONS':
-        # Respons ini sudah cukup untuk memberitahu browser bahwa permintaan POST diizinkan
         return jsonify({'status': 'ok'}), 200
 
     try:
-        # 1. Terima semua data dari frontend: params, sumur, dan interval
+        # Ambil data dari frontend
         payload = request.get_json()
         params = payload.get('params', {})
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
 
         if not selected_wells or not selected_intervals:
-            return jsonify({"error": "Sumur dan Interval harus dipilih."}), 400
+            return jsonify({"error": "Sumur dan interval harus dipilih."}), 400
 
-        print(
-            f"Memulai normalisasi untuk {len(selected_wells)} sumur pada {len(selected_intervals)} interval...")
+        print(f"Mulai normalisasi untuk {len(selected_wells)} sumur...")
 
-        # Ekstrak parameter normalisasi dari payload
+        # Ambil parameter normalisasi
         log_in_col = params.get('LOG_IN', 'GR')
-        log_out_col = params.get('LOG_OUT', 'GR_NORM')
         low_ref = float(params.get('LOW_REF', 40))
         high_ref = float(params.get('HIGH_REF', 140))
-        low_in = int(params.get('LOW_IN', 3))
-        high_in = int(params.get('HIGH_IN', 97))
+        low_in = int(params.get('LOW_IN', 5))
+        high_in = int(params.get('HIGH_IN', 95))
         cutoff_min = float(params.get('CUTOFF_MIN', 0.0))
         cutoff_max = float(params.get('CUTOFF_MAX', 250.0))
 
         processed_dfs = []
 
-        # 2. LOOPING PERTAMA: Iterasi untuk setiap sumur yang dipilih
         for well_name in selected_wells:
             file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
             if not os.path.exists(file_path):
-                print(
-                    f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
                 continue
 
-            df_well = pd.read_csv(file_path, on_bad_lines='warn')
-            # Buat kolom output baru berisi NaN (Not a Number)
-            df_well[log_out_col] = np.nan
+            df = pd.read_csv(file_path)
 
-            # 3. LOOPING KEDUA: Iterasi untuk setiap interval di dalam sumur saat ini
-            for interval in selected_intervals:
-                # Filter dataframe untuk mendapatkan baris yang sesuai dengan interval ini
-                interval_mask = df_well['MARKER'] == interval
+            # Jalankan handler normalisasi untuk marker terpilih
+            df_norm = selective_normalize_handler(
+                df=df,
+                log_column=log_in_col,
+                marker_column='MARKER',
+                target_markers=selected_intervals,
+                low_ref=low_ref,
+                high_ref=high_ref,
+                low_in=low_in,
+                high_in=high_in,
+                cutoff_min=cutoff_min,
+                cutoff_max=cutoff_max
+            )
 
-                # Jika tidak ada data untuk interval ini di sumur saat ini, lewati
-                if interval_mask.sum() == 0:
-                    continue
+            # Simpan kembali ke file
+            df_norm.to_csv(file_path, index=False)
+            processed_dfs.append(df_norm)
 
-                # Ambil data log HANYA dari subset interval ini
-                log_to_normalize = df_well.loc[interval_mask, log_in_col].dropna(
-                ).values
+            print(f"Normalisasi selesai untuk {well_name}")
 
-                if len(log_to_normalize) == 0:
-                    continue
-
-                # 4. JALANKAN NORMALISASI pada data subset
-                normalized_values = min_max_normalize(
-                    log_in=log_to_normalize,
-                    low_ref=low_ref,
-                    high_ref=high_ref,
-                    low_in=low_in,
-                    high_in=high_in,
-                    cutoff_min=cutoff_min,
-                    cutoff_max=cutoff_max
-                )
-
-                # 5. SIMPAN HASIL kembali ke dataframe utama pada baris yang benar
-                df_well.loc[interval_mask, log_out_col] = normalized_values
-
-            processed_dfs.append(df_well)
-            df_well.to_csv(file_path, index=False)
-            print(
-                f"Hasil normalisasi untuk sumur '{well_name}' telah disimpan ke {file_path}")
-
-        # 6. Gabungkan semua dataframe yang sudah diproses
         if not processed_dfs:
-            return jsonify({"error": "Tidak ada data yang berhasil diproses."}), 400
+            return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 400
 
+        # Gabungkan semua hasil jika diperlukan
         final_df = pd.concat(processed_dfs, ignore_index=True)
-
-        # 7. Kembalikan data yang sudah dinormalisasi sebagai JSON
-        # Format 'records' mudah dibaca oleh JavaScript
         result_json = final_df.to_json(orient='records')
 
         return jsonify({
             "message": f"Normalisasi selesai untuk {len(processed_dfs)} sumur.",
+            "data": result_json
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-smoothing', methods=['POST', 'OPTIONS'])
+def run_smoothing():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    try:
+        payload = request.get_json()
+        selected_wells = payload.get('selected_wells', [])
+        selected_intervals = payload.get('selected_intervals', [])
+
+        if not selected_wells or not selected_intervals:
+            return jsonify({"error": "Sumur dan interval harus dipilih."}), 400
+
+        print(f"Mulai smoothing untuk {len(selected_wells)} sumur...")
+
+        processed_dfs = []
+
+        for well_name in selected_wells:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if not os.path.exists(file_path):
+                print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
+                continue
+
+            df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            df_smooth = smoothing(df)
+
+            # Simpan kembali ke file
+            df_smooth.to_csv(file_path, index=False)
+            processed_dfs.append(df_smooth)
+
+            print(f"Smoothing selesai untuk {well_name}")
+
+        if not processed_dfs:
+            return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 400
+
+        # Gabungkan semua hasil jika diperlukan
+        final_df = pd.concat(processed_dfs, ignore_index=True)
+        result_json = final_df.to_json(orient='records')
+        return jsonify({
+            "message": f"Smoothing selesai untuk {len(processed_dfs)} sumur.",
             "data": result_json
         })
 
@@ -793,9 +766,9 @@ def run_trim_well_log():
 
         well_names = data.get('selected_wells', [])
         params = data.get('params', {})
-        trim_mode = params.get('TRIM_MODE', 'AUTO')
-        top_depth = params.get('TOP_DEPTH')
-        bottom_depth = params.get('BOTTOM_DEPTH')
+        trim_mode = params.get('TRIM_MODE')
+        depth_above = params.get('DEPTH_ABOVE')
+        depth_below = params.get('DEPTH_BELOW')
         required_columns = data.get(
             'required_columns', ['GR', 'RT', 'NPHI', 'RHOB'])
 
@@ -811,59 +784,27 @@ def run_trim_well_log():
 
             df = pd.read_csv(file_path, on_bad_lines='warn')
 
-            # Penentuan batas trimming tergantung mode
-            if trim_mode == 'AUTO':
-                trimmed_df = trim_well_log(
-                    df, None, None, required_columns, trim_mode)
-
-            elif trim_mode == 'UNTIL_TOP':
-                if not bottom_depth:
-                    responses.append(
-                        {'error': 'BOTTOM_DEPTH harus diisi untuk mode UNTIL_TOP', 'well': well_name})
-                    continue
-                trimmed_df = trim_well_log(
-                    df, bottom_depth, None, required_columns, trim_mode)
-
-            elif trim_mode == 'UNTIL_BOTTOM':
-                if not top_depth:
-                    return jsonify({'error': 'TOP_DEPTH harus diisi untuk mode UNTIL_BOTTOM'}), 400
-                trimmed_df = trim_well_log(
-                    df, None, top_depth, required_columns, trim_mode)
-
-            elif trim_mode == 'CUSTOM':
-                if not top_depth or not bottom_depth:
-                    return jsonify({'error': 'TOP_DEPTH dan BOTTOM_DEPTH harus diisi untuk mode CUSTOM'}), 400
-                trimmed_df = trim_well_log(
-                    df, bottom_depth, top_depth, required_columns, trim_mode)
-
-            else:
-                return jsonify({'error': f'Mode tidak dikenali: {trim_mode}'}), 400
             if 'DEPTH' not in df.columns:
                 return jsonify({'error': f"Kolom DEPTH tidak ditemukan di {well_name}"}), 400
 
             df.set_index('DEPTH', inplace=True)
 
-            if trim_mode == 'AUTO':
-                trim_data_auto = trim_data_auto(df, required_columns)
+            above_flag = 1 if depth_above else 0
+            below_flag = 1 if depth_below else 0
 
-            else:
-                # Trim selain AUTO menggunakan helper `trim()`
-                above_flag = 1 if top_depth else 0
-                below_flag = 1 if bottom_depth else 0
+            if above_flag and depth_above is None:
+                return jsonify({'error': 'depth_above harus diisi'}), 400
+            if below_flag and depth_below is None:
+                return jsonify({'error': 'depth_below harus diisi'}), 400
 
-                if above_flag and top_depth is None:
-                    return jsonify({'error': 'top_depth harus diisi'}), 400
-                if below_flag and bottom_depth is None:
-                    return jsonify({'error': 'bottom_depth harus diisi'}), 400
-
-                trimmed_df = trim_data_depth(
-                    df.copy(),
-                    top_depth=top_depth or 0,
-                    bottom_depth=bottom_depth or 0,
-                    above=above_flag,
-                    below=below_flag,
-                    mode=trim_mode
-                )
+            trimmed_df = trim_data_depth(
+                df.copy(),
+                depth_above=depth_above or 0,
+                depth_below=depth_below or 0,
+                above=above_flag,
+                below=below_flag,
+                mode=trim_mode
+            )
 
             # Reset index agar DEPTH kembali sebagai kolom
             trimmed_df.reset_index(inplace=True)

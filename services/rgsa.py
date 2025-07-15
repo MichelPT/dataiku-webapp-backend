@@ -11,7 +11,9 @@ import os
 # FIX: Fungsi inti sekarang menerima dictionary 'params' untuk kustomisasi
 
 
-def process_rgsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.DataFrame]:
+def process_rgsa_for_well(df_well: pd.DataFrame, params: dict,
+                          marker_column: str = 'MARKER',
+                          selected_intervals: list = None) -> Optional[pd.DataFrame]:
     """
     Memproses RGSA untuk satu DataFrame sumur menggunakan parameter dinamis.
     """
@@ -22,7 +24,21 @@ def process_rgsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.Da
             f"Peringatan: Melewatkan sumur karena kolom {required_cols} tidak lengkap.")
         return None
 
-    df_rgsa = df_well[required_cols].dropna().copy()
+    print(selected_intervals)
+
+    # --- Buat mask marker dahulu ---
+    if marker_column in df_well.columns:
+        marker_mask = df_well[marker_column].isin(selected_intervals)
+        df_filtered = df_well[marker_mask].copy()
+    else:
+        df_filtered = df_well.copy()
+
+    # --- Simpan nilai RGSA lama (jika ada) ---
+    rgsa_old = df_filtered['RGSA'].copy() if 'RGSA' in df_filtered.columns else pd.Series([
+        np.nan]*len(df_filtered), index=df_filtered.index)
+
+    # --- Ambil kolom yang dibutuhkan dan dropna ---
+    df_rgsa = df_filtered[required_cols].dropna().copy()
 
     if len(df_rgsa) < 100:
         print(
@@ -110,8 +126,28 @@ def process_rgsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.Da
     df_rgsa['RGSA'] = rgsa_list
 
     # --- STEP 4: GABUNGKAN HASIL DAN ANALISIS ---
+    # Merge hasil RGSA baru ke df_well
     df_merged = pd.merge(
-        df_well, df_rgsa[['DEPTH', 'RGSA']], on='DEPTH', how='left')
+        df_well.drop(columns=['RGSA'], errors='ignore'),
+        df_rgsa[['DEPTH', 'RGSA']],
+        on='DEPTH',
+        how='left'
+    )
+
+    # Ambil nilai RGSA lama jika ada
+    rgsa_old = df_well['RGSA'] if 'RGSA' in df_well.columns else pd.Series(
+        [np.nan] * len(df_well), index=df_well.index)
+
+    # Gabungkan RGSA: jika hasil baru NaN, pertahankan nilai lama
+    # Gunakan DEPTH sebagai index agar tidak terjadi mismatched assignment
+    df_merged.set_index('DEPTH', inplace=True)
+    rgsa_old.index = df_well.set_index('DEPTH').index
+
+    # Isi nilai baru hanya jika tidak NaN, selain itu pertahankan nilai lama
+    df_merged['RGSA'] = df_merged['RGSA'].combine_first(rgsa_old)
+
+    # Kembalikan index numerik
+    df_merged.reset_index(inplace=True)
 
     if 'RT' in df_merged and 'RGSA' in df_merged:
         df_merged['GAS_EFFECT_RT'] = (df_merged['RT'] > df_merged['RGSA'])
@@ -120,10 +156,8 @@ def process_rgsa_for_well(df_well: pd.DataFrame, params: dict) -> Optional[pd.Da
 
     return df_merged
 
-# FIX: Fungsi orkestrator sekarang menerima dan meneruskan `params`
 
-
-def process_all_wells_rgsa(df_well: pd.DataFrame, params: dict):
+def process_all_wells_rgsa(df_well: pd.DataFrame, params: dict, selected_intervals: list):
     """
     Fungsi orkestrator utama: memproses RGSA untuk semua sumur dengan parameter kustom.
     """
@@ -140,7 +174,9 @@ def process_all_wells_rgsa(df_well: pd.DataFrame, params: dict):
                           well_name].copy().reset_index(drop=True)
 
         # Teruskan dictionary `params` ke fungsi pemrosesan
-        result_df = process_rgsa_for_well(df_well, params)
+        result_df = process_rgsa_for_well(df_well, params,
+                                          marker_column='MARKER',
+                                          selected_intervals=selected_intervals)
 
         if result_df is not None:
             processed_wells.append(result_df)

@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from scipy.stats import gaussian_kde
 
+
 def plot_histogram(df: pd.DataFrame, log_column: str, n_bins: int):
     """Create histogram visualization with KDE and CDF"""
     if log_column not in df.columns:
@@ -20,7 +21,7 @@ def plot_histogram(df: pd.DataFrame, log_column: str, n_bins: int):
     cdf_x = np.sort(data)
     cdf_y = np.arange(1, len(cdf_x) + 1) / len(cdf_x)
 
-    percentiles = np.percentile(data, [5, 25, 50, 75, 95])
+    percentiles = np.percentile(data, [5, 95])
 
     fig = go.Figure()
 
@@ -77,7 +78,7 @@ def plot_histogram(df: pd.DataFrame, log_column: str, n_bins: int):
         paper_bgcolor='rgba(230,230,210,1)',
         bargap=0.05,
         legend=dict(orientation='h', yanchor='bottom',
-                   y=1.02, xanchor='right', x=1),
+                    y=1.02, xanchor='right', x=1),
         margin=dict(l=40, r=40, t=60, b=60),
         height=500
     )
@@ -85,10 +86,7 @@ def plot_histogram(df: pd.DataFrame, log_column: str, n_bins: int):
     # Add percentile information
     percentile_text = "<br>".join([
         f"P5: {percentiles[0]:.2f}",
-        f"P25: {percentiles[1]:.2f}",
-        f"P50: {percentiles[2]:.2f}",
-        f"P75: {percentiles[3]:.2f}",
-        f"P95: {percentiles[4]:.2f}"
+        f"P95: {percentiles[1]:.2f}"
     ])
 
     fig.add_annotation(

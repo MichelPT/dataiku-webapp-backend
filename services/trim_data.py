@@ -2,7 +2,7 @@
 import pandas as pd
 
 
-def trim_well_log(df, bottom_depth=None, top_depth=None, required_columns=None, mode='AUTO'):
+def trim_well_log(df, bottom_depth=None, top_depth=None, required_columns=None, mode='CUSTOM'):
     """
     Trim data well log berdasarkan validitas log dan (opsional) batas DEPTH dari user.
 
@@ -23,12 +23,6 @@ def trim_well_log(df, bottom_depth=None, top_depth=None, required_columns=None, 
     for col in required_columns:
         valid_index[col] = df[(df[col] != -999.0) & (df[col].isna())].index
 
-    # Hitung batas default jika tidak ada input user
-    start_idx = min(idx.min()
-                    for idx in valid_index.values())
-    end_idx = max(idx.max()
-                  for idx in valid_index.values())
-
     depth_min = df['DEPTH'].min()
     depth_max = df['DEPTH'].max()
 
@@ -41,19 +35,15 @@ def trim_well_log(df, bottom_depth=None, top_depth=None, required_columns=None, 
     except Exception as e:
         raise ValueError(f"Gagal mengonversi DEPTH input ke float: {e}")
 
-    # Logika trimming berdasarkan mode
-    if mode == 'AUTO':
-        df = df.loc[start_idx:end_idx].copy()
-
-    elif mode == 'UNTIL_TOP':
+    if mode == 'DEPTH_ABOVE':
         if bottom_depth is None:
-            raise ValueError("BOTTOM_DEPTH harus diisi pada mode UNTIL_TOP")
+            raise ValueError("DEPTH harus diisi pada mode DEPTH_ABOVE':")
         df = df[~((df['DEPTH'] >= depth_min) & (
             df['DEPTH'] <= bottom_depth))].copy()
 
-    elif mode == 'UNTIL_BOTTOM':
+    elif mode == 'DEPTH_BELOW':
         if top_depth is None:
-            raise ValueError("TOP_DEPTH harus diisi pada mode UNTIL_BOTTOM")
+            raise ValueError("DEPTH harus diisi pada mode DEPTH_BELOW")
         df = df[~((df['DEPTH'] >= top_depth) & (
             df['DEPTH'] <= depth_max))].copy()
 

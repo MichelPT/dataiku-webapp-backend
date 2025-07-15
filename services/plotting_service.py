@@ -2595,8 +2595,10 @@ def plot_log_default(df, df_marker, df_well_marker):
     return fig
 
 
-def plot_normalization(df, df_marker, df_well_marker):
-    sequence = ['MARKER', 'GR', 'GR_NORM', 'GR_DUAL']
+def plot_normalization(df):
+    df_marker = extract_markers_with_mean_depth(df)
+    df_well_marker = df.copy()
+    sequence = ['MARKER', 'GR', 'GR_DUAL_2', 'GR_DUAL', 'GR_RAW_NORM']
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
     print(plot_sequence)
 
@@ -2632,17 +2634,20 @@ def plot_normalization(df, df_marker, df_well_marker):
             if col == 'GR':  # Skip n_seq=1 which is 'MARKER'
                 fig, axes = plot_line(
                     df, fig, axes, base_key=col, n_seq=n_seq, col=col, label=col)
-            elif col == 'GR_NORM':  # Skip n_seq=1 which is 'MARKER'
-                fig, axes = plot_line(
-                    df, fig, axes, base_key=col, n_seq=n_seq, col=col, label=col)
+            elif col == 'GR_DUAL_2':
+                fig, axes, counter = plot_dual_gr(
+                    df, fig, axes, col, n_seq, counter, subplot_col)
             elif col == 'GR_DUAL':
                 fig, axes, counter = plot_dual_gr(
                     df, fig, axes, col, n_seq, counter, subplot_col)
+            elif col == 'GR_RAW_NORM':
+                fig, axes = plot_line(
+                    df, fig, axes, base_key=col, n_seq=n_seq, col=col, label=col)
 
     fig = layout_range_all_axis(fig, axes, plot_sequence)
 
     fig.update_layout(
-        margin=dict(l=20, r=20, t=40, b=20), height=1500,
+        margin=dict(l=20, r=20, t=40, b=20), height=1300,
         paper_bgcolor='white',
         plot_bgcolor='white',
         showlegend=False,

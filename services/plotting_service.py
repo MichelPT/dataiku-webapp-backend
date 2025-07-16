@@ -85,6 +85,7 @@ data_col = {
     'VSH_LINEAR': ['VSH_LINEAR'],
     'VSH_DN': ['VSH_DN'],
     'VSH_SP': ['VSH_SP'],
+    'VSH_GR_DN': ['VSH_LINEAR', 'VSH_DN'],
     'PHIE_DEN': ['PHIE', 'PHIE_DEN'],
     'PHIT_DEN': ['PHIT', 'PHIT_DEN'],
     'RESERVOIR_CLASS': ['RESERVOIR_CLASS'],
@@ -144,6 +145,7 @@ unit_col = {
     'VSH_LINEAR': ['V/V'],
     'VSH_DN': ['V/V'],
     'VSH_SP': ['V/V'],
+    'VSH_GR_DN': ['V/V', 'V/V'],
     'PHIE_DEN': ['', ''],
     'PHIT_DEN': ['', ''],
     'RESERVOIR_CLASS': [''],
@@ -203,6 +205,7 @@ color_col = {
     'VSH_LINEAR': ['darkblue'],
     'VSH_DN': ['darkblue'],
     'VSH_SP': ['darkblue'],
+    'VSH_GR_DN': ['darkblue', 'red'],
     'PHIE_DEN': ['darkblue', colors_dict['blue']],
     'PHIT_DEN': [colors_dict['red'], colors_dict['orange']],
     'RESERVOIR_CLASS': [colors_dict['black']],
@@ -289,6 +292,7 @@ range_col = {
     'VSH_LINEAR': [[0, 1]],
     'VSH_DN': [[0, 1]],
     'VSH_SP': [[0, 1]],
+    'VSH_GR_DN': [[0, 1], [0, 1]],
     'PHIE_DEN': [[0, 1], [0, 1]],
     'PHIT_DEN': [[0, 1], [0, 1]],
     'RWA': [[0, 60], [0, 60], [0, 60]],
@@ -340,6 +344,7 @@ ratio_plots = {
     'VSH_LINEAR': 1,
     'VSH_DN': 1,
     'VSH_SP': 1,
+    'VSH_GR_DN': 1,
     'PHIE_DEN': 1,
     'PHIT_DEN': 1,
     'RESERVOIR_CLASS': 0.5,
@@ -1743,7 +1748,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'RTRO', 'NPHI_RHOB', 'SW', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'RWA', 'PHIE', 'DNS', 'DNSV', 'VSH']:
+            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'RTRO', 'NPHI_RHOB', 'SW', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'RWA', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN']:
                 fig.update_layout(
                     **{axis: dict(
                         # gridcolor='rgba(0,0,0,0)',
@@ -2822,7 +2827,7 @@ def plot_vsh_linear(df, df_marker, df_well_marker):
     df = normalize_xover(df, 'NPHI', 'RHOB')
     df = normalize_xover(df, 'RT', 'RHOB')
 
-    sequence = ['MARKER', 'GR', 'RT_RHOB', 'NPHI_RHOB', 'VSH_LINEAR']
+    sequence = ['MARKER', 'GR', 'RT_RHOB', 'NPHI_RHOB', 'VSH_GR_DN']
     plot_sequence = {i + 1: v for i, v in enumerate(sequence)}
 
     ratio_plots_seq = [ratio_plots.get(key, 1)
@@ -2850,9 +2855,12 @@ def plot_vsh_linear(df, df_marker, df_well_marker):
         elif key in ['NPHI_RHOB', 'RT_RHOB']:
             fig, axes, counter = plot_xover_log_normal(
                 df, fig, axes, key, n_seq, counter, subplot_col)
-        elif key == 'VSH_LINEAR':
-            fig, axes = plot_line(df, fig, axes, base_key='VSH_LINEAR',
-                                  n_seq=n_seq, col='VSH_LINEAR', label='VSH_LINEAR')
+        # elif key == 'VSH_LINEAR':
+        #     fig, axes = plot_line(df, fig, axes, base_key='VSH_LINEAR',
+        #                           n_seq=n_seq, col='VSH_LINEAR', label='VSH_LINEAR')
+        elif key == 'VSH_GR_DN':
+            fig, axes, counter = plot_two_features_simple(
+                df, fig, axes, key, n_seq, counter, subplot_col)
 
     # Panggil fungsi-fungsi layout akhir
     fig = layout_range_all_axis(fig, axes, plot_sequence)

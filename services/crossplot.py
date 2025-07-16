@@ -23,6 +23,7 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
     if x_col == "NPHI" and y_col == "RHOB":
         if "GR" not in df.columns:
             raise ValueError("Kolom GR diperlukan untuk plotting ini.")
+
         df_clean = df_clean.copy()
         df_clean["COLOR"] = df.loc[df_clean.index, "GR"]
         color_label = "GR (API)"
@@ -30,16 +31,19 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
         show_shapes = 1
         yaxis_range = [3, 1]
         yaxis_dtick = 0.2
+
     else:
-        count = Counter(df_clean[x_col])
-        freq = [min(count[x], 5) for x in df_clean[x_col]]
-        df_clean["COLOR"] = freq
+        df_clean = df_clean.copy()
+
+        count = Counter(df_clean["NPHI"])
+        freq = [count[v] for v in df_clean["NPHI"]]
         color_label = "Frekuensi"
-        color_continuous_title = "Frekuensi"
+
+        df_clean["COLOR"] = freq
+        color_continuous_title = color_label
         show_shapes = 2
 
         if y_col == "GR":
-            y_min = df_clean["GR"].min()
             y_max = df_clean["GR"].max()
             yaxis_range = [0, math.ceil(y_max / 20) * 20]
             yaxis_dtick = 20
@@ -47,9 +51,14 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
             yaxis_range = None
             yaxis_dtick = None
 
-    range_color = [1, 5] if x_col == "NPHI" and y_col == "GR" else None
-    labels = {'NPHI': 'NPHI (V/V)', 'RHOB': 'RHOB (g/cc)', 'GR': 'Gamma Ray (API)'} if x_col == "NPHI" and y_col == "RHOB" else {
-        'NPHI': 'NPHI (V/V)', 'GR': 'Gamma Ray (API)', "COLOR": color_label
+    # ✅ Gunakan skala warna otomatis
+    range_color = None
+
+    labels = {
+        'NPHI': 'NPHI (V/V)',
+        'RHOB': 'RHOB (g/cc)',
+        'GR': 'Gamma Ray (API)',
+        'COLOR': color_label
     }
 
     fig = px.scatter(

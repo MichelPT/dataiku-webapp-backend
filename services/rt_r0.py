@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import linregress
 
+
 def calculate_iqual(df):
     """
     Menghitung IQUAL berdasarkan kondisi:
@@ -13,6 +14,7 @@ def calculate_iqual(df):
     df = df.copy()
     df['IQUAL'] = np.where((df['PHIE'] > 0.1) & (df['VSH'] < 0.5), 1, 0)
     return df
+
 
 def calculate_R0(df):
     """
@@ -28,6 +30,7 @@ def calculate_R0(df):
     df['R0'] = R0
     df['RTR0'] = df['RT'] - df['R0']
     return df
+
 
 def analyze_rtr0_groups(df):
     """
@@ -45,7 +48,8 @@ def analyze_rtr0_groups(df):
         try:
             # Regresi linear untuk slope dan r-squared
             slope_rt2r0, _, _, _, _ = linregress(group['RT'], group['R0'])
-            slope_phie2rtr0, _, _, _, _ = linregress(group['PHIE'], group['RTR0'])
+            slope_phie2rtr0, _, _, _, _ = linregress(
+                group['PHIE'], group['RTR0'])
 
             # Validasi hasil regresi
             if np.isnan(slope_phie2rtr0) or np.isinf(slope_phie2rtr0):
@@ -73,13 +77,14 @@ def analyze_rtr0_groups(df):
 
     return pd.DataFrame(results_rtr0)
 
+
 def process_rt_r0(df, params=None):
     """
     Main function to process RT-R0 analysis
     """
     if params is None:
         params = {}
-    
+
     try:
         # Tambahkan parameter default jika belum ada
         if 'A' not in df.columns:
@@ -104,6 +109,10 @@ def process_rt_r0(df, params=None):
 
         # Step 4: Analyze RTR0 groups
         df_results_rtr0 = analyze_rtr0_groups(df)
+
+        columns_to_remove = ['RT_R0_GRAD', 'PHIE_RTR0_GRAD', 'FLUID_RTROPHIE']
+        df.drop(
+            columns=[col for col in columns_to_remove if col in df.columns], inplace=True)
 
         # Step 5: Merge results
         if not df_results_rtr0.empty:

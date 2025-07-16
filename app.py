@@ -48,6 +48,7 @@ from services.vsh_calculation import calculate_vsh_from_gr
 from services.data_processing import handle_null_values, fill_null_values_in_marker_range, min_max_normalize, selective_normalize_handler, smoothing, trim_data_auto, trim_data_depth
 from services.qc_service import run_full_qc_pipeline
 from flask import Flask, request, jsonify, Response
+import plotly.io as pio
 
 
 app = Flask(__name__)
@@ -367,8 +368,8 @@ def run_interval_normalization():
         log_in_col = params.get('LOG_IN', 'GR')
         low_ref = float(params.get('LOW_REF', 40))
         high_ref = float(params.get('HIGH_REF', 140))
-        low_in = int(params.get('LOW_IN', 5))
-        high_in = int(params.get('HIGH_IN', 95))
+        low_in = float(params.get('LOW_IN', 34))
+        high_in = float(params.get('HIGH_IN', 146))
         cutoff_min = float(params.get('CUTOFF_MIN', 0.0))
         cutoff_max = float(params.get('CUTOFF_MAX', 250.0))
 
@@ -994,6 +995,8 @@ def run_rt_r0_calculation():
 
                 # Process RT-R0 calculations
                 df_processed = process_rt_r0(df_well, params)
+                df_processed = df_processed.rename(
+                    columns={'R0': 'RO', 'RTR0': 'RT_RO'})
 
                 # Save back to CSV
                 df_processed.to_csv(file_path, index=False)
@@ -1121,7 +1124,7 @@ def get_rt_r0_plot():
 
             # Validate required columns
             required_cols = ['DEPTH', 'GR', 'RT', 'NPHI',
-                             'RHOB', 'VSH', 'IQUAL', 'R0', 'RTR0', 'RWA']
+                             'RHOB', 'VSH', 'IQUAL', 'RO', 'RT_RO', 'RWA']
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RT-R0 terlebih dahulu."}), 400
 
@@ -1278,7 +1281,8 @@ def get_crossplot():
 
         fig = generate_crossplot(
             df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, selected_intervals)
-        return jsonify(fig.to_dict())
+        fig_json = pio.to_json(fig)
+        return Response(response=fig_json, status=200, mimetype='application/json')
 
     except Exception as e:
         import traceback

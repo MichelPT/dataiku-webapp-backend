@@ -14,6 +14,9 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
     else:
         df_filtered_by_interval = df.copy()
 
+    if "GR_RAW_NORM" in df_filtered_by_interval.columns and y_col != "RHOB":
+        y_col = "GR_RAW_NORM"
+
     df_clean = df_filtered_by_interval[[x_col, y_col]].dropna()
 
     if df_clean.empty:
@@ -21,11 +24,15 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
 
     # Add color column
     if x_col == "NPHI" and y_col == "RHOB":
+        df_clean = df_clean.copy()
         if "GR" not in df.columns:
             raise ValueError("Kolom GR diperlukan untuk plotting ini.")
 
-        df_clean = df_clean.copy()
-        df_clean["COLOR"] = df.loc[df_clean.index, "GR"]
+        if "GR_RAW_NORM" in df.columns:
+            df_clean["COLOR"] = df.loc[df_clean.index, "GR_RAW_NORM"]
+        else:
+            df_clean["COLOR"] = df.loc[df_clean.index, "GR"]
+
         color_label = "GR (API)"
         color_continuous_title = "Gamma Ray (API)"
         show_shapes = 1
@@ -43,7 +50,12 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
         color_continuous_title = color_label
         show_shapes = 2
 
-        if y_col == "GR":
+        if "GR_RAW_NORM" in df.columns:
+            y_col
+            y_max = df_clean["GR_RAW_NORM"].max()
+            yaxis_range = [0, math.ceil(y_max / 20) * 20]
+            yaxis_dtick = 20
+        elif "GR" in df.columns:
             y_max = df_clean["GR"].max()
             yaxis_range = [0, math.ceil(y_max / 20) * 20]
             yaxis_dtick = 20
@@ -133,7 +145,7 @@ def generate_crossplot(df: pd.DataFrame, x_col: str, y_col: str, gr_ma: float, g
             y0=rho_ma, y1=rho_sh,
             line=dict(color="black", width=1, dash="solid")
         ),
-    elif x_col == "NPHI" and y_col == "GR":
+    elif y_col == "GR" or y_col == "GR_RAW_NORM":
         fig.update_layout(
             xaxis=dict(
                 title='NPHI (V/V)',

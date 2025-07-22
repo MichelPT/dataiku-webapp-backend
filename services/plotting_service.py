@@ -103,6 +103,10 @@ data_col = {
     'SWGRAD': ['SWGRAD'],
     'DNS': ['DNS'],
     'DNSV': ['DNSV'],
+    'SWE_INDO': ['SWE_INDO'],
+    'RWA_FULL': ['RWA_FULL'],
+    'RWA_SIMPLE': ['RWA_SIMPLE'],
+    'PHIT': ['PHIT'],
 }
 
 
@@ -163,6 +167,10 @@ unit_col = {
     'SWGRAD': ['V/V'],
     'DNSV': [''],
     'DNS': [''],
+    'SWE_INDO': ['V/V'],
+    'RWA_FULL': ['OHMM'],
+    'RWA_SIMPLE': ['OHMM'],
+    'PHIT': ['V/V'],
 }
 
 
@@ -223,6 +231,10 @@ color_col = {
     'SWGRAD': ['darkgreen'],
     'DNS': [colors_dict['black']],
     'DNSV': [colors_dict['black']],
+    'SWE_INDO': [colors_dict['blue']],
+    'RWA_FULL': ['darkblue'],
+    'RWA_SIMPLE': ['darkgreen'],
+    'PHIT': [colors_dict['cyan']],
 }
 
 flag_color = {
@@ -267,7 +279,7 @@ range_col = {
     'GR_RAW_NORM': [[0, 250]],
     'GR_MovingAvg_5': [[0, 250]],
     'GR_MovingAvg_10': [[0, 250]],
-    'RT': [[0.02, 2000]],
+    'RT': [[0.02, 100]],
     'RT_RO': [[0.02, 2000], [0.02, 2000]],
     'X_RT_RO': [[0, 4]],
     'NPHI_RHOB_NON_NORM': [[0.6, 0], [1.71, 2.71]],
@@ -304,6 +316,10 @@ range_col = {
     'SWGRAD': [[0, 0.1]],
     'DNS': [[-1, 1]],
     'DNSV': [[-1, 1]],
+    'SWE_INDO': [[1, 0]],
+    'RWA_FULL': [[0, 60]],
+    'RWA_SIMPLE': [[0, 60]],
+    'PHIT': [[0.6, 0]],
 }
 
 ratio_plots = {
@@ -361,6 +377,10 @@ ratio_plots = {
     'SWGRAD': 0.5,
     'DNS': 1,
     'DNSV': 1,
+    'SWE_INDO': 1,
+    'RWA_FULL': 1,
+    'RWA_SIMPLE': 1,
+    'PHIT': 1,
 }
 
 flags_name = {
@@ -468,7 +488,7 @@ def xover_label_df(df_well, key, type=1):
     return xover_dfs
 
 
-def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=None):
+def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=None, axes_key=None):
     """
     Plot a line curve on the well log plot.
 
@@ -480,7 +500,7 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
         Figure to add trace to
     axes : dict
         Dictionary with axes information
-    key : str
+    base_key : str
         Key for display settings (colors, ranges, units)
     n_seq : int
         Sequence number for the plot
@@ -490,6 +510,8 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
         Column name in df_well to plot (if None, uses data_col[key][0])
     label : str, optional
         Label to display for the curve (if None, uses col)
+    axes_key : str, optional
+        Key to use for storing axes in the axes dictionary (if None, uses col)
 
     Returns:
     --------
@@ -505,6 +527,10 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
     # If label is not provided, use the column name
     if label is None:
         label = col
+
+    # If axes_key is not provided, use col
+    if axes_key is None:
+        axes_key = col
 
     # Add trace to figure
     fig.add_trace(
@@ -540,8 +566,8 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
         )
 
     # Update axes dictionary
-    axes[col].append('yaxis'+str(n_seq))
-    axes[col].append('xaxis'+str(n_seq))
+    axes[axes_key].append('yaxis'+str(n_seq))
+    axes[axes_key].append('xaxis'+str(n_seq))
 
     return fig, axes
 
@@ -2533,7 +2559,7 @@ def normalize_xover(df_well, log_1, log_2):
 
 
 def plot_log_default(df, df_marker, df_well_marker):
-    sequence = ['MARKER', 'GR', 'RT_RHOB', 'NPHI_RHOB']
+    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB']
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
     print(plot_sequence)
 
@@ -2561,16 +2587,13 @@ def plot_log_default(df, df_marker, df_well_marker):
                 df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
         elif col == 'RT':
             fig, axes = plot_line(
-                df, fig, axes, base_key='RT', n_seq=n_seq, col=col, label=col)
+                df, fig, axes, base_key='RT', n_seq=n_seq, col='RT', label='RT', type='log', axes_key='RT')
         elif col == 'NPHI_RHOB':
             fig, axes, counter = plot_xover_log_normal(
                 df, fig, axes, col, n_seq, counter, n_plots=subplot_col, y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
-        elif col == 'RT_RHOB':
-            fig, axes, counter = plot_xover_log_normal(
-                df, fig, axes, col, n_seq, counter, n_plots=subplot_col, y_color='limegreen', n_color='lightgray', type=1, exclude_crossover=False)
-        elif col in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB']:
-            fig, axes, counter = plot_xover_thres(
-                df, fig, axes, col, n_seq, counter=counter)
+        # elif col in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB']:
+        #     fig, axes, counter = plot_xover_thres(
+        #         df, fig, axes, col, n_seq, counter=counter)
         elif col == 'MARKER':
             fig, axes = plot_flag(df_well_marker, fig, axes, col, n_seq)
             fig, axes = plot_texts_marker(
@@ -2680,11 +2703,11 @@ def plot_phie_den(df, df_marker, df_well_marker):
     """
     Membuat plot multi-panel untuk visualisasi hasil kalkulasi Porositas.
     """
-    # FIX: Urutan plot disesuaikan dan RESERVOIR_CLASS dihapus
-    sequence = ['MARKER', 'GR', 'RHOB',
-                'PHIE_DEN', 'PHIT_DEN',
-                # 'RESERVOIR_CLASS'
-                ]
+    # Normalize data for crossover plots
+    df = normalize_xover(df, 'NPHI', 'RHOB')
+    
+    # FIX: Urutan plot disesuaikan untuk include default logs
+    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB', 'PHIE', 'PHIT']
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
 
     ratio_plots_seq = [ratio_plots.get(key, 1)
@@ -2709,13 +2732,19 @@ def plot_phie_den(df, df_marker, df_well_marker):
                 df_marker, df_well_marker['DEPTH'].max(), fig, axes, key, n_seq)
         elif key == 'GR':
             fig, axes = plot_line(
-                df, fig, axes, base_key='GR', n_seq=n_seq, col='GR', label='GR')
-        elif key == 'RHOB':
+                df, fig, axes, base_key='GR', n_seq=n_seq, col='GR', label='GR', axes_key='GR')
+        elif key == 'RT':
             fig, axes = plot_line(
-                df, fig, axes, base_key='RHOB', n_seq=n_seq, col='RHOB', label='RHOB')
-        elif key in ['PHIE_DEN', 'PHIT_DEN']:
-            fig, axes, counter = plot_two_features_simple(
-                df, fig, axes, key, n_seq, counter, n_plots=subplot_col)
+                df, fig, axes, base_key='RT', n_seq=n_seq, col='RT', label='RT', type='log', axes_key='RT')
+        elif key == 'NPHI_RHOB':
+            fig, axes, counter = plot_xover_log_normal(
+                df, fig, axes, key, n_seq, counter, n_plots=subplot_col, y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
+        elif key == 'PHIE':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='PHIE', n_seq=n_seq, col='PHIE', label='PHIE', axes_key='PHIE')
+        elif key == 'PHIT':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='PHIE', n_seq=n_seq, col='PHIT', label='PHIT', axes_key='PHIT')
         # elif key == 'RESERVOIR_CLASS':
         #     fig, axes = plot_flag(df, fig, axes, key, n_seq)
 
@@ -2736,7 +2765,7 @@ def plot_phie_den(df, df_marker, df_well_marker):
         title_text="Porosity from Density (RHOB)",
         title_x=0.5,
     )
-    fig.update_yaxes(autorange='reversed', range=[
+    fig.update_yaxes(range=[
                      df[depth].max(), df[depth].min()])
     fig.update_traces(yaxis='y')
 
@@ -2766,7 +2795,7 @@ def plot_gsa_main(df_well):
     df_well_marker = df_well.copy()
 
     # Definisikan urutan track untuk plot GSA
-    sequence = ['MARKER', 'GR', 'RT_RHOB', 'NPHI_RHOB',
+    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB',
                 'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA', 'ZONA']
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
 
@@ -2792,9 +2821,12 @@ def plot_gsa_main(df_well):
                 df_marker, df_well_marker['DEPTH'].max(), fig, axes, key, n_seq)
         elif key == 'GR':
             fig, axes = plot_line(df_well, fig, axes, key, n_seq)
-        elif key in ['NPHI_RHOB', 'RT_RHOB']:
+        elif key == 'RT':
+            fig, axes = plot_line(
+                df_well, fig, axes, base_key='RT', n_seq=n_seq, col=key, label=key)
+        elif key in ['NPHI_RHOB']:
             fig, axes, counter = plot_xover_log_normal(
-                df_well, fig, axes, key, n_seq, counter, subplot_col)
+                df_well, fig, axes, key, n_seq, counter, n_plots=subplot_col, y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
         elif key in ['RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA']:
             fig, axes, counter = plot_gsa_crossover(
                 df_well, fig, axes, key, n_seq, counter, subplot_col)
@@ -2825,9 +2857,9 @@ def plot_vsh_linear(df, df_marker, df_well_marker):
     """
 
     df = normalize_xover(df, 'NPHI', 'RHOB')
-    df = normalize_xover(df, 'RT', 'RHOB')
+    # df = normalize_xover(df, 'RT', 'RHOB')
 
-    sequence = ['MARKER', 'GR', 'RT_RHOB', 'NPHI_RHOB', 'VSH_GR_DN']
+    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB', 'VSH_LINEAR']
     plot_sequence = {i + 1: v for i, v in enumerate(sequence)}
 
     ratio_plots_seq = [ratio_plots.get(key, 1)
@@ -2851,16 +2883,18 @@ def plot_vsh_linear(df, df_marker, df_well_marker):
                 df_marker, df_well_marker[depth].max(), fig, axes, key, n_seq)
         elif key == 'GR':
             fig, axes = plot_line(
-                df, fig, axes, base_key='GR', n_seq=n_seq, col='GR', label='GR')
-        elif key in ['NPHI_RHOB', 'RT_RHOB']:
+                df, fig, axes, base_key='GR', n_seq=n_seq, col='GR', label='GR', axes_key='GR')
+        elif key == 'RT':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RT', n_seq=n_seq, col='RT', label='RT', type='log', axes_key='RT')
+        elif key == 'NPHI_RHOB':
             fig, axes, counter = plot_xover_log_normal(
-                df, fig, axes, key, n_seq, counter, subplot_col)
-        # elif key == 'VSH_LINEAR':
-        #     fig, axes = plot_line(df, fig, axes, base_key='VSH_LINEAR',
-        #                           n_seq=n_seq, col='VSH_LINEAR', label='VSH_LINEAR')
-        elif key == 'VSH_GR_DN':
-            fig, axes, counter = plot_two_features_simple(
-                df, fig, axes, key, n_seq, counter, subplot_col)
+                df, fig, axes, key, n_seq, counter, n_plots=subplot_col, y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
+        elif key in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB']:
+            fig, axes, counter = plot_xover_thres(df, fig, axes, key, n_seq, counter=counter)
+        elif key == 'VSH_LINEAR':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='VSH_LINEAR', n_seq=n_seq, col='VSH_LINEAR', label='VSH_LINEAR', axes_key='VSH_LINEAR')
 
     # Panggil fungsi-fungsi layout akhir
     fig = layout_range_all_axis(fig, axes, plot_sequence)
@@ -2878,7 +2912,7 @@ def plot_vsh_linear(df, df_marker, df_well_marker):
         title_text="VSH from Gamma Ray (Linear)",
         title_x=0.5,
     )
-    fig.update_yaxes(autorange='reversed', range=[
+    fig.update_yaxes(range=[
                      df[depth].max(), df[depth].min()])
     fig.update_traces(yaxis='y')
 
@@ -2889,10 +2923,10 @@ def plot_sw_indo(df, df_marker, df_well_marker):
     """
     Membuat plot multi-panel untuk visualisasi hasil kalkulasi Saturasi Air (Indonesia).
     """
-    df = normalize_xover(df, 'RT', 'RHOB')
+    df = normalize_xover(df, 'NPHI', 'RHOB')
+    # df = normalize_xover(df, 'RT', 'RHOB')
 
-    sequence = ['MARKER', 'GR', 'VSH', 'RT_RHOB',
-                'PHIE_DEN', 'SW']
+    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB', 'SW']
     plot_sequence = {i + 1: v for i, v in enumerate(sequence)}
 
     # Pastikan semua key di sequence ada di kamus ratio_plots
@@ -2916,19 +2950,19 @@ def plot_sw_indo(df, df_marker, df_well_marker):
             fig, axes = plot_flag(df_well_marker, fig, axes, key, n_seq)
             fig, axes = plot_texts_marker(
                 df_marker, df_well_marker[depth].max(), fig, axes, key, n_seq)
-        elif key in ['GR', 'VSH']:
+        elif key == 'GR':
             fig, axes = plot_line(
-                df, fig, axes, base_key=key, n_seq=n_seq, col=key, label=key)
-        elif key == 'RT_RHOB':
+                df, fig, axes, base_key='GR', n_seq=n_seq, col='GR', label='GR', axes_key='GR')
+        elif key == 'RT':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RT', n_seq=n_seq, col='RT', label='RT', type='log', axes_key='RT')
+        elif key == 'NPHI_RHOB':
             fig, axes, counter = plot_xover_log_normal(
-                df, fig, axes, key, n_seq, counter, subplot_col)
-        elif key == 'PHIE_DEN':
-            fig, axes, counter = plot_two_features_simple(
-                df, fig, axes, 'PHIE_DEN', n_seq, counter, n_plots=subplot_col)
+                df, fig, axes, key, n_seq, counter, n_plots=subplot_col, y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
         elif key == 'SW':
             fig, axes = plot_line(
                 df, fig, axes, base_key=key, n_seq=n_seq, col=key, label=key)
-
+            
     # Finalisasi Layout
     fig = layout_range_all_axis(fig, axes, plot_sequence)
     fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=50)
@@ -2936,7 +2970,7 @@ def plot_sw_indo(df, df_marker, df_well_marker):
 
     fig.update_layout(
         title_text="Water Saturation (Indonesia Method) Analysis",
-        yaxis=dict(autorange='reversed', range=[
+        yaxis=dict(range=[
                    df[depth].max(), df[depth].min()]), showlegend=False,
         hovermode='y unified', template='plotly_white', height=1600,
     )
@@ -2947,9 +2981,10 @@ def plot_rwa_indo(df, df_marker, df_well_marker):
     """
     Membuat plot multi-panel untuk visualisasi hasil kalkulasi RWA.
     """
+    df = normalize_xover(df, 'NPHI', 'RHOB')
     df = normalize_xover(df, 'RT', 'RHOB')
 
-    sequence = ['MARKER', 'GR', 'VSH', 'RT_RHOB', 'PHIE', 'RWA']
+    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB', 'RWA_FULL', 'RWA_SIMPLE']
     plot_sequence = {i + 1: v for i, v in enumerate(sequence)}
 
     ratio_plots_seq = [ratio_plots.get(key, 1)
@@ -2971,15 +3006,21 @@ def plot_rwa_indo(df, df_marker, df_well_marker):
             fig, axes = plot_flag(df_well_marker, fig, axes, key, n_seq)
             fig, axes = plot_texts_marker(
                 df_marker, df_well_marker[depth].max(), fig, axes, key, n_seq)
-        elif key in ['GR', 'VSH', 'PHIE']:
+        elif key == 'GR':
             fig, axes = plot_line(
-                df, fig, axes, base_key=key, n_seq=n_seq, col=key, label=key)
-        elif key == 'RT_RHOB':
+                df, fig, axes, base_key='GR', n_seq=n_seq, col='GR', label='GR', axes_key='GR')
+        elif key == 'RT':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RT', n_seq=n_seq, col='RT', label='RT', type='log', axes_key='RT')
+        elif key == 'NPHI_RHOB':
             fig, axes, counter = plot_xover_log_normal(
-                df, fig, axes, key, n_seq, counter, subplot_col)
-        elif key == 'RWA':
-            fig, axes, counter = plot_three_features_simple(
-                df, fig, axes, key, n_seq, counter, subplot_col, log_scale=True)
+                df, fig, axes, key, n_seq, counter, n_plots=subplot_col, y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
+        elif key == 'RWA_FULL':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RWA', n_seq=n_seq, col='RWA_FULL', label='RWA_FULL', type='log', axes_key='RWA_FULL')
+        elif key == 'RWA_SIMPLE':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RWA', n_seq=n_seq, col='RWA_SIMPLE', label='RWA_SIMPLE', type='log', axes_key='RWA_SIMPLE')
 
     # Finalisasi Layout
     fig = layout_range_all_axis(fig, axes, plot_sequence)
@@ -2988,7 +3029,7 @@ def plot_rwa_indo(df, df_marker, df_well_marker):
 
     fig.update_layout(
         title_text="Apparent Water Resistivity (RWA) Analysis",
-        yaxis=dict(autorange='reversed', range=[
+        yaxis=dict(range=[
                    df[depth].max(), df[depth].min()]),
         hovermode='y unified', template='plotly_white', height=1600,
         showlegend=False

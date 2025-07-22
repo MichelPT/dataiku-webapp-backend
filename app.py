@@ -320,8 +320,8 @@ def get_normalization_plot():
             # ==========================================================
             fig_result = plot_normalization(
                 df=df,                 # DataFrame lengkap dengan semua data log
-                # df_marker=df_marker_info,      # DataFrame khusus untuk teks marker
-                # df_well_marker=df      # DataFrame lengkap untuk plot latar belakang marker
+                df_marker=df_marker_info,      # DataFrame khusus untuk teks marker
+                df_well_marker=df      # DataFrame lengkap untuk plot latar belakang marker
             )
 
             return jsonify(fig_result.to_json())

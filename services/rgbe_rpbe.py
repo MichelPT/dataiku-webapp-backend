@@ -149,23 +149,25 @@ def plot_rgbe_rpbe(df):
     """
     Create RGBE-RPBE visualization plot
     """
+
+    if 'IQUAL' in df.columns:
+        df.loc[df['IQUAL'] == 0, 'IQUAL'] = np.nan
+
+    # Ekstraksi Marker
     df_marker = extract_markers_with_mean_depth(df)
+    df_marker_iqual = extract_markers_customize(df, 'IQUAL')
     df_well_marker = df.copy()
+    df_well_marker_iqual = df.copy()
     df_marker_rgbe = extract_markers_customize(df, 'RGBE')
     df_marker_rpbe = extract_markers_customize(df, 'RPBE')
     df_well_marker_rgbe = df.copy()
     df_well_marker_rpbe = df.copy()
-    df_well_marker_iqual = df.copy()
-    df_marker_iqual = extract_markers_customize(df, 'IQUAL')
 
     # Normalize crossovers
     df = normalize_xover(df, 'NPHI', 'RHOB')
-    df = normalize_xover(df, 'RT', 'RHOB')
-    df = normalize_xover(df, 'RT', 'GR')
 
     # Define plot sequence
-    sequence = ['MARKER', 'GR', 'RT', 'VSH', 'NPHI_RHOB', 'IQUAL',
-                'RT_GR', 'RGBE', 'RGBE_TEXT', 'RT_PHIE', 'RPBE', 'RPBE_TEXT']
+    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB', 'IQUAL', 'RGBE_TEXT', 'RGBE',  'RPBE_TEXT', 'RPBE']
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
 
     # Calculate ratios for subplot widths
@@ -195,19 +197,10 @@ def plot_rgbe_rpbe(df):
                 df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
         elif col == 'RT':
             fig, axes = plot_line(
-                df, fig, axes, base_key='RT', n_seq=n_seq, col=col, label=col)
-        elif col == 'VSH':
-            fig, axes = plot_line(
-                df, fig, axes, base_key='VSH', n_seq=n_seq, col=col, label=col)
+                df, fig, axes, base_key='RT', n_seq=n_seq, col='RT', label='RT', type='log', axes_key='RT')
         elif col == 'NPHI_RHOB':
             fig, axes, counter = plot_xover_log_normal(df, fig, axes, col, n_seq, counter, n_plots=subplot_col,
                                                        y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
-        elif col == 'RT_GR':
-            fig, axes, counter = plot_xover_log_normal(df, fig, axes, col, n_seq, counter, n_plots=subplot_col,
-                                                       y_color='limegreen', n_color='lightgray', type=1, exclude_crossover=False)
-        elif col == 'RT_PHIE':
-            fig, axes, counter = plot_two_features_simple(
-                df, fig, axes, col, n_seq, counter, n_plots=subplot_col, log_scale=True)
         elif col == 'RGBE':
             fig, axes = plot_flag(df_well_marker_rgbe, fig, axes, col, n_seq)
         elif col == 'RPBE':
@@ -219,10 +212,9 @@ def plot_rgbe_rpbe(df):
             fig, axes = plot_text_values(
                 df_marker_rpbe, df_well_marker_rpbe['DEPTH'].max(), fig, axes, col, n_seq)
         elif col == 'IQUAL':
-            fig, axes = plot_flag(df_well_marker_iqual,
-                                  fig, axes, 'IQUAL', n_seq)
+            fig, axes = plot_flag(df_well_marker_iqual, fig, axes, 'IQUAL', n_seq)
             fig, axes = plot_texts_marker(
-                df_marker_iqual, df_well_marker_iqual['DEPTH'].max(), fig, axes, col, n_seq)
+                df_marker_iqual, df_well_marker_iqual['DEPTH'].max(), fig, axes, key, n_seq)
         elif col == 'MARKER':
             fig, axes = plot_flag(df_well_marker, fig, axes, col, n_seq)
             fig, axes = plot_texts_marker(
@@ -230,6 +222,18 @@ def plot_rgbe_rpbe(df):
 
     # Apply layouts
     fig = layout_range_all_axis(fig, axes, plot_sequence)
+
+    # Update axes
+    fig.update_yaxes(
+        showspikes=True,
+        range=[df['DEPTH'].max(), df['DEPTH'].min()]
+    )
+    fig.update_traces(yaxis='y')
+
+    # Apply final layouts
+    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=0)
+    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+
 
     # Update figure layout
     fig.update_layout(
@@ -245,16 +249,5 @@ def plot_rgbe_rpbe(df):
         modebar_remove=['lasso', 'autoscale', 'zoom',
                         'zoomin', 'zoomout', 'pan', 'select']
     )
-
-    # Update axes
-    fig.update_yaxes(
-        showspikes=True,
-        range=[df['DEPTH'].max(), df['DEPTH'].min()]
-    )
-    fig.update_traces(yaxis='y')
-
-    # Apply final layouts
-    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=0)
-    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
 
     return fig

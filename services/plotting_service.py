@@ -126,7 +126,7 @@ unit_col = {
     'NPHI_RHOB_NON_NORM': ['V/V', 'G/C3'],
     'NPHI_RHOB': ['V/V', 'G/C3', 'V/V', 'G/C3'],
     'RHOB': ['G/C3'],
-    'SW': ['DEC'],
+    'SW': ['V/V'],
     'PHIE_PHIT': ['V/V', 'V/V'],
     'PERM': ['mD'],
     'VCL': ['V/V'],
@@ -171,6 +171,7 @@ unit_col = {
     'RWA_FULL': ['OHMM'],
     'RWA_SIMPLE': ['OHMM'],
     'PHIT': ['V/V'],
+    'PHIE': ['V/V'],
 }
 
 
@@ -266,7 +267,7 @@ flag_color = {
         0: 'gray'
     },
     "IQUAL": {
-        1: 'green',
+        1: 'orange',
     }
 
 }
@@ -308,7 +309,7 @@ range_col = {
     'PHIE_DEN': [[0, 1], [0, 1]],
     'PHIT_DEN': [[0, 1], [0, 1]],
     'RWA': [[0, 60], [0, 60], [0, 60]],
-    'PHIE': [[0.6, 0]],  # perbaiki seluruh PHIE dan PHIT
+    'PHIE': [[0.5, 0]],  # perbaiki seluruh PHIE dan PHIT
     'RT_GR': [[0.02, 2000], [0, 250], [0.02, 2000], [0, 250]],
     # 'RT_PHIE':[[0.02, 2000],[0.6,0],[0.02, 2000],[0.6,0]],
     'RT_PHIE': [[0.02, 2000], [0.6, 0]],
@@ -319,7 +320,7 @@ range_col = {
     'SWE_INDO': [[1, 0]],
     'RWA_FULL': [[0, 60]],
     'RWA_SIMPLE': [[0, 60]],
-    'PHIT': [[0.6, 0]],
+    'PHIT': [[0.5, 0]],
 }
 
 ratio_plots = {
@@ -3029,6 +3030,84 @@ def plot_rwa_indo(df, df_marker, df_well_marker):
 
     fig.update_layout(
         title_text="Apparent Water Resistivity (RWA) Analysis",
+        yaxis=dict(range=[
+                   df[depth].max(), df[depth].min()]),
+        hovermode='y unified', template='plotly_white', height=1600,
+        showlegend=False
+    )
+    return fig
+
+def plot_module2(df, df_marker, df_well_marker):
+    """
+    Membuat plot multi-panel untuk visualisasi hasil kalkulasi RWA.
+    """
+    if 'IQUAL' in df.columns:
+        df.loc[df['IQUAL'] == 0, 'IQUAL'] = np.nan
+
+    # Ekstraksi Marker
+    df_marker = extract_markers_with_mean_depth(df)
+    df_marker_iqual = extract_markers_customize(df, 'IQUAL')
+    df_well_marker = df.copy()
+    df_well_marker_iqual = df.copy()
+    df = normalize_xover(df, 'NPHI', 'RHOB')
+    # df = normalize_xover(df, 'RT', 'RHOB')
+
+    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'SW', 'IQUAL']
+    plot_sequence = {i + 1: v for i, v in enumerate(sequence)}
+
+    ratio_plots_seq = [ratio_plots.get(key, 1)
+                       for key in plot_sequence.values()]
+    subplot_col = len(plot_sequence)
+
+    fig = make_subplots(
+        rows=1, cols=subplot_col,
+        shared_yaxes=True,
+        column_widths=ratio_plots_seq,
+        horizontal_spacing=0.01
+    )
+
+    counter = 0
+    axes = {key: [] for key in plot_sequence.values()}
+
+    for n_seq, key in plot_sequence.items():
+        if key == 'MARKER':
+            fig, axes = plot_flag(df_well_marker, fig, axes, key, n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker, df_well_marker[depth].max(), fig, axes, key, n_seq)
+        elif key == 'GR':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='GR', n_seq=n_seq, col='GR', label='GR', axes_key='GR')
+        elif key == 'RT':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RT', n_seq=n_seq, col='RT', label='RT', type='log', axes_key='RT')
+        elif key == 'NPHI_RHOB':
+            fig, axes, counter = plot_xover_log_normal(
+                df, fig, axes, key, n_seq, counter, n_plots=subplot_col, y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
+        elif key == 'VSH_LINEAR':
+            # Check if VSH_LINEAR exists, otherwise use VSH
+            vsh_col = 'VSH_LINEAR' if 'VSH_LINEAR' in df.columns else 'VSH'
+            fig, axes = plot_line(
+                df, fig, axes, base_key='VSH_LINEAR', n_seq=n_seq, col=vsh_col, label='VSH_LINEAR', axes_key='VSH_LINEAR')
+        elif key == 'PHIE':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='PHIE', n_seq=n_seq, col='PHIE', label='PHIE', axes_key='PHIE')
+        elif key == 'SW':
+            fig, axes = plot_line(
+                df, fig, axes, base_key=key, n_seq=n_seq, col=key, label=key)
+        elif key == 'IQUAL':
+            fig, axes = plot_flag(df_well_marker_iqual,
+                                  fig, axes, 'IQUAL', n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker_iqual, df_well_marker_iqual[depth].max(), fig, axes, key, n_seq)
+        
+        
+    # Finalisasi Layout
+    fig = layout_range_all_axis(fig, axes, plot_sequence)
+    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=50)
+    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+
+    fig.update_layout(
+        title_text="Module 2 Analysis",
         yaxis=dict(range=[
                    df[depth].max(), df[depth].min()]),
         hovermode='y unified', template='plotly_white', height=1600,

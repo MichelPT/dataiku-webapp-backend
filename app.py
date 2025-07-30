@@ -14,7 +14,9 @@ from services.plotting_service import (
     extract_markers_with_mean_depth,
     normalize_xover,
     plot_gsa_main,
+    plot_gwd,
     plot_log_default,
+    plot_module_2,
     plot_smoothing,
     plot_phie_den,
     plot_gsa_main,
@@ -128,6 +130,7 @@ DATA_PATH = os.path.join(SCRIPT_DIR, 'data', 'pass_qc.csv')
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 WELLS_DIR = 'data/wells'
 LAS_DIR = 'data/depth-matching'
+GWD_DIR = 'data/gwd'
 
 
 @app.route('/api/fill-null-marker', methods=['POST'])
@@ -243,6 +246,7 @@ def get_plot():
     try:
         request_data = request.get_json()
         selected_wells = request_data.get('selected_wells')
+        selected_intervals = request_data.get('selected_intervals')
 
         if not selected_wells:
             return jsonify({"error": "No wells were selected."}), 400
@@ -261,15 +265,21 @@ def get_plot():
 
         df = pd.concat(df_list, ignore_index=True)
 
-        df_marker = extract_markers_with_mean_depth(df)
-        df = normalize_xover(df, 'NPHI', 'RHOB')
-        df = normalize_xover(df, 'RT', 'RHOB')
+        # df_marker = extract_markers_with_mean_depth(df)
+        # df = normalize_xover(df, 'NPHI', 'RHOB')
+        # df = normalize_xover(df, 'RT', 'RHOB')
 
-        fig = plot_log_default(
-            df=df,
-            df_marker=df_marker,
-            df_well_marker=df
-        )
+        if selected_intervals:  # <-- ADD THIS BLOCK
+            if 'MARKER' in df.columns:
+                # Keep only the rows where 'MARKER' is in our list
+                df = df[df['MARKER'].isin(selected_intervals)]
+            else:
+                print("Warning: 'MARKER' column not found, cannot filter by interval.")
+
+        if df.empty:
+            return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+
+        fig = plot_log_default(df=df)
 
         return jsonify(fig.to_json())
 
@@ -288,6 +298,7 @@ def get_normalization_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih"}), 400
@@ -312,16 +323,18 @@ def get_normalization_plot():
             if log_out_col not in df.columns or df[log_out_col].isnull().all():
                 return jsonify({"error": f"Tidak ada data normalisasi yang valid untuk sumur yang dipilih. Jalankan proses pada interval yang benar."}), 400
 
-            # Siapkan data marker dari DataFrame gabungan
-            df_marker_info = extract_markers_with_mean_depth(df)
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
 
-            # ==========================================================
-            # FIX: Panggil `plot_normalization` dengan argumen yang benar
-            # ==========================================================
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+
             fig_result = plot_normalization(
-                df=df,                 # DataFrame lengkap dengan semua data log
-                # df_marker=df_marker_info,      # DataFrame khusus untuk teks marker
-                # df_well_marker=df      # DataFrame lengkap untuk plot latar belakang marker
+                df=df
             )
 
             return jsonify(fig_result.to_json())
@@ -632,6 +645,7 @@ def get_porosity_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -646,13 +660,19 @@ def get_porosity_plot():
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi VSH dan Porosity terlebih dahulu."}), 400
 
-            df_marker_info = extract_markers_with_mean_depth(df)
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting yang baru
             fig_result = plot_phie_den(
                 df=df,
-                df_marker=df_marker_info,
-                df_well_marker=df
             )
 
             return jsonify(fig_result.to_json())
@@ -740,6 +760,7 @@ def get_gsa_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -748,6 +769,16 @@ def get_gsa_plot():
             df_list = [pd.read_csv(os.path.join(
                 WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting GSA yang baru
             fig_result = plot_gsa_main(df)
@@ -840,6 +871,7 @@ def get_smoothing_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -849,10 +881,19 @@ def get_smoothing_plot():
                 WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
-            # Validasi: Pastikan kolom hasil kalkulasi sebelumnya (VSH, PHIE) sudah ada
             required_cols = ['GR', 'GR_MovingAvg_5', 'GR_MovingAvg_10']
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi Smoothing GR terlebih dahulu."}), 400
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             df_marker_info = extract_markers_with_mean_depth(df)
 
@@ -932,6 +973,7 @@ def get_rgbe_rpbe_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -939,9 +981,6 @@ def get_rgbe_rpbe_plot():
             df_list = []
             for well in selected_wells:
                 file_path = os.path.join(WELLS_DIR, f"{well}.csv")
-                # ✨ FIX APPLIED HERE: Handle bad lines gracefully
-                # This will read the file, warn about bad lines in the console,
-                # and skip them instead of crashing.
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
                 df_list.append(df_well)
 
@@ -952,6 +991,16 @@ def get_rgbe_rpbe_plot():
             if not all(col in df.columns for col in required_cols):
                 # This error will now be correctly shown if the calculation hasn't been run
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RGBE-RPBE terlebih dahulu."}), 400
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             fig_result = plot_rgbe_rpbe(df)
             return jsonify(fig_result.to_json())
@@ -1113,6 +1162,7 @@ def get_rt_r0_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1127,6 +1177,16 @@ def get_rt_r0_plot():
                              'RHOB', 'VSH', 'IQUAL', 'RO', 'RT_RO', 'RWA']
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RT-R0 terlebih dahulu."}), 400
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Generate plot
             fig_result = plot_rt_r0(df)
@@ -1149,6 +1209,7 @@ def get_swgrad_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1161,6 +1222,16 @@ def get_swgrad_plot():
                 df_list.append(df_well)
 
             df = pd.concat(df_list, ignore_index=True)
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # 2. Add the normalization step before plotting
             df = normalize_xover(df, 'NPHI', 'RHOB')
@@ -1193,6 +1264,7 @@ def get_dns_dnsv_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1207,6 +1279,16 @@ def get_dns_dnsv_plot():
                              'NPHI', 'VSH', 'DNS', 'DNSV']
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi DNS-DNSV terlebih dahulu."}), 400
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Generate plot
             fig_result = plot_dns_dnsv(df)
@@ -1302,6 +1384,7 @@ def get_vsh_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1319,12 +1402,18 @@ def get_vsh_plot():
                 else:
                     return jsonify({"error": "Data VSH_GR belum dihitung. Jalankan modul VSH_GR Calculation terlebih dahulu."}), 400
 
-            df_marker_info = extract_markers_with_mean_depth(df)
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             fig_result = plot_vsh_linear(
                 df=df,
-                df_marker=df_marker_info,
-                df_well_marker=df
             )
 
             return jsonify(fig_result.to_json())
@@ -1380,6 +1469,7 @@ def get_sw_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1394,13 +1484,19 @@ def get_sw_plot():
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data SW belum lengkap. Jalankan modul SW Calculation terlebih dahulu."}), 400
 
-            df_marker_info = extract_markers_with_mean_depth(df)
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting yang baru
             fig_result = plot_sw_indo(
                 df=df,
-                df_marker=df_marker_info,
-                df_well_marker=df
             )
 
             return jsonify(fig_result.to_json())
@@ -1454,6 +1550,7 @@ def get_rwa_plot():
         try:
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1467,13 +1564,19 @@ def get_rwa_plot():
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data RWA belum dihitung. Jalankan modul RWA Calculation terlebih dahulu."}), 400
 
-            df_marker_info = extract_markers_with_mean_depth(df)
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting RWA
             fig_result = plot_rwa_indo(
                 df=df,
-                df_marker=df_marker_info,
-                df_well_marker=df
             )
 
             return jsonify(fig_result.to_json())
@@ -1510,6 +1613,81 @@ def run_vsh_dn_calculation():
                     f"Hasil VSH-DN untuk sumur '{well_name}' telah disimpan.")
 
             return jsonify({"message": f"Kalkulasi VSH (D-N) berhasil untuk {len(selected_wells)} sumur."})
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-module2-plot', methods=['POST', 'OPTIONS'])
+def get_module2_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            df = df.rename(columns={'VSH_GR': 'VSH_LINEAR'})
+
+            required_cols = ['RWA', 'IQUAL', 'PHIE', 'VSH_LINEAR', 'SW']
+            if not all(col in df.columns for col in required_cols):
+                return jsonify({"error": "Data Module 2 belum lengkap. Jalankan semua Module 2 Calculation terlebih dahulu."}), 400
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+
+            # Panggil fungsi plotting RWA
+            fig_result = plot_module_2(
+                df=df,
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-gwd', methods=['POST', 'OPTIONS'])
+def gwd_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            gwd_path = os.path.join(GWD_DIR, 'gwd-data.csv')
+
+            if not os.path.exists(gwd_path):
+                return jsonify({"error": f"File tidak ditemukan: {gwd_path}"}), 404
+            # 1. Baca data dari file CSV
+            gwd_data = pd.read_csv(gwd_path, on_bad_lines='warn')
+
+            # 2. Panggil fungsi plotting dengan data yang sudah diolah
+            fig_result = plot_gwd(
+                df=gwd_data
+            )
+
+            # 3. Kirim plot yang sudah jadi sebagai JSON
+            return jsonify(fig_result.to_json())
 
         except Exception as e:
             import traceback

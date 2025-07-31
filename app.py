@@ -35,6 +35,7 @@ from services.swgrad_plot import plot_swgrad
 from services.dns_dnsv_plot import plot_dns_dnsv
 from services.rwa import calculate_rwa
 from services.sw import calculate_sw
+from services.structures_service import get_fields_list, get_field_structures, get_structure_details, get_well_details
 
 from typing import Optional
 import numpy as np
@@ -1552,6 +1553,184 @@ def run_vsh_dn_calculation():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/structures', methods=['GET'])
+def get_structures_overview():
+    """
+    Get list of all available fields.
+    """
+    try:
+        data = get_fields_list()
+        return jsonify(data), 200
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/structures/fields', methods=['GET'])
+def get_fields_list_route():
+    """
+    Get list of all available fields.
+    """
+    try:
+        data = get_fields_list()
+        return jsonify(data), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/structures/field/<field_name>', methods=['GET'])
+def get_field_info(field_name):
+    """
+    Get all structures for a specific field.
+    """
+    try:
+        data = get_field_structures(field_name)
+        return jsonify(data), 200
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/structures/structure/<field_name>/<structure_name>', methods=['GET'])
+def get_structure_info(field_name, structure_name):
+    """
+    Get detailed information for a specific structure.
+    """
+    try:
+        data = get_structure_details(field_name, structure_name)
+        return jsonify(data), 200
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/structures/well/<well_name>', methods=['GET'])
+def get_well_info(well_name):
+    """
+    Get detailed information for a specific well across all structures.
+    """
+    try:
+        data = get_well_details(well_name)
+        return jsonify(data), 200
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/structures/wells', methods=['GET'])
+def get_all_wells():
+    """
+    Get list of all wells across all structures (simplified).
+    """
+    try:
+        # Get all fields first
+        fields_data = get_fields_list()
+        all_wells = set()
+        
+        
+        # Collect wells from all fields
+        for field in fields_data['fields']:
+            try:
+                field_structures = get_field_structures(field['field_name'])
+                all_wells.update(field_structures['total_wells'])
+            except Exception as e:
+                print(f"Error processing field {field['field_name']}: {str(e)}")
+                continue
+        
+        wells = sorted(list(all_wells))
+        return jsonify({
+            'wells': wells,
+            'total_wells': len(wells)
+        }), 200
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/structures/search', methods=['POST'])
+def search_structures():
+    """
+    Search for wells, fields, or structures based on query parameters.
+    """
+    try:
+        request_data = request.get_json()
+        search_type = request_data.get('type', 'well')  # 'well', 'field', 'structure'
+        query = request_data.get('query', '').strip().lower()
+        
+        if not query:
+            return jsonify({"error": "Query parameter is required"}), 400
+        
+        results = []
+        
+        if search_type == 'field':
+            # Search for fields
+            fields_data = get_fields_list()
+            for field in fields_data['fields']:
+                if query in field['field_name'].lower():
+                    results.append(field)
+        
+        elif search_type == 'structure':
+            # Search for structures across all fields
+            fields_data = get_fields_list()
+            for field in fields_data['fields']:
+                try:
+                    field_structures = get_field_structures(field['field_name'])
+                    for structure in field_structures['structures']:
+                        if query in structure['structure_name'].lower():
+                            results.append(structure)
+                except Exception as e:
+                    print(f"Error searching in field {field['field_name']}: {str(e)}")
+                    continue
+        
+        elif search_type == 'well':
+            # Search for wells across all structures
+            fields_data = get_fields_list()
+            for field in fields_data['fields']:
+                try:
+                    field_structures = get_field_structures(field['field_name'])
+                    for structure in field_structures['structures']:
+                        matching_wells = [well for well in structure['wells'] if query in well.lower()]
+                        for well in matching_wells:
+                            results.append({
+                                'well_name': well,
+                                'field_name': structure['field_name'],
+                                'structure_name': structure['structure_name']
+                            })
+                except Exception as e:
+                    print(f"Error searching wells in field {field['field_name']}: {str(e)}")
+                    continue
+        
+        else:
+            return jsonify({"error": "Invalid search type. Use 'well', 'field', or 'structure'"}), 400
+        
+        return jsonify({
+            'search_type': search_type,
+            'query': query,
+            'results': results,
+            'total_results': len(results)
+        }), 200
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 # This is for local development testing, Vercel will use its own server

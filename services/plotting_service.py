@@ -119,6 +119,7 @@ unit_col = {
     'NPHI_RHOB': ['V/V', 'G/C3', 'V/V', 'G/C3'],
     'RHOB': ['G/C3'],
     'SW': ['V/V'],
+    'SW': ['V/V'],
     'PHIE_PHIT': ['V/V', 'V/V'],
     'PERM': ['mD'],
     'VCL': ['V/V'],
@@ -262,6 +263,7 @@ flag_color = {
     },
     "IQUAL": {
         1: 'orange',
+        1: 'orange',
     }
 
 }
@@ -274,6 +276,7 @@ range_col = {
     'GR_RAW_NORM': [[0, 250]],
     'GR_MovingAvg_5': [[0, 250]],
     'GR_MovingAvg_10': [[0, 250]],
+    'RT': [[0.02, 100]],
     'RT': [[0.02, 100]],
     'RT_RO': [[0.02, 2000], [0.02, 2000]],
     'X_RT_RO': [[0, 4]],
@@ -310,7 +313,7 @@ range_col = {
     'RT_PHIE': [[0.02, 2000], [0.6, 0]],
     'SWARRAY': [[1, 0], [1, 0], [1, 0], [1, 0]],
     'SWGRAD': [[0, 0.1]],
-    'DNS': [[-1, 1]],
+    'DNS': [[-0.5, 0.5]],
     'DNSV': [[-1, 1]],
     'RGBE': [[10, -10]],
     'RPBE': [[-10, 10]],
@@ -330,6 +333,7 @@ ratio_plots = {
     'GR_RAW_NORM': 1,
     'GR_MovingAvg_5': 1,
     'GR_MovingAvg_10': 1,
+    'RT': 1,
     'RT': 1,
     'RT_RO': 1,
     'X_RT_RO': 0.5,
@@ -516,7 +520,7 @@ def xover_label_df(df_well, key, type=1):
     return xover_dfs
 
 
-def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=None):
+def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=None, axes_key=None):
     """
     Plot a line curve on the well log plot.
 
@@ -528,7 +532,7 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
         Figure to add trace to
     axes : dict
         Dictionary with axes information
-    key : str
+    base_key : str
         Key for display settings (colors, ranges, units)
     n_seq : int
         Sequence number for the plot
@@ -538,6 +542,8 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
         Column name in df_well to plot (if None, uses data_col[key][0])
     label : str, optional
         Label to display for the curve (if None, uses col)
+    axes_key : str, optional
+        Key to use for storing axes in the axes dictionary (if None, uses col)
 
     Returns:
     --------
@@ -553,6 +559,10 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
     # If label is not provided, use the column name
     if label is None:
         label = col
+
+    # If axes_key is not provided, use col
+    if axes_key is None:
+        axes_key = col
 
     # Add trace to figure
     fig.add_trace(
@@ -588,8 +598,8 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
         )
 
     # Update axes dictionary
-    axes[col].append('yaxis'+str(n_seq))
-    axes[col].append('xaxis'+str(n_seq))
+    axes[axes_key].append('yaxis'+str(n_seq))
+    axes[axes_key].append('xaxis'+str(n_seq))
 
     return fig, axes
 

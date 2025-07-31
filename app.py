@@ -22,7 +22,8 @@ from services.plotting_service import (
     plot_gsa_main,
     plot_vsh_linear,
     plot_sw_indo,
-    plot_rwa_indo
+    plot_rwa_indo,
+    plot_module2
 )
 from services.plotting_service import plot_normalization
 from services.depth_matching import depth_matching, plot_depth_matching_results
@@ -1578,6 +1579,42 @@ def get_rwa_plot():
 
             # Panggil fungsi plotting RWA
             fig_result = plot_rwa_indo(
+                df=df,
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-module2-plot', methods=['POST', 'OPTIONS'])
+def get_module2_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            required_cols = ['PHIE', 'VSH', 'SW']
+            if not all(col in df.columns for col in required_cols):
+                return jsonify({"error": "Data belum lengkap."}), 400
+
+            df_marker_info = extract_markers_with_mean_depth(df)
+
+            # Panggil fungsi plotting RWA
+            fig_result = plot_module2(
                 df=df,
             )
 

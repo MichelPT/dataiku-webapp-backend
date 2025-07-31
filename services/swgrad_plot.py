@@ -1,3 +1,4 @@
+from narwhals import col
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from services.plotting_service import (
@@ -52,14 +53,14 @@ def plot_swgrad(df, title='SWGRAD Analysis'):
             fig, axes = plot_flag(df, fig, axes, key, n_seq)
             fig, axes = plot_texts_marker(
                 df_marker, df['DEPTH'].max(), fig, axes, key, n_seq)
-
-        elif key in ['GR', 'RT', 'SWGRAD']:
+        elif key in ['GR', 'SWGRAD']:
             fig, axes = plot_line(df, fig, axes, key, n_seq)
-
+        elif key == 'RT':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RT', n_seq=n_seq, col='RT', label='RT', type='log', axes_key='RT')
         elif key == 'NPHI_RHOB':
-            fig, axes, counter = plot_xover_log_normal(
-                df, fig, axes, key, n_seq, counter, n_plots=subplot_col)
-
+            fig, axes, counter = plot_xover_log_normal(df, fig, axes, key, n_seq, counter, n_plots=subplot_col,
+                                                       y_color='rgba(0,0,0,0)', n_color='yellow', type=2, exclude_crossover=False)
         elif key == 'SWARRAY':
             fig, axes, counter = plot_four_features_simple(
                 df, fig, axes, key, n_seq, counter, n_plots=subplot_col)

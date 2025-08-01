@@ -130,9 +130,119 @@ def handle_nulls_route():
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(SCRIPT_DIR, 'data', 'pass_qc.csv')
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-WELLS_DIR = 'data/wells'
+WELLS_DIR = 'data/structures/adera/abab'  # This will be dynamically updated
 LAS_DIR = 'data/depth-matching'
 GWD_DIR = 'data/gwd'
+
+
+def update_wells_dir(new_path):
+    """
+    Update the global WELLS_DIR variable dynamically.
+    """
+    global WELLS_DIR
+    # Basic path validation - prevent directory traversal attacks
+    if new_path and isinstance(new_path, str) and '..' not in new_path:
+        WELLS_DIR = new_path
+        return True
+    return False
+
+
+def get_current_wells_dir():
+    """
+    Get the current WELLS_DIR value.
+    """
+    global WELLS_DIR
+    return WELLS_DIR
+
+
+@app.route('/api/set-wells-dir', methods=['POST'])
+def set_wells_dir():
+    """
+    Endpoint for frontend to dynamically change the WELLS_DIR.
+    Expected JSON: {"wells_dir": "data/structures/adera/abab"}
+    """
+    try:
+        data = request.get_json()
+        new_wells_dir = data.get('wells_dir')
+        
+        if not new_wells_dir:
+            return jsonify({"error": "wells_dir parameter is required"}), 400
+        
+        # Update the global WELLS_DIR
+        if update_wells_dir(new_wells_dir):
+            return jsonify({
+                "message": "Wells directory updated successfully",
+                "wells_dir": get_current_wells_dir()
+            }), 200
+        else:
+            return jsonify({"error": "Invalid wells_dir path"}), 400
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/select-structure', methods=['POST'])
+def select_structure():
+    """
+    Endpoint for frontend to select a structure and automatically set WELLS_DIR.
+    Expected JSON: {"field_name": "adera", "structure_name": "abab"}
+    """
+    try:
+        data = request.get_json()
+        field_name = data.get('field_name')
+        structure_name = data.get('structure_name')
+        
+        if not field_name or not structure_name:
+            return jsonify({"error": "field_name and structure_name are required"}), 400
+        
+        # Construct the wells directory path
+        new_wells_dir = f"data/structures/{field_name}/{structure_name}"
+        
+        # Update the global WELLS_DIR
+        if update_wells_dir(new_wells_dir):
+            # Check if the directory exists and get wells list
+            import os
+            if os.path.exists(new_wells_dir):
+                well_files = [f.replace('.csv', '') for f in os.listdir(new_wells_dir) if f.endswith('.csv')]
+                well_files.sort()
+                
+                return jsonify({
+                    "message": f"Structure {field_name}/{structure_name} selected successfully",
+                    "field_name": field_name,
+                    "structure_name": structure_name,
+                    "wells_dir": get_current_wells_dir(),
+                    "available_wells": well_files,
+                    "total_wells": len(well_files)
+                }), 200
+            else:
+                return jsonify({
+                    "message": f"Structure {field_name}/{structure_name} selected, but directory doesn't exist yet",
+                    "field_name": field_name,
+                    "structure_name": structure_name,
+                    "wells_dir": get_current_wells_dir(),
+                    "available_wells": [],
+                    "total_wells": 0
+                }), 200
+        else:
+            return jsonify({"error": "Invalid structure path"}), 400
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-wells-dir', methods=['GET'])
+def get_wells_dir():
+    """
+    Get the current WELLS_DIR value.
+    """
+    try:
+        return jsonify({
+            "wells_dir": get_current_wells_dir()
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/fill-null-marker', methods=['POST'])

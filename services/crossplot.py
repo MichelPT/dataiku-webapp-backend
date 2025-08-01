@@ -116,14 +116,39 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
             x_line_wtr1 = np.array([xx0, x_water])
             y_line_wtr1 = np.array([yy0, y_water])
 
-            fig.add_trace(go.Scatter(x=x_line_qz1, y=y_line_qz1, mode='lines', line=dict(
-                color='red', width=2), name='QZ Line'))
-            fig.add_trace(go.Scatter(x=x_line_wtr1, y=y_line_wtr1, mode='lines', line=dict(
-                color='red', width=2), name='WTR Line'))
-            fig.add_trace(go.Scatter(x=[xx0], y=[yy0], mode='markers', marker=dict(
-                color='red', size=10, symbol='circle'), name='Intersection'))
             fig.add_trace(go.Scatter(x=[x_quartz, x_water], y=[y_quartz, y_water], mode='markers', marker=dict(
                 color='black', size=5, symbol='cross'), name='Quartz & Water'))
+            # Anda harus mengambil titik awal dan akhir dari array Anda
+            fig.add_shape(
+                type="line",
+                x0=x_line_qz1[0], y0=y_line_qz1[0],     # Titik awal
+                x1=x_line_qz1[-1], y1=y_line_qz1[-1],   # Titik akhir
+                line=dict(color="red", width=2),
+                layer='above'  # Anda mendapatkan kontrol layer ini
+            )
+            fig.add_shape(
+                type="line",
+                x0=x_line_wtr1[0], y0=y_line_wtr1[0],     # Titik awal
+                x1=x_line_wtr1[-1], y1=y_line_wtr1[-1],   # Titik akhir
+                line=dict(color="red", width=2),
+                layer='above'  # Anda mendapatkan kontrol layer ini
+            )
+            # fig.add_trace(go.Scatter(x=x_line_wtr1, y=y_line_wtr1, mode='lines', line=dict(
+            #     color='red', width=2), name='WTR Line'))
+            fig.add_trace(go.Scatter(x=[xx0], y=[yy0], mode='markers', marker=dict(
+                color='red', size=10, symbol='circle'), name='Intersection'))
+
+            radiusX = 0.01
+            radiusY = 0.01
+            fig.add_shape(
+                type="circle",
+                xref="x", yref="y",
+                x0=xx0 - radiusX, y0=yy0 - radiusY,
+                x1=xx0 + radiusX, y1=yy0 + radiusY,
+                line_color="red",
+                fillcolor="red",
+                layer='above'
+            )
             fig.add_shape(
                 type="line",
                 x0=1, y0=1,

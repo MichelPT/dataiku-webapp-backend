@@ -495,8 +495,10 @@ def run_depth_matching_endpoint():
         try:
             well_name = request.json.get('well_name', 'BNG-56')
             ref_las_path = os.path.join(
-                LAS_DIR, f'TRIMMED_{well_name}_WL_8.5in.las')
+                LAS_DIR, f'{well_name}_WL_8.5in.las')
             lwd_las_path = os.path.join(LAS_DIR, f'{well_name}_LWD_8.5in.las')
+
+            print(ref_las_path)
 
             if not os.path.exists(ref_las_path):
                 return jsonify({"error": f"File tidak ditemukan: {ref_las_path}"}), 404
@@ -1625,6 +1627,7 @@ def run_vsh_dn_calculation():
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 
+
 @app.route('/api/get-module2-plot', methods=['POST', 'OPTIONS'])
 def get_module2_plot():
     if request.method == 'OPTIONS':
@@ -1826,17 +1829,17 @@ def get_all_wells():
         # Get all fields first
         fields_data = get_fields_list()
         all_wells = set()
-        
-        
+
         # Collect wells from all fields
         for field in fields_data['fields']:
             try:
                 field_structures = get_field_structures(field['field_name'])
                 all_wells.update(field_structures['total_wells'])
             except Exception as e:
-                print(f"Error processing field {field['field_name']}: {str(e)}")
+                print(
+                    f"Error processing field {field['field_name']}: {str(e)}")
                 continue
-        
+
         wells = sorted(list(all_wells))
         return jsonify({
             'wells': wells,
@@ -1855,42 +1858,47 @@ def search_structures():
     """
     try:
         request_data = request.get_json()
-        search_type = request_data.get('type', 'well')  # 'well', 'field', 'structure'
+        # 'well', 'field', 'structure'
+        search_type = request_data.get('type', 'well')
         query = request_data.get('query', '').strip().lower()
-        
+
         if not query:
             return jsonify({"error": "Query parameter is required"}), 400
-        
+
         results = []
-        
+
         if search_type == 'field':
             # Search for fields
             fields_data = get_fields_list()
             for field in fields_data['fields']:
                 if query in field['field_name'].lower():
                     results.append(field)
-        
+
         elif search_type == 'structure':
             # Search for structures across all fields
             fields_data = get_fields_list()
             for field in fields_data['fields']:
                 try:
-                    field_structures = get_field_structures(field['field_name'])
+                    field_structures = get_field_structures(
+                        field['field_name'])
                     for structure in field_structures['structures']:
                         if query in structure['structure_name'].lower():
                             results.append(structure)
                 except Exception as e:
-                    print(f"Error searching in field {field['field_name']}: {str(e)}")
+                    print(
+                        f"Error searching in field {field['field_name']}: {str(e)}")
                     continue
-        
+
         elif search_type == 'well':
             # Search for wells across all structures
             fields_data = get_fields_list()
             for field in fields_data['fields']:
                 try:
-                    field_structures = get_field_structures(field['field_name'])
+                    field_structures = get_field_structures(
+                        field['field_name'])
                     for structure in field_structures['structures']:
-                        matching_wells = [well for well in structure['wells'] if query in well.lower()]
+                        matching_wells = [
+                            well for well in structure['wells'] if query in well.lower()]
                         for well in matching_wells:
                             results.append({
                                 'well_name': well,
@@ -1898,19 +1906,20 @@ def search_structures():
                                 'structure_name': structure['structure_name']
                             })
                 except Exception as e:
-                    print(f"Error searching wells in field {field['field_name']}: {str(e)}")
+                    print(
+                        f"Error searching wells in field {field['field_name']}: {str(e)}")
                     continue
-        
+
         else:
             return jsonify({"error": "Invalid search type. Use 'well', 'field', or 'structure'"}), 400
-        
+
         return jsonify({
             'search_type': search_type,
             'query': query,
             'results': results,
             'total_results': len(results)
         }), 200
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()

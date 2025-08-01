@@ -37,9 +37,9 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
     else:
         df_filtered = df.copy()
 
-    # Override kolom y jika GR norm tersedia dan y bukan RHOB
-    if "GR_RAW_NORM" in df_filtered.columns and y_col != "RHOB":
-        y_col = "GR_RAW_NORM"
+    # # Override kolom y jika GR norm tersedia dan y bukan RHOB
+    # if "GR_RAW_NORM" in df_filtered.columns and y_col != "RHOB":
+    #     y_col = "GR_RAW_NORM"
 
     # Validasi kolom
     for col in [x_col, y_col]:
@@ -139,7 +139,7 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
                 color='red', size=10, symbol='circle'), name='Intersection'))
 
             radiusX = 0.01
-            radiusY = 0.01
+            radiusY = 0.02
             fig.add_shape(
                 type="circle",
                 xref="x", yref="y",
@@ -196,20 +196,20 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
 
         # Logika penambahan 'shapes'
         y_max = df_clean[y_col].max()
-        yaxis_range = [0, math.ceil(y_max / 20) * 20]
+        yaxis_range = [0, y_max + 20]
         yaxis_dtick = 20
 
         fig.add_shape(
             type="line", x0=1, y0=0, x1=-0.02, y1=gr_ma, xref='x', yref='y',
-            line=dict(color="black", width=2, dash="solid"), layer='above'
+            line=dict(color="red", width=2, dash="solid"), layer='above'
         )
         fig.add_shape(
             type="line", x0=-0.02, y0=gr_ma, x1=0.4, y1=gr_sh, xref='x', yref='y',
-            line=dict(color="black", width=2, dash="solid"), layer='above'
+            line=dict(color="red", width=2, dash="solid"), layer='above'
         )
         fig.add_shape(
             type="line", x0=0.4, y0=gr_sh, x1=1, y1=0, xref='x', yref='y',
-            line=dict(color="black", width=2, dash="solid"), layer='above'
+            line=dict(color="red", width=2, dash="solid"), layer='above'
         )
 
         # BARU: Atur tick colorbar agar berupa bilangan bulat

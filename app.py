@@ -1,4 +1,5 @@
 # /api/app.py
+from services.iqual import calculate_iqual
 from services.vsh_dn import calculate_vsh_dn
 from services.rwa import calculate_rwa
 from services.sw import calculate_sw
@@ -164,10 +165,10 @@ def set_wells_dir():
     try:
         data = request.get_json()
         new_wells_dir = data.get('wells_dir')
-        
+
         if not new_wells_dir:
             return jsonify({"error": "wells_dir parameter is required"}), 400
-        
+
         # Update the global WELLS_DIR
         if update_wells_dir(new_wells_dir):
             return jsonify({
@@ -176,7 +177,7 @@ def set_wells_dir():
             }), 200
         else:
             return jsonify({"error": "Invalid wells_dir path"}), 400
-            
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -191,21 +192,22 @@ def select_structure():
         data = request.get_json()
         field_name = data.get('field_name')
         structure_name = data.get('structure_name')
-        
+
         if not field_name or not structure_name:
             return jsonify({"error": "field_name and structure_name are required"}), 400
-        
+
         # Construct the wells directory path
         new_wells_dir = f"data/structures/{field_name}/{structure_name}"
-        
+
         # Update the global WELLS_DIR
         if update_wells_dir(new_wells_dir):
             # Check if the directory exists and get wells list
             import os
             if os.path.exists(new_wells_dir):
-                well_files = [f.replace('.csv', '') for f in os.listdir(new_wells_dir) if f.endswith('.csv')]
+                well_files = [f.replace('.csv', '') for f in os.listdir(
+                    new_wells_dir) if f.endswith('.csv')]
                 well_files.sort()
-                
+
                 return jsonify({
                     "message": f"Structure {field_name}/{structure_name} selected successfully",
                     "field_name": field_name,
@@ -225,7 +227,7 @@ def select_structure():
                 }), 200
         else:
             return jsonify({"error": "Invalid structure path"}), 400
-            
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1756,11 +1758,11 @@ def get_module2_plot():
                 WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
-            df = df.rename(columns={'VSH_GR': 'VSH_LINEAR'})
+            df = df.rename(columns={'VSH_GR': 'VSH_LINEAR', 'RWA_FULL': 'RWA'})
 
-            required_cols = ['RWA', 'IQUAL', 'PHIE', 'VSH_LINEAR', 'SW']
-            if not all(col in df.columns for col in required_cols):
-                return jsonify({"error": "Data Module 2 belum lengkap. Jalankan semua Module 2 Calculation terlebih dahulu."}), 400
+            # required_cols = ['RWA', 'IQUAL', 'PHIE', 'VSH_LINEAR', 'SW']
+            # if not all(col in df.columns for col in required_cols):
+            #     return jsonify({"error": "Data Module 2 belum lengkap. Jalankan semua Module 2 Calculation terlebih dahulu."}), 400
 
             if selected_intervals:
                 if 'MARKER' in df.columns:
@@ -1771,6 +1773,8 @@ def get_module2_plot():
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+
+            df = calculate_iqual(df)
 
             # Panggil fungsi plotting RWA
             fig_result = plot_module_2(

@@ -7,6 +7,8 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 
+from services.iqual import calculate_iqual
+
 colors = px.colors.qualitative.G10
 colors_dict = {
     'blue': 'royalblue',
@@ -306,7 +308,7 @@ range_col = {
     'PHIE_DEN': [[0, 1], [0, 1]],
     'PHIT_DEN': [[0, 1], [0, 1]],
     'PHIE_PHIT': [[0, 1], [0, 1]],
-    'RWA': [[0, 60], [0, 60], [0, 60]],
+    'RWA': [[0.02, 100], [0.02, 100], [0.02, 100]],
     'PHIE': [[0.5, 0]],  # perbaiki seluruh PHIE dan PHIT
     'RT_GR': [[0.02, 2000], [0, 250], [0.02, 2000], [0, 250]],
     # 'RT_PHIE':[[0.02, 2000],[0.6,0],[0.02, 2000],[0.6,0]],
@@ -321,6 +323,7 @@ range_col = {
     'TG_SUMC': [[0, 2]],
     'C3_C1': [[0.00001, 0.08]],
     'C3_C1_BASELINE': [[0.00001, 0.08]],
+    'IQUAL': [[0, 1]],
 }
 
 ratio_plots = {
@@ -1051,6 +1054,19 @@ def plot_three_features_simple(df_well, fig, axes, key, n_seq, counter, n_plots,
     Feature kedua dan ketiga menggunakan x-axis overlay dengan garis putus-putus dan titik-titik.
     """
 
+    if log_scale:
+        # Periksa dan perbaiki rentang untuk sumbu pertama
+        if range_col[key][0][0] <= 0:
+            range_col[key][0][0] = 0.01  # Ganti 0 dengan nilai positif kecil
+
+        # Periksa dan perbaiki rentang untuk sumbu kedua (jika ada)
+        if len(range_col[key]) > 1 and range_col[key][1][0] <= 0:
+            range_col[key][1][0] = 0.01
+
+        # Periksa dan perbaiki rentang untuk sumbu ketiga (jika ada)
+        if len(range_col[key]) > 2 and range_col[key][2][0] <= 0:
+            range_col[key][2][0] = 0.01
+
     # Tambahkan axis info ke dictionary untuk feature pertama
     axes[key].append('yaxis'+str(n_seq))
     axes[key].append('xaxis'+str(n_seq))
@@ -1737,6 +1753,10 @@ def plot_flag(df_well, fig, axes, key, n_seq):
 
     custom_data = []
     flag_names = df_well[col].map(flags_names.get)
+
+    if key == 'IQUAL':
+        flag_names = flag_names.fillna('0')
+
     for i in flag_names:
         custom_data.append([i]*int(max_val+1))
 
@@ -2629,10 +2649,10 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
 
         # POROSITY
         elif col == 'PHIE':
-            fig, axes = plot_line(
-                df, fig, axes, base_key='PHIE', n_seq=n_seq, col=col, label=col)
-            # fig, axes, counter = plot_xover_thres_dual(
-            #     df, fig, axes, col, n_seq, counter, above_thres_color="yellow", below_thres_color="green")
+            # fig, axes = plot_line(
+            #     df, fig, axes, base_key='PHIE', n_seq=n_seq, col=col, label=col)
+            fig, axes, counter = plot_xover_thres_dual(
+                df, fig, axes, col, n_seq, counter, above_thres_color="yellow", below_thres_color="green")
         elif col == 'PHIE_PHIT':
             fig, axes, counter = plot_xover_log_normal(df, fig, axes, col, n_seq,
                                                        counter, n_plots=subplot_col,
@@ -2647,20 +2667,20 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
         # RWA
         elif col == 'RWA':
             fig, axes, counter = plot_three_features_simple(
-                df, fig, axes, col, n_seq, counter, subplot_col, log_scale=False)
+                df, fig, axes, col, n_seq, counter, subplot_col, log_scale=True)
 
         # RGSA-NGSA-DGSA
-        elif key == 'RT_RGSA':
+        elif col == 'RT_RGSA':
             fig, axes, counter = plot_gsa_crossover(
-                df, fig, axes, key, n_seq, counter, n_plots=subplot_col, fill_color_red='red', fill_color_blue=colors_dict['blue'])
-        elif key == 'NPHI_NGSA':
+                df, fig, axes, col, n_seq, counter, n_plots=subplot_col, fill_color_red='red', fill_color_blue=colors_dict['blue'])
+        elif col == 'NPHI_NGSA':
             fig, axes, counter = plot_gsa_crossover(
-                df, fig, axes, key, n_seq, counter, n_plots=subplot_col, fill_color_red='red', fill_color_blue='darkgreen')
-        elif key == 'RHOB_DGSA':
+                df, fig, axes, col, n_seq, counter, n_plots=subplot_col, fill_color_red='red', fill_color_blue='darkgreen')
+        elif col == 'RHOB_DGSA':
             fig, axes, counter = plot_gsa_crossover(
-                df, fig, axes, key, n_seq, counter, n_plots=subplot_col, fill_color_red='red', fill_color_blue='darkgreen')
-        elif key == 'ZONA':
-            fig, axes = plot_flag(df, fig, axes, key, n_seq)
+                df, fig, axes, col, n_seq, counter, n_plots=subplot_col, fill_color_red='red', fill_color_blue='darkgreen')
+        elif col == 'ZONA':
+            fig, axes = plot_flag(df, fig, axes, col, n_seq)
 
         # RGBE RPBE
         elif col == 'RT_GR':
@@ -2688,17 +2708,17 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
                 df_marker_rpbe, df_well_marker_rpbe['DEPTH'].max(), fig, axes, col, n_seq)
 
         # SWGRAD
-        elif key == 'SWGRAD':
-            fig, axes = plot_line(df, fig, axes, key, n_seq)
-        elif key == 'SWARRAY':
+        elif col == 'SWGRAD':
+            fig, axes = plot_line(df, fig, axes, col, n_seq)
+        elif col == 'SWARRAY':
             fig, axes, counter = plot_four_features_simple(
-                df, fig, axes, key, n_seq, counter, n_plots=subplot_col, log_scale=False)
+                df, fig, axes, col, n_seq, counter, n_plots=subplot_col, log_scale=False)
 
         # DNS DNSV
-        elif key == 'DNS':
-            fig, axes = plot_line(df, fig, axes, key, n_seq)
-        elif key == 'DNSV':
-            fig, axes = plot_line(df, fig, axes, key, n_seq)
+        elif col == 'DNS':
+            fig, axes = plot_line(df, fig, axes, col, n_seq)
+        elif col == 'DNSV':
+            fig, axes = plot_line(df, fig, axes, col, n_seq)
 
         # RT R0
         elif col == 'RT_RO':
@@ -3019,9 +3039,9 @@ def plot_gsa_main(df):
     #     height=1600,
     # )
 
-    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB',
-                'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA']
-    fig = main_plot(df, sequence, title="Gas Show Anomaly (GSA)")
+    sequence_rgsa = ['MARKER', 'GR', 'RT', 'NPHI_RHOB',
+                     'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA']
+    fig = main_plot(df, sequence_rgsa, title="Gas Show Anomaly Analysis")
 
     return fig
 
@@ -3129,4 +3149,16 @@ def plot_module_2(df):
 def plot_gwd(df):
     sequence = ['TGC', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE']
     fig = main_plot(df, sequence, title="GWD Analysis")
+    return fig
+
+
+def plot_iqual(df):
+    """
+    Membuat plot IQUAL.
+    """
+    df = calculate_iqual(df)
+
+    sequence_iqual = ['MARKER', 'VSH', 'PHIE_PHIT', 'IQUAL']
+    fig = main_plot(df, sequence_iqual, title="IQUAL")
+
     return fig

@@ -1,39 +1,9 @@
 import numpy as np
 import pandas as pd
-from scipy.stats import linregress
 from services.plotting_service import (
-    extract_markers_with_mean_depth,
-    extract_markers_customize,
     main_plot,
-    normalize_xover,
-    plot_line,
-    plot_xover_log_normal,
-    plot_two_features_simple,
-    plot_flag,
-    plot_text_values,
-    plot_texts_marker,
-    layout_range_all_axis,
-    layout_draw_lines,
-    layout_axis,
-    ratio_plots
 )
-from plotly.subplots import make_subplots
-
-
-def calculate_iqual(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Menghitung kolom IQUAL berdasarkan kondisi PHIE dan VSH.
-    IQUAL = 1 jika (PHIE >= 0.1) dan (VSH <= 0.5), selain itu 0.
-    """
-    df = df.copy()
-    # Pastikan kolom yang dibutuhkan ada
-    if 'PHIE' in df.columns and 'VSH' in df.columns:
-        df['IQUAL'] = np.where((df['PHIE'] >= 0.1) & (df['VSH'] <= 0.5), 1, 0)
-    else:
-        # Jika kolom tidak ada, buat IQUAL dengan nilai default 0
-        df['IQUAL'] = 0
-        print("Peringatan: Kolom 'PHIE' atau 'VSH' tidak ditemukan. Kolom 'IQUAL' diisi dengan 0.")
-    return df
+from services.iqual import calculate_iqual
 
 
 def calculate_interval_statistics(df_input: pd.DataFrame) -> pd.DataFrame:

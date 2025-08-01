@@ -15,6 +15,7 @@ from services.plotting_service import (
     normalize_xover,
     plot_gsa_main,
     plot_gwd,
+    plot_iqual,
     plot_log_default,
     plot_module_2,
     plot_smoothing,
@@ -1689,6 +1690,45 @@ def gwd_plot():
             )
 
             # 3. Kirim plot yang sudah jadi sebagai JSON
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-iqual', methods=['POST', 'OPTIONS'])
+def get_iqual_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data dari sumur yang dipilih
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+
+            # Panggil fungsi plotting IQUAL yang baru
+            fig_result = plot_iqual(df)
+
             return jsonify(fig_result.to_json())
 
         except Exception as e:

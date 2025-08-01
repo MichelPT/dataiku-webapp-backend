@@ -179,11 +179,11 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
             line=dict(color="black", width=2, dash="solid"), layer='above'
         )
         fig.add_shape(
-            type="line", x0=-0.02, y0=gr_ma, x1=0.4, y1=220, xref='x', yref='y',
+            type="line", x0=-0.02, y0=gr_ma, x1=0.4, y1=gr_sh, xref='x', yref='y',
             line=dict(color="black", width=2, dash="solid"), layer='above'
         )
         fig.add_shape(
-            type="line", x0=0.4, y0=220, x1=1, y1=0, xref='x', yref='y',
+            type="line", x0=0.4, y0=gr_sh, x1=1, y1=0, xref='x', yref='y',
             line=dict(color="black", width=2, dash="solid"), layer='above'
         )
 

@@ -492,8 +492,10 @@ def run_depth_matching_endpoint():
 
     if request.method == 'POST':
         try:
-            ref_las_path = os.path.join(LAS_DIR, 'ref.las')
-            lwd_las_path = os.path.join(LAS_DIR, 'lwd.las')
+            well_name = request.json.get('well_name', 'BNG-56')
+            ref_las_path = os.path.join(
+                LAS_DIR, f'TRIMMED_{well_name}_WL_8.5in.las')
+            lwd_las_path = os.path.join(LAS_DIR, f'{well_name}_LWD_8.5in.las')
 
             if not os.path.exists(ref_las_path):
                 return jsonify({"error": f"File tidak ditemukan: {ref_las_path}"}), 404
@@ -1348,8 +1350,8 @@ def get_crossplot():
         selected_intervals = payload.get('selected_intervals', [])
         x_col = payload.get('x_col', 'NPHI')
         y_col = payload.get('y_col', 'RHOB')
-        gr_ma = float(payload.get('GR_MA', 30))
-        gr_sh = float(payload.get('GR_SH', 120))
+        gr_ma = float(payload.get('gr_ma', 30))
+        gr_sh = float(payload.get('gr_sh', 120))
         rho_ma = float(payload.get('RHO_MA', 2.645))
         rho_sh = float(payload.get('RHO_SH', 2.61))
         nphi_ma = float(payload.get('NPHI_MA', -0.02))

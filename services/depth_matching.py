@@ -25,10 +25,10 @@ def depth_matching(ref_las_path: str, lwd_las_path: str, num_chunks: int = 10):
         ref_las = lasio.read(ref_las_path)
         lwd_las = lasio.read(lwd_las_path)
 
-        ref_df = ref_las.df().reset_index()[["DEPTH", "GR_CAL"]].dropna()
+        ref_df = ref_las.df().reset_index()[["DEPT", "GR_CAL"]].dropna()
         ref_df.columns = ["Depth", "GR"]
 
-        lwd_df = lwd_las.df().reset_index()[["DEPTH", "DGRCC"]].dropna()
+        lwd_df = lwd_las.df().reset_index()[["DEPT", "DGRCC"]].dropna()
         lwd_df.columns = ["Depth", "DGRCC"]
 
         N_ref = len(ref_df)
@@ -103,8 +103,8 @@ def plot_depth_matching_results(ref_df, lwd_df, final_df):
     fig = make_subplots(
         rows=1, cols=4,
         shared_yaxes=True,
-        subplot_titles=("Reference Log", "LWD Log (Original)",
-                        "Before Alignment", "After Alignment (DTW)")
+        subplot_titles=("WL 8.5in", "LWD 8.5in",
+                        "Before Alignment", "After Alignment")
     )
 
     # --- Panel 1 (Paling Kiri): Reference Log ---

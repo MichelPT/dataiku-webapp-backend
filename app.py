@@ -1434,6 +1434,7 @@ def get_histogram_plot():
             selected_wells = payload.get('selected_wells', [])
             log_to_plot = payload.get('log_column')
             num_bins = int(payload.get('bins', 50))
+            selected_intervals = payload.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1443,6 +1444,13 @@ def get_histogram_plot():
             df_list = [pd.read_csv(os.path.join(
                 WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
 
             fig_result = plot_histogram(df, log_to_plot, num_bins)
 

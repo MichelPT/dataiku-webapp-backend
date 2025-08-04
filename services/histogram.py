@@ -57,7 +57,7 @@ def plot_histogram(df: pd.DataFrame, log_column: str, n_bins: int):
         title=f"Histogram: {log_column}",
         xaxis_title=log_column,
         yaxis=dict(
-            title="Density",
+            title="Frequency",
             showgrid=True,
             gridcolor="black",
             gridwidth=0.4,

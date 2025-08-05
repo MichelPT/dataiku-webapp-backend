@@ -1,6 +1,7 @@
 # /services/data_processing.py
 import os
 from flask import jsonify
+from narwhals import col
 import pandas as pd
 import numpy as np
 import io
@@ -191,10 +192,8 @@ def trim_data_depth(df, depth_above=0.0, depth_below=0.0, above=0, below=0, mode
     return df
 
 
-def smoothing(df):
+def smoothing(df, window, col_in, col_out):
     df_smooth = df.copy()
-    df_smooth["GR_MovingAvg_5"] = df["GR"].rolling(
-        window=5, center=True).mean()
-    df_smooth["GR_MovingAvg_10"] = df["GR"].rolling(
-        window=10, center=True).mean()
+    df_smooth[col_out] = df[col_in].rolling(
+        window=window, center=True).mean()
     return df_smooth

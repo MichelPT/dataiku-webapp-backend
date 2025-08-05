@@ -322,7 +322,7 @@ def list_intervals():
             return jsonify({"error": "Data gabungan kosong setelah memproses semua file."}), 500
 
         unique_markers = df['MARKER'].dropna().unique().tolist()
-        unique_markers.sort()
+        # unique_markers.sort()
 
         print(f"Mengirim {len(unique_markers)} interval unik ke frontend.")
 
@@ -652,6 +652,9 @@ def run_smoothing():
         payload = request.get_json()
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
+        window = int(payload.get('WINDOW', 5))
+        col_in = payload.get('LOG_IN', 'GR')
+        col_out = payload.get('LOG_OUT', 'GR_SM')
 
         if not selected_wells or not selected_intervals:
             return jsonify({"error": "Sumur dan interval harus dipilih."}), 400
@@ -668,7 +671,7 @@ def run_smoothing():
 
             df = pd.read_csv(file_path, on_bad_lines='warn')
 
-            df_smooth = smoothing(df)
+            df_smooth = smoothing(df, window, col_in, col_out)
 
             # Simpan kembali ke file
             df_smooth.to_csv(file_path, index=False)
@@ -1093,10 +1096,6 @@ def get_smoothing_plot():
             df_list = [pd.read_csv(os.path.join(
                 WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
-
-            required_cols = ['GR', 'GR_MovingAvg_5', 'GR_MovingAvg_10']
-            if not all(col in df.columns for col in required_cols):
-                return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi Smoothing GR terlebih dahulu."}), 400
 
             if selected_intervals:
                 if 'MARKER' in df.columns:

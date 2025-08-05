@@ -1,4 +1,5 @@
 # /api/app.py
+from services.autoplot import calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
 from services.vsh_dn import calculate_vsh_dn
 from services.rwa import calculate_rwa
@@ -134,6 +135,8 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 WELLS_DIR = 'data/structures/adera/abab'  # This will be dynamically updated
 LAS_DIR = 'data/depth-matching'
 GWD_DIR = 'data/gwd'
+
+# UTILS API
 
 
 def update_wells_dir(new_path):
@@ -350,6 +353,98 @@ def get_well_columns():
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/get-log-percentiles', methods=['POST'])
+def get_log_percentiles():
+    """
+    Menghitung dan mengembalikan nilai persentil ke-5 dan ke-95
+    dari kolom log tertentu berdasarkan sumur dan interval yang dipilih.
+    """
+    try:
+        payload = request.get_json()
+        selected_wells = payload.get('selected_wells', [])
+        selected_intervals = payload.get('selected_intervals', [])
+        log_column = payload.get('log_column', 'GR')
+
+        if not selected_wells or not log_column:
+            return jsonify({"error": "Sumur dan kolom log harus dipilih."}), 400
+
+        # Kumpulkan data dari semua sumur yang dipilih
+        all_data_frames = []
+        for well_name in selected_wells:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if os.path.exists(file_path):
+                all_data_frames.append(pd.read_csv(file_path))
+
+        if not all_data_frames:
+            return jsonify({"error": "Data untuk sumur yang dipilih tidak ditemukan."}), 404
+
+        # Gabungkan semua data
+        df = pd.concat(all_data_frames, ignore_index=True)
+
+        # Filter berdasarkan interval yang dipilih (jika ada)
+        if selected_intervals and 'MARKER' in df.columns:
+            df = df[df['MARKER'].isin(selected_intervals)]
+
+        if df.empty or log_column not in df.columns:
+            return jsonify({"error": f"Tidak ada data valid atau kolom '{log_column}' tidak ditemukan."}), 404
+
+        # Ambil data log dan hapus nilai NaN
+        log_data = df[log_column].dropna()
+
+        if log_data.empty:
+            return jsonify({"error": "Tidak ada nilai log yang valid untuk perhitungan persentil."}), 404
+
+        # Hitung persentil P5 dan P95
+        p5_value = np.nanpercentile(log_data, 5)
+        p95_value = np.nanpercentile(log_data, 95)
+
+        return jsonify({
+            "p5": round(p5_value, 2),
+            "p95": round(p95_value, 2)
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-intersection-point', methods=['POST'])
+def get_intersection_point():
+    """
+    Endpoint API ringan yang MENGGUNAKAN KEMBALI logika terpusat.
+    """
+    try:
+        payload = request.get_json()
+        selected_wells = payload.get('selected_wells', [])
+        selected_intervals = payload.get('selected_intervals', [])
+        prcnt_qz = float(payload.get('prcnt_qz', 5))
+        prcnt_wtr = float(payload.get('prcnt_wtr', 5))
+
+        if not selected_wells:
+            return jsonify({"error": "Well harus dipilih."}), 400
+
+        df_list = [pd.read_csv(os.path.join(
+            WELLS_DIR, f"{w}.csv")) for w in selected_wells]
+        df = pd.concat(df_list, ignore_index=True)
+
+        if selected_intervals and 'MARKER' in df.columns:
+            df = df[df['MARKER'].isin(selected_intervals)]
+
+        # Panggil fungsi terpusat yang sama
+        intersection_coords = calculate_nphi_rhob_intersection(
+            df, prcnt_qz, prcnt_wtr)
+
+        return jsonify(intersection_coords)
+
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Terjadi kesalahan internal: {str(e)}"}), 500
+
+# PLOT AND CALCULATION API
 
 
 @app.route('/api/get-plot', methods=['POST'])
@@ -1842,6 +1937,8 @@ def get_iqual_plot():
             df_list = [pd.read_csv(os.path.join(
                 WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
+
+            df = df.rename(columns={'VSH_GR': 'VSH_LINEAR', 'RWA_FULL': 'RWA'})
 
             if selected_intervals:
                 if 'MARKER' in df.columns:

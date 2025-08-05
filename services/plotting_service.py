@@ -3158,7 +3158,8 @@ def plot_iqual(df):
     """
     df = calculate_iqual(df)
 
-    sequence_iqual = ['MARKER', 'VSH', 'PHIE_PHIT', 'IQUAL']
+    sequence_iqual = ['MARKER', 'GR', 'RT',
+                      'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'IQUAL']
     fig = main_plot(df, sequence_iqual, title="IQUAL")
 
     return fig

@@ -10,7 +10,7 @@ import math
 from services.autoplot import calculate_nphi_rhob_intersection
 
 
-def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, prcnt_qz, prcnt_wtr, selected_intervals):
+def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, prcnt_qz, prcnt_wtr, selected_intervals, nbins=25):
     """
     Membuat visualisasi crossplot untuk data log sumur.
     Kini menggunakan fungsi terpusat untuk perhitungan intersection.
@@ -94,7 +94,7 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
             fig.add_shape(type="line", x0=x_line_wtr1[0], y0=y_line_wtr1[0], x1=x_line_wtr1[-1],
                           y1=y_line_wtr1[-1], line=dict(color="red", width=2), layer='above')
             fig.add_trace(go.Scatter(x=[xx0], y=[yy0], mode='markers', marker=dict(
-                color='red', size=10, symbol='circle'), name='Intersection'))
+                color='red', size=2, symbol='circle'), name='Intersection'))
 
             # Lingkaran di sekitar titik intersection
             radiusX, radiusY = 0.01, 0.02
@@ -166,12 +166,53 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
 
     # --- Blok 3: Fallback untuk Plot Lainnya ---
     else:
-        fig = px.scatter(df_clean, x=x_col, y=y_col, height=600,
-                         title=f"Crossplot {x_col} vs {y_col}")
+        df_clean = df_filtered[[x_col, y_col]].dropna()
+        if df_clean.empty:
+            raise ValueError(
+                f"Tidak ada data valid untuk crossplot {x_col} vs {y_col}.")
+
+        color_label = "Point Count"
+
+        # A. Hitung histogram 2D secara manual dengan NumPy
+        counts, x_edges, y_edges = np.histogram2d(
+            df_clean[x_col],
+            df_clean[y_col],
+            bins=nbins
+        )
+
+        # B. Ganti semua nilai 0 dengan 'nan' agar tidak digambar
+        counts[counts == 0] = np.nan
+
+        # C. Hitung titik tengah bin untuk sumbu plot heatmap
+        x_centers = (x_edges[:-1] + x_edges[1:]) / 2
+        y_centers = (y_edges[:-1] + y_edges[1:]) / 2
+
+        # D. Tambahkan trace go.Heatmap
+        fig.add_trace(go.Heatmap(
+            x=x_centers,
+            y=y_centers,
+            z=counts.T,  # Matriks 'counts' perlu di-transpose (.T)
+            colorscale='Jet',
+            colorbar=dict(title=color_label, orientation='h',
+                          y=-0.2, x=0.5, xanchor='center', len=1)
+        ))
+
+        # E. Jika ini plot NPHI vs GR, tambahkan garis overlay spesifiknya
+        if x_col == "NPHI" and (y_col == "GR" or y_col == "GR_RAW_NORM"):
+            fig.add_shape(type="line", x0=1, y0=0, x1=-0.02, y1=gr_ma,
+                          line=dict(color="red", width=2, dash="solid"))
+            fig.add_shape(type="line", x0=-0.02, y0=gr_ma, x1=0.4,
+                          y1=gr_sh, line=dict(color="red", width=2, dash="solid"))
+            fig.add_shape(type="line", x0=0.4, y0=gr_sh, x1=1,
+                          y1=0, line=dict(color="red", width=2, dash="solid"))
+
+        # F. Atur layout akhir secara dinamis
         fig.update_layout(
+            title=f"Crossplot {x_col} vs {y_col}",
             plot_bgcolor='white', margin=dict(l=20, r=20, t=60, b=40),
-            xaxis=dict(showgrid=True, gridcolor="lightgrey"),
-            yaxis=dict(showgrid=True, gridcolor="lightgrey")
+            xaxis=dict(title=x_col, showgrid=True, gridcolor="lightgrey"),
+            yaxis=dict(title=y_col, showgrid=True, gridcolor="lightgrey"),
+            showlegend=False
         )
 
     return fig

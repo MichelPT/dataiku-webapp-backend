@@ -2407,12 +2407,6 @@ def get_module1_plot():
 
     if request.method == 'POST':
         try:
-            df = pd.read_csv(os.path.join(
-                BNG57_DIR, f"BNG-057.csv"), on_bad_lines='warn')
-
-            fig_result = plot_splicing(
-                df=df
-            )
 
             request_data = request.get_json()
             
@@ -2426,23 +2420,27 @@ def get_module1_plot():
                 if not os.path.exists(file_path):
                     return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
                 df = pd.read_csv(file_path, on_bad_lines='warn')
-            elif selected_wells:
-                # Dashboard mode - multiple wells from WELLS_DIR
-                df_list = [pd.read_csv(os.path.join(
-                    WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
-                df = pd.concat(df_list, ignore_index=True)
+            # elif selected_wells:
+            #     # Dashboard mode - multiple wells from WELLS_DIR
+            #     df_list = [pd.read_csv(os.path.join(
+            #         WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+            #     df = pd.concat(df_list, ignore_index=True)
                 
-                # Apply interval filtering if specified
-                if selected_intervals:
-                    if 'MARKER' in df.columns:
-                        df = df[df['MARKER'].isin(selected_intervals)]
-                    else:
-                        print("Warning: 'MARKER' column not found, cannot filter by interval.")
+            #     # Apply interval filtering if specified
+            #     if selected_intervals:
+            #         if 'MARKER' in df.columns:
+            #             df = df[df['MARKER'].isin(selected_intervals)]
+            #         else:
+            #             print("Warning: 'MARKER' column not found, cannot filter by interval.")
                 
-                if df.empty:
-                    return jsonify({"error": "No data available for the selected wells and intervals."}), 404
-            else:
-                return jsonify({"error": "Either file_path or selected_wells is required"}), 400
+            #     if df.empty:
+            #         return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+            # else:
+            #     return jsonify({"error": "Either file_path or selected_wells is required"}), 400
+
+            # fig_result = plot_splicing(
+            #     df=df
+            # )
 
             # Call plotting function with processed data
             fig_result = plot_module1(df=df)

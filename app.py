@@ -1,7 +1,7 @@
 # /api/app.py
 from services.autoplot import calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
-from services.splicing import splice_and_merge_logs
+from services.splicing import splice_and_flag_logs
 from services.vsh_dn import calculate_vsh_dn
 from services.rwa import calculate_rwa
 from services.sw import calculate_sw
@@ -51,7 +51,7 @@ import os
 import logging
 import lasio
 from services.vsh_calculation import calculate_vsh_from_gr
-from services.data_processing import fill_null_values_in_marker_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth, trim_log_by_masking
+from services.data_processing import fill_flagged_missing_values, fill_null_values_in_marker_range, flag_missing_values_in_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth, trim_log_by_masking
 from services.qc_service import run_full_qc_pipeline
 from services.vsh_calculation import calculate_vsh_from_gr
 from services.data_processing import handle_null_values, fill_null_values_in_marker_range, min_max_normalize, selective_normalize_handler, smoothing, trim_data_auto, trim_data_depth
@@ -2234,7 +2234,8 @@ BNG57_DIR = 'data/BNG57'
 @app.route('/api/run-splicing', methods=['POST', 'OPTIONS'])
 def run_splicing():
     """
-    Endpoint API untuk menjalankan proses splicing/merging logs dari file .las.
+    Endpoint API untuk menjalankan proses splicing/merging logs dari file .las,
+    dengan opsi untuk melakukan pengisian nilai hilang secara cerdas.
     """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
@@ -2243,59 +2244,53 @@ def run_splicing():
         # 1. Ambil data dari payload frontend
         payload = request.get_json()
         params = payload.get('params', {})
-        # selected_wells diabaikan untuk sementara karena path di-hardcode
+        # Tambahkan parameter baru untuk mengontrol proses fill ke dalam dict 'params'
+        # Frontend bisa mengirim ini di level atas payload atau di dalam 'params'
+        params['fill_missing'] = payload.get('fill_missing', False)
+        params['max_consecutive_nan'] = int(
+            params.get('max_consecutive_nan', 3))
 
-        print("Payload diterima:", params)
+        print("Payload diterima:", payload)
+        print("Parameter yang akan digunakan:", params)
 
         # 2. Muat Data Langsung dari File .las
-        # Menggunakan path yang di-hardcode sesuai permintaan.
-        # Logika: Run 1 = ATAS, Run 2 = BAWAH
-        # Sesuaikan nama file jika perlu.
         path_run1 = os.path.join(
             BNG57_DIR, 'bng-57_wl_12_25_trim.las')  # Data ATAS
         path_run2 = os.path.join(
             BNG57_DIR, 'bng-57_lwd_8_5_trim.las')  # Data BAWAH
 
-        print(f"Run 1 (data atas) dari file: {os.path.basename(path_run1)}")
-        print(f"Run 2 (data bawah) dari file: {os.path.basename(path_run2)}")
-
         if not os.path.exists(path_run1) or not os.path.exists(path_run2):
-            return jsonify({"error": f"Satu atau kedua file .las tidak ditemukan."}), 404
+            return jsonify({"error": "Satu atau kedua file .las tidak ditemukan."}), 404
 
-        # Baca file .las dan konversi ke DataFrame
         las_run1 = lasio.read(path_run1)
         las_run2 = lasio.read(path_run2)
-
         df_run1 = las_run1.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
         df_run2 = las_run2.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
 
-        print("File .las berhasil dimuat dan diubah ke DataFrame.")
+        print("File .las berhasil dimuat.")
 
-        # Opsi: Lakukan data cleaning jika perlu (contoh dari kode Anda)
+        # Opsi data cleaning
         if 'RHOZ' in df_run1.columns:
-            df_run1['RHOZ'] = df_run1['RHOZ'] / 1000
+            df_run1['RHOZ'] /= 1000
         if 'RHOZ' in df_run2.columns:
-            df_run2['RHOZ'] = df_run2['RHOZ'] / 1000
+            df_run2['RHOZ'] /= 1000
 
         # 3. Panggil Logika Inti untuk Memproses Data
-        # Fungsi ini diimpor dari splicing_logic.py
-        processed_df = splice_and_merge_logs(df_run1, df_run2, params)
+        # Semua parameter yang dibutuhkan sekarang ada di dalam dict 'params'
+        processed_df = splice_and_flag_logs(df_run1, df_run2, params)
 
         # 4. Simpan Hasil ke File CSV Baru
         output_filename = 'BNG-057.csv'
         output_path = os.path.join(BNG57_DIR, output_filename)
 
-        # Untuk menjaga agar kolom-kolom lain yang tidak diproses tetap ada,
-        # kita gabungkan hasil proses dengan data asli.
-        # Kita gunakan df_run1 sebagai basis untuk kolom-kolom tambahan.
+        # Logika penyimpanan (tidak berubah)
         final_output_df = pd.merge(
             df_run1.drop(columns=[
                          col for col in processed_df.columns if col != 'DEPTH'], errors='ignore'),
             processed_df,
             on='DEPTH',
             how='outer'
-        )
-        final_output_df.sort_values(by='DEPTH', inplace=True)
+        ).sort_values(by='DEPTH')
 
         final_output_df.to_csv(output_path, index=False)
         print(
@@ -2308,7 +2303,7 @@ def run_splicing():
 
     except Exception as e:
         import traceback
-        traceback.print_exc()  # Cetak error lengkap di terminal backend untuk debugging
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -2336,6 +2331,82 @@ def get_splicing_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/flag-missing', methods=['POST', 'OPTIONS'])
+def run_flag_missing():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    try:
+        data = request.get_json()
+        well_names = data.get('selected_wells', [])
+        logs_to_check = data.get('logs_to_check', [])
+
+        if not well_names:
+            return jsonify({'error': 'Daftar `selected_wells` wajib diisi.'}), 400
+        if not logs_to_check:
+            return jsonify({'error': 'Daftar `logs_to_check` wajib diisi.'}), 400
+
+        responses = []
+        for well_name in well_names:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if not os.path.exists(file_path):
+                continue
+
+            df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            # Panggil fungsi untuk menandai nilai yang hilang
+            processed_df = flag_missing_values_in_range(df, logs_to_check)
+
+            processed_df.to_csv(file_path, index=False)
+            responses.append({'well': well_name, 'status': 'flagged'})
+
+        return jsonify({'message': 'Proses penandaan nilai hilang berhasil.', 'results': responses}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/fill-flagged-missing', methods=['POST', 'OPTIONS'])
+def run_fill_flagged_missing():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    try:
+        data = request.get_json()
+        well_names = data.get('selected_wells', [])
+        logs_to_fill = data.get('logs_to_fill', [])
+        max_consecutive = int(data.get('max_consecutive_nan', 3))
+
+        if not well_names:
+            return jsonify({'error': 'Daftar `selected_wells` wajib diisi.'}), 400
+        if not logs_to_fill:
+            return jsonify({'error': 'Daftar `logs_to_fill` wajib diisi.'}), 400
+
+        responses = []
+        for well_name in well_names:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if not os.path.exists(file_path):
+                continue
+
+            df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            # Panggil fungsi untuk mengisi nilai yang sudah ditandai
+            processed_df = fill_flagged_missing_values(
+                df, logs_to_fill, max_consecutive)
+
+            processed_df.to_csv(file_path, index=False)
+            responses.append({'well': well_name, 'status': 'filled'})
+
+        return jsonify({'message': 'Proses pengisian nilai yang ditandai berhasil.', 'results': responses}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 # This is for local development testing, Vercel will use its own server

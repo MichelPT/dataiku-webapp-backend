@@ -21,6 +21,7 @@ from services.plotting_service import (
     plot_iqual,
     plot_log_default,
     plot_module_2,
+    plot_module1,
     plot_smoothing,
     plot_phie_den,
     plot_gsa_main,
@@ -42,6 +43,8 @@ from services.dns_dnsv_plot import plot_dns_dnsv
 from services.rwa import calculate_rwa
 from services.sw import calculate_sw
 from services.structures_service import get_fields_list, get_field_structures, get_structure_details, get_well_details
+from services.folder_nav_service import get_structure_wells_folders, get_well_folder_files
+from services.module1_service import get_module1_plot_data
 
 from typing import Optional
 import numpy as np
@@ -2317,12 +2320,93 @@ def get_splicing_plot():
     """
     Endpoint untuk membuat dan menampilkan plot hasil kalkulasi porositas.
     """
+@app.route('/api/structure-folders/<field_name>/<structure_name>', methods=['GET'])
+def get_structure_folders(field_name: str, structure_name: str):
+    """
+    Get CSV files and folder names from a specific structure directory.
+    
+    Args:
+        field_name: Name of the field (e.g., 'adera')
+        structure_name: Name of the structure (e.g., 'benuang')
+        
+    Returns:
+        JSON response containing folder names and CSV files list
+    """
+    try:
+        # Use the folder navigation service to get structure contents
+        contents = get_structure_wells_folders(field_name, structure_name)
+        
+        # Extract folder names only
+        folder_names = [folder['name'] for folder in contents['folders']]
+        
+        # Extract CSV file names from the files list (filter by extension)
+        csv_file_names = [file['name'] for file in contents['files'] if file['extension'] == '.csv']
+        
+        return jsonify({
+            'field_name': field_name,
+            'structure_name': structure_name,
+            'folder_names': folder_names,
+            'csv_files': csv_file_names,
+            'total_folders': len(folder_names),
+            'total_csv_files': len(csv_file_names),
+            'structure_path': contents['structure_path']
+        }), 200
+        
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/well-folder-files/<field_name>/<structure_name>/<well_folder>', methods=['GET'])
+def get_well_folder_files_route(field_name: str, structure_name: str, well_folder: str):
+    """
+    Get files inside a specific well folder within a structure.
+    
+    Args:
+        field_name: Name of the field (e.g., 'adera')
+        structure_name: Name of the structure (e.g., 'benuang')
+        well_folder: Name of the well folder (e.g., 'BNG-057')
+        
+    Returns:
+        JSON response containing categorized files information
+    """
+    try:
+        # Use the folder navigation service to get well folder contents
+        contents = get_well_folder_files(field_name, structure_name, well_folder)
+        
+        # Extract just the CSV file names for cleaner response
+        csv_file_names = [csv_file['name'] for csv_file in contents['csv_files']]
+        
+        return jsonify({
+            'field_name': contents['field_name'],
+            'structure_name': contents['structure_name'],
+            'well_folder': contents['well_folder'],
+            'well_path': contents['well_path'],
+            'csv_files': csv_file_names,
+            'total_csv_files': contents['csv_count'],
+            'total_files': contents['total_files'],
+            # Include full CSV file details
+            'csv_files_details': contents['csv_files']
+        }), 200
+        
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-module1-plot', methods=['POST', 'OPTIONS'])
+def get_module1_plot():
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
     if request.method == 'POST':
         try:
-
             df = pd.read_csv(os.path.join(
                 BNG57_DIR, f"BNG-057.csv"), on_bad_lines='warn')
 
@@ -2330,13 +2414,46 @@ def get_splicing_plot():
                 df=df
             )
 
+            request_data = request.get_json()
+            
+            # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)
+            file_path = request_data.get('file_path')
+            selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
+            
+            if file_path:
+                # DirectorySidebar mode - single file
+                if not os.path.exists(file_path):
+                    return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
+                df = pd.read_csv(file_path, on_bad_lines='warn')
+            elif selected_wells:
+                # Dashboard mode - multiple wells from WELLS_DIR
+                df_list = [pd.read_csv(os.path.join(
+                    WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                df = pd.concat(df_list, ignore_index=True)
+                
+                # Apply interval filtering if specified
+                if selected_intervals:
+                    if 'MARKER' in df.columns:
+                        df = df[df['MARKER'].isin(selected_intervals)]
+                    else:
+                        print("Warning: 'MARKER' column not found, cannot filter by interval.")
+                
+                if df.empty:
+                    return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+            else:
+                return jsonify({"error": "Either file_path or selected_wells is required"}), 400
+
+            # Call plotting function with processed data
+            fig_result = plot_module1(df=df)
+
+            # Send finished plot as JSON
             return jsonify(fig_result.to_json())
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
-
 
 # This is for local development testing, Vercel will use its own server
 if __name__ == '__main__':

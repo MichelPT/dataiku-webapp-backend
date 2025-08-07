@@ -2813,6 +2813,25 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             fig, axes = plot_flag(df_well_zone, fig, axes, col, n_seq)
             fig, axes = plot_texts_marker(
                 df_zone, df_well_zone['DEPTH'].max(), fig, axes, col, n_seq)
+        elif col in ['GR_CAL', 'DGRCC']:
+            fig, axes = plot_line(
+                df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
+
+        # Group untuk log berbasis RT (dengan skala logaritmik)
+        elif col in ['RLA5', 'A40H', 'ARM48PC', 'R39PC']:
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RT', n_seq=n_seq, type="log", col=col, label=col)
+
+        # Group untuk log berbasis RHOB
+        elif col in ['RHOZ', 'ALCDLC', 'ROBB']:
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RHOB', n_seq=n_seq, col=col, label=col)
+
+        # Group untuk log berbasis NPHI
+        elif col in ['TNPL', 'TNPH']:
+            # Menggunakan NPHI_RHOB_NON_NORM sebagai base_key untuk mendapatkan properti NPHI
+            fig, axes = plot_line(
+                df, fig, axes, base_key='NPHI_RHOB_NON_NORM', n_seq=n_seq, col=col, label=col)
 
         elif col in ['GR_CAL', 'DGRCC']:
             fig, axes = plot_line(
@@ -3242,6 +3261,11 @@ def plot_iqual(df):
 
     return fig
 
+def plot_splicing(df):
+
+    sequence = ['GR', 'RT', 'NPHI_RHOB']
+    fig = main_plot(df, sequence, title="Splicing BNG-057")
+    return fig
 
 def plot_module1(df):
     """
@@ -3280,5 +3304,5 @@ def plot_module1(df):
         raise ValueError("No valid columns found for Module1 plot")
     
     fig = main_plot(df, available_sequence, title=title)
-    
+
     return fig

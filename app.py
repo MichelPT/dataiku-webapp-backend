@@ -1,6 +1,7 @@
 # /api/app.py
 from services.autoplot import calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
+from services.splicing import splice_and_merge_logs
 from services.vsh_dn import calculate_vsh_dn
 from services.rwa import calculate_rwa
 from services.sw import calculate_sw
@@ -24,6 +25,7 @@ from services.plotting_service import (
     plot_smoothing,
     plot_phie_den,
     plot_gsa_main,
+    plot_splicing,
     plot_vsh_linear,
     plot_sw_indo,
     plot_rwa_indo,
@@ -50,8 +52,9 @@ import pandas as pd
 from flask_cors import CORS
 import os
 import logging
+import lasio
 from services.vsh_calculation import calculate_vsh_from_gr
-from services.data_processing import fill_null_values_in_marker_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth
+from services.data_processing import fill_null_values_in_marker_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth, trim_log_by_masking
 from services.qc_service import run_full_qc_pipeline
 from services.vsh_calculation import calculate_vsh_from_gr
 from services.data_processing import handle_null_values, fill_null_values_in_marker_range, min_max_normalize, selective_normalize_handler, smoothing, trim_data_auto, trim_data_depth
@@ -591,6 +594,7 @@ def run_interval_normalization():
 
         # Ambil parameter normalisasi
         log_in_col = params.get('LOG_IN', 'GR')
+        log_out_col = params.get('LOG_OUT', log_in_col + '_NO')
         low_ref = float(params.get('LOW_REF', 40))
         high_ref = float(params.get('HIGH_REF', 140))
         low_in = float(params.get('LOW_IN', 34))
@@ -619,7 +623,8 @@ def run_interval_normalization():
                 low_in=low_in,
                 high_in=high_in,
                 cutoff_min=cutoff_min,
-                cutoff_max=cutoff_max
+                cutoff_max=cutoff_max,
+                log_out_col=log_out_col
             )
 
             # Simpan kembali ke file
@@ -657,7 +662,7 @@ def run_smoothing():
         selected_intervals = payload.get('selected_intervals', [])
         window = int(payload.get('WINDOW', 5))
         col_in = payload.get('LOG_IN', 'GR')
-        col_out = payload.get('LOG_OUT', 'GR_SM')
+        col_out = payload.get('LOG_OUT', col_in + '_SM')
 
         if not selected_wells or not selected_intervals:
             return jsonify({"error": "Sumur dan interval harus dipilih."}), 400
@@ -1010,67 +1015,145 @@ def get_gsa_plot():
             return jsonify({"error": str(e)}), 500
 
 
+# @app.route('/api/trim-data', methods=['POST'])
+# def run_trim_well_log():
+#     try:
+#         data = request.get_json()
+
+#         well_names = data.get('selected_wells', [])
+#         params = data.get('params', {})
+#         trim_mode = params.get('TRIM_MODE')
+#         depth_above = params.get('DEPTH_ABOVE')
+#         depth_below = params.get('DEPTH_BELOW')
+#         required_columns = data.get(
+#             'required_columns', ['GR', 'RT', 'NPHI', 'RHOB'])
+
+#         if not well_names:
+#             return jsonify({'error': 'Daftar well_name wajib diisi'}), 400
+
+#         responses = []
+
+#         for well_name in well_names:
+#             file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+#             if not os.path.exists(file_path):
+#                 return jsonify({'error': f"File {well_name}.csv tidak ditemukan."}), 404
+
+#             df = pd.read_csv(file_path, on_bad_lines='warn')
+
+#             if 'DEPTH' not in df.columns:
+#                 return jsonify({'error': f"Kolom DEPTH tidak ditemukan di {well_name}"}), 400
+
+#             df.set_index('DEPTH', inplace=True)
+
+#             above_flag = 1 if depth_above else 0
+#             below_flag = 1 if depth_below else 0
+
+#             if above_flag and depth_above is None:
+#                 return jsonify({'error': 'depth_above harus diisi'}), 400
+#             if below_flag and depth_below is None:
+#                 return jsonify({'error': 'depth_below harus diisi'}), 400
+
+#             trimmed_df = trim_data_depth(
+#                 df.copy(),
+#                 depth_above=depth_above or 0,
+#                 depth_below=depth_below or 0,
+#                 above=above_flag,
+#                 below=below_flag,
+#                 mode=trim_mode
+#             )
+
+#             # Reset index agar DEPTH kembali sebagai kolom
+#             trimmed_df.reset_index(inplace=True)
+
+#             # Simpan hasil
+#             trimmed_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+#             trimmed_df.to_csv(trimmed_path, index=False)
+
+#             responses.append({
+#                 'well': well_name,
+#                 'rows': len(trimmed_df),
+#                 'file_saved': f'{well_name}.csv'
+#             })
+
+#         return jsonify({'message': 'Trimming berhasil', 'results': responses}), 200
+
+#     except Exception as e:
+#         import traceback
+#         traceback.print_exc()
+#         return jsonify({'error': str(e)}), 500
+
 @app.route('/api/trim-data', methods=['POST'])
 def run_trim_well_log():
+    """
+    Endpoint API untuk menjalankan proses trimming dengan logika baru (masking).
+    Sekarang akan melakukan trim pada SEMUA kolom kecuali DEPTH.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
     try:
         data = request.get_json()
 
+        # 1. Ambil Parameter dari frontend
         well_names = data.get('selected_wells', [])
         params = data.get('params', {})
         trim_mode = params.get('TRIM_MODE')
-        depth_above = params.get('DEPTH_ABOVE')
-        depth_below = params.get('DEPTH_BELOW')
-        required_columns = data.get(
-            'required_columns', ['GR', 'RT', 'NPHI', 'RHOB'])
 
         if not well_names:
-            return jsonify({'error': 'Daftar well_name wajib diisi'}), 400
+            return jsonify({'error': 'Daftar `selected_wells` wajib diisi'}), 400
+
+        # Konversi nilai depth ke float, tangani jika None
+        try:
+            depth_above = float(params.get('DEPTH_ABOVE')) if params.get(
+                'DEPTH_ABOVE') is not None else None
+            depth_below = float(params.get('DEPTH_BELOW')) if params.get(
+                'DEPTH_BELOW') is not None else None
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Nilai DEPTH_ABOVE dan DEPTH_BELOW harus berupa angka.'}), 400
 
         responses = []
 
+        # 2. Proses Setiap Sumur
         for well_name in well_names:
             file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
             if not os.path.exists(file_path):
-                return jsonify({'error': f"File {well_name}.csv tidak ditemukan."}), 404
+                print(
+                    f"Peringatan: File {well_name}.csv tidak ditemukan, melewati.")
+                continue
 
             df = pd.read_csv(file_path, on_bad_lines='warn')
 
             if 'DEPTH' not in df.columns:
-                return jsonify({'error': f"Kolom DEPTH tidak ditemukan di {well_name}"}), 400
+                print(
+                    f"Peringatan: Kolom DEPTH tidak ditemukan di {well_name}, melewati.")
+                continue
 
-            df.set_index('DEPTH', inplace=True)
+            # Ambil semua nama kolom dari DataFrame, KECUALI 'DEPTH'
+            columns_to_trim = [col for col in df.columns if col != 'DEPTH']
+            print(
+                f"Akan melakukan trim pada kolom: {columns_to_trim} untuk sumur {well_name}")
 
-            above_flag = 1 if depth_above else 0
-            below_flag = 1 if depth_below else 0
-
-            if above_flag and depth_above is None:
-                return jsonify({'error': 'depth_above harus diisi'}), 400
-            if below_flag and depth_below is None:
-                return jsonify({'error': 'depth_below harus diisi'}), 400
-
-            trimmed_df = trim_data_depth(
-                df.copy(),
-                depth_above=depth_above or 0,
-                depth_below=depth_below or 0,
-                above=above_flag,
-                below=below_flag,
-                mode=trim_mode
+            # 3. Panggil Fungsi Logika dari data_preprocessing.py
+            processed_df = trim_log_by_masking(
+                df=df,
+                columns_to_trim=columns_to_trim,  # Gunakan daftar kolom yang baru
+                trim_mode=trim_mode,
+                depth_above=depth_above,
+                depth_below=depth_below
             )
 
-            # Reset index agar DEPTH kembali sebagai kolom
-            trimmed_df.reset_index(inplace=True)
+            # 4. Simpan Hasil
+            processed_df.to_csv(file_path, index=False)
 
-            # Simpan hasil
-            trimmed_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-            trimmed_df.to_csv(trimmed_path, index=False)
-
+            # Siapkan respons untuk frontend
+            created_cols = [f"{col}_TR" for col in columns_to_trim]
             responses.append({
                 'well': well_name,
-                'rows': len(trimmed_df),
-                'file_saved': f'{well_name}.csv'
+                'file_updated': f'{well_name}.csv',
+                'columns_created': created_cols
             })
 
-        return jsonify({'message': 'Trimming berhasil', 'results': responses}), 200
+        return jsonify({'message': 'Trimming berhasil diselesaikan.', 'results': responses}), 200
 
     except Exception as e:
         import traceback
@@ -2147,6 +2230,96 @@ def search_structures():
         return jsonify({"error": str(e)}), 500
 
 
+# UBAH PATH DISINI, TERUS GANTI NAMA YANG DI JOINKAN KE DIR INI, KARENA MASIH HARDCODE
+BNG57_DIR = 'data/BNG57'
+
+
+@app.route('/api/run-splicing', methods=['POST', 'OPTIONS'])
+def run_splicing():
+    """
+    Endpoint API untuk menjalankan proses splicing/merging logs dari file .las.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    try:
+        # 1. Ambil data dari payload frontend
+        payload = request.get_json()
+        params = payload.get('params', {})
+        # selected_wells diabaikan untuk sementara karena path di-hardcode
+
+        print("Payload diterima:", params)
+
+        # 2. Muat Data Langsung dari File .las
+        # Menggunakan path yang di-hardcode sesuai permintaan.
+        # Logika: Run 1 = ATAS, Run 2 = BAWAH
+        # Sesuaikan nama file jika perlu.
+        path_run1 = os.path.join(
+            BNG57_DIR, 'bng-57_wl_12_25_trim.las')  # Data ATAS
+        path_run2 = os.path.join(
+            BNG57_DIR, 'bng-57_lwd_8_5_trim.las')  # Data BAWAH
+
+        print(f"Run 1 (data atas) dari file: {os.path.basename(path_run1)}")
+        print(f"Run 2 (data bawah) dari file: {os.path.basename(path_run2)}")
+
+        if not os.path.exists(path_run1) or not os.path.exists(path_run2):
+            return jsonify({"error": f"Satu atau kedua file .las tidak ditemukan."}), 404
+
+        # Baca file .las dan konversi ke DataFrame
+        las_run1 = lasio.read(path_run1)
+        las_run2 = lasio.read(path_run2)
+
+        df_run1 = las_run1.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
+        df_run2 = las_run2.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
+
+        print("File .las berhasil dimuat dan diubah ke DataFrame.")
+
+        # Opsi: Lakukan data cleaning jika perlu (contoh dari kode Anda)
+        if 'RHOZ' in df_run1.columns:
+            df_run1['RHOZ'] = df_run1['RHOZ'] / 1000
+        if 'RHOZ' in df_run2.columns:
+            df_run2['RHOZ'] = df_run2['RHOZ'] / 1000
+
+        # 3. Panggil Logika Inti untuk Memproses Data
+        # Fungsi ini diimpor dari splicing_logic.py
+        processed_df = splice_and_merge_logs(df_run1, df_run2, params)
+
+        # 4. Simpan Hasil ke File CSV Baru
+        output_filename = 'BNG-057.csv'
+        output_path = os.path.join(BNG57_DIR, output_filename)
+
+        # Untuk menjaga agar kolom-kolom lain yang tidak diproses tetap ada,
+        # kita gabungkan hasil proses dengan data asli.
+        # Kita gunakan df_run1 sebagai basis untuk kolom-kolom tambahan.
+        final_output_df = pd.merge(
+            df_run1.drop(columns=[
+                         col for col in processed_df.columns if col != 'DEPTH'], errors='ignore'),
+            processed_df,
+            on='DEPTH',
+            how='outer'
+        )
+        final_output_df.sort_values(by='DEPTH', inplace=True)
+
+        final_output_df.to_csv(output_path, index=False)
+        print(
+            f"Proses selesai. Hasil disimpan sebagai file baru di: {output_path}")
+
+        # 5. Kirim Respons Sukses ke Frontend
+        return jsonify({
+            "message": f"Splicing berhasil! Hasil disimpan dalam file baru '{output_filename}'."
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()  # Cetak error lengkap di terminal backend untuk debugging
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-splicing-plot', methods=['POST', 'OPTIONS'])
+def get_splicing_plot():
+    """
+    Endpoint untuk membuat dan menampilkan plot hasil kalkulasi porositas.
+    """
 @app.route('/api/structure-folders/<field_name>/<structure_name>', methods=['GET'])
 def get_structure_folders(field_name: str, structure_name: str):
     """
@@ -2234,6 +2407,13 @@ def get_module1_plot():
 
     if request.method == 'POST':
         try:
+            df = pd.read_csv(os.path.join(
+                BNG57_DIR, f"BNG-057.csv"), on_bad_lines='warn')
+
+            fig_result = plot_splicing(
+                df=df
+            )
+
             request_data = request.get_json()
             
             # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)

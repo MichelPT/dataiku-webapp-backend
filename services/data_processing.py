@@ -109,7 +109,8 @@ def selective_normalize_handler(df, log_column, marker_column,
                                 target_markers=None,
                                 low_ref=40, high_ref=140,
                                 low_in=5, high_in=95,
-                                cutoff_min=0, cutoff_max=250):
+                                cutoff_min=0, cutoff_max=250,
+                                log_out_col=None):
 
     # Copy DataFrame untuk menghindari modifikasi original
     result_df = df.copy()
@@ -155,9 +156,10 @@ def selective_normalize_handler(df, log_column, marker_column,
             log_raw_norm[target_mask] = normalized_target
 
     # Tambahkan kolom hasil ke DataFrame
-    result_df[f'{log_column}_RAW'] = log_raw
-    result_df[f'{log_column}_NORM'] = log_norm
-    result_df[f'{log_column}_RAW_NORM'] = log_raw_norm
+    # result_df[f'{log_column}_RAW'] = log_raw
+    # result_df[f'{log_column}_NORM'] = log_norm
+    # result_df[f'{log_column}_RAW_NORM'] = log_raw_norm
+    result_df[log_out_col] = log_raw_norm
 
     return result_df
 
@@ -197,3 +199,55 @@ def smoothing(df, window, col_in, col_out):
     df_smooth[col_out] = df[col_in].rolling(
         window=window, center=True).mean()
     return df_smooth
+
+
+def trim_log_by_masking(df: pd.DataFrame, columns_to_trim: list, trim_mode: str, depth_above: float = None, depth_below: float = None) -> pd.DataFrame:
+    """
+    Melakukan trimming log dengan cara masking (mengubah menjadi NaN) dan menyimpan
+    hasilnya di kolom baru dengan akhiran '_TR'.
+
+    Args:
+        df (pd.DataFrame): DataFrame input dengan kolom 'DEPTH'.
+        columns_to_trim (list): Daftar nama kolom yang akan di-trim.
+        trim_mode (str): Mode trimming ('ABOVE', 'BELOW', 'CUSTOM_TRIM').
+        depth_above (float, optional): Batas kedalaman atas. Defaults to None.
+        depth_below (float, optional): Batas kedalaman bawah. Defaults to None.
+
+    Returns:
+        pd.DataFrame: DataFrame dengan kolom-kolom baru hasil trimming.
+    """
+    if 'DEPTH' not in df.columns:
+        raise ValueError("DataFrame input harus memiliki kolom 'DEPTH'.")
+
+    # Buat salinan untuk menghindari mengubah DataFrame asli secara tidak sengaja
+    df_out = df.copy()
+
+    for col_in in columns_to_trim:
+        if col_in not in df_out.columns:
+            print(f"Peringatan: Kolom '{col_in}' tidak ditemukan, melewati.")
+            continue
+
+        # Nama kolom output baru, contoh: 'GR_TR'
+        col_out = f"{col_in}_TR"
+
+        # Buat kolom baru dengan menyalin data asli
+        df_out[col_out] = df_out[col_in]
+
+        # Tentukan kondisi (mask) untuk menutupi data (mengubah jadi NaN)
+        mask = None
+        if trim_mode == 'CUSTOM_TRIM' and depth_above is not None and depth_below is not None:
+            # Mask untuk data DI LUAR rentang [depth_above, depth_below]
+            mask = (df_out['DEPTH'] < depth_above) | (
+                df_out['DEPTH'] > depth_below)
+        elif trim_mode == 'ABOVE' and depth_above is not None:
+            # Mask untuk data DI ATAS (lebih kecil dari) depth_above
+            mask = df_out['DEPTH'] < depth_above
+        elif trim_mode == 'BELOW' and depth_below is not None:
+            # Mask untuk data DI BAWAH (lebih besar dari) depth_below
+            mask = df_out['DEPTH'] > depth_below
+
+        # Jika mask valid, terapkan dengan mengubah nilai menjadi NaN
+        if mask is not None:
+            df_out.loc[mask, col_out] = np.nan
+
+    return df_out

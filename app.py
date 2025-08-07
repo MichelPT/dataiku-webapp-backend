@@ -1,7 +1,7 @@
 # /api/app.py
 from services.autoplot import calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
-from services.splicing import splice_and_merge_logs
+from services.splicing import splice_and_flag_logs
 from services.vsh_dn import calculate_vsh_dn
 from services.rwa import calculate_rwa
 from services.sw import calculate_sw
@@ -21,6 +21,7 @@ from services.plotting_service import (
     plot_iqual,
     plot_log_default,
     plot_module_2,
+    plot_module1,
     plot_smoothing,
     plot_phie_den,
     plot_gsa_main,
@@ -42,6 +43,8 @@ from services.dns_dnsv_plot import plot_dns_dnsv
 from services.rwa import calculate_rwa
 from services.sw import calculate_sw
 from services.structures_service import get_fields_list, get_field_structures, get_structure_details, get_well_details
+from services.folder_nav_service import get_structure_wells_folders, get_well_folder_files
+from services.module1_service import get_module1_plot_data
 
 from typing import Optional
 import numpy as np
@@ -51,7 +54,7 @@ import os
 import logging
 import lasio
 from services.vsh_calculation import calculate_vsh_from_gr
-from services.data_processing import fill_null_values_in_marker_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth, trim_log_by_masking
+from services.data_processing import fill_flagged_missing_values, fill_null_values_in_marker_range, flag_missing_values_in_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth, trim_log_by_masking
 from services.qc_service import run_full_qc_pipeline
 from services.vsh_calculation import calculate_vsh_from_gr
 from services.data_processing import handle_null_values, fill_null_values_in_marker_range, min_max_normalize, selective_normalize_handler, smoothing, trim_data_auto, trim_data_depth
@@ -1079,6 +1082,7 @@ def get_gsa_plot():
 #         traceback.print_exc()
 #         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/trim-data', methods=['POST'])
 def run_trim_well_log():
     """
@@ -1095,27 +1099,30 @@ def run_trim_well_log():
         well_names = data.get('selected_wells', [])
         params = data.get('params', {})
         trim_mode = params.get('TRIM_MODE')
+        print(params)
 
         if not well_names:
             return jsonify({'error': 'Daftar `selected_wells` wajib diisi'}), 400
 
         # Konversi nilai depth ke float, tangani jika None
-        try:
-            depth_above = float(params.get('DEPTH_ABOVE')) if params.get(
-                'DEPTH_ABOVE') is not None else None
-            depth_below = float(params.get('DEPTH_BELOW')) if params.get(
-                'DEPTH_BELOW') is not None else None
-        except (ValueError, TypeError):
-            return jsonify({'error': 'Nilai DEPTH_ABOVE dan DEPTH_BELOW harus berupa angka.'}), 400
+        depth_above = params.get('DEPTH_ABOVE', 0)
+        depth_below = params.get('DEPTH_BELOW', 0)
 
         responses = []
 
         # 2. Proses Setiap Sumur
         for well_name in well_names:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            # Check if request contains direct file_path
+            if 'file_path' in data and data['file_path']:
+                file_path = data['file_path']
+                print(f"Using direct file_path from request: {file_path}")
+            else:
+                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                print(f"Using constructed file_path: {file_path}")
+
             if not os.path.exists(file_path):
                 print(
-                    f"Peringatan: File {well_name}.csv tidak ditemukan, melewati.")
+                    f"Peringatan: File {file_path} tidak ditemukan, melewati.")
                 continue
 
             df = pd.read_csv(file_path, on_bad_lines='warn')
@@ -2227,14 +2234,10 @@ def search_structures():
         return jsonify({"error": str(e)}), 500
 
 
-# UBAH PATH DISINI, TERUS GANTI NAMA YANG DI JOINKAN KE DIR INI, KARENA MASIH HARDCODE
-BNG57_DIR = 'data/BNG57'
-
-
 @app.route('/api/run-splicing', methods=['POST', 'OPTIONS'])
 def run_splicing():
     """
-    Endpoint API untuk menjalankan proses splicing/merging logs dari file .las.
+    Endpoint API untuk menjalankan proses splicing/merging logs dari file .csv.
     """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
@@ -2243,93 +2246,326 @@ def run_splicing():
         # 1. Ambil data dari payload frontend
         payload = request.get_json()
         params = payload.get('params', {})
-        # selected_wells diabaikan untuk sementara karena path di-hardcode
 
-        print("Payload diterima:", params)
+        # Get file paths from frontend
+        run1_file_path = payload.get('run1_file_path')
+        run2_file_path = payload.get('run2_file_path')
+        run1_well = payload.get('run1_well')
+        run2_well = payload.get('run2_well')
 
-        # 2. Muat Data Langsung dari File .las
-        # Menggunakan path yang di-hardcode sesuai permintaan.
-        # Logika: Run 1 = ATAS, Run 2 = BAWAH
-        # Sesuaikan nama file jika perlu.
-        path_run1 = os.path.join(
-            BNG57_DIR, 'bng-57_wl_12_25_trim.las')  # Data ATAS
-        path_run2 = os.path.join(
-            BNG57_DIR, 'bng-57_lwd_8_5_trim.las')  # Data BAWAH
+        print("Payload diterima:", payload)
 
-        print(f"Run 1 (data atas) dari file: {os.path.basename(path_run1)}")
-        print(f"Run 2 (data bawah) dari file: {os.path.basename(path_run2)}")
+        # Validate required parameters
+        if not run1_file_path or not run2_file_path:
+            return jsonify({"error": "run1_file_path and run2_file_path are required"}), 400
+
+        if not run1_well or not run2_well:
+            return jsonify({"error": "run1_well and run2_well are required"}), 400
+
+        # 2. Use file paths from frontend directly
+        path_run1 = run1_file_path  # Data ATAS
+        path_run2 = run2_file_path  # Data BAWAH
+
+        print(f"Run 1 (data atas) dari file: {path_run1}")
+        print(f"Run 2 (data bawah) dari file: {path_run2}")
 
         if not os.path.exists(path_run1) or not os.path.exists(path_run2):
-            return jsonify({"error": f"Satu atau kedua file .las tidak ditemukan."}), 404
+            return jsonify({"error": f"Satu atau kedua file .csv tidak ditemukan."}), 404
 
-        # Baca file .las dan konversi ke DataFrame
-        las_run1 = lasio.read(path_run1)
-        las_run2 = lasio.read(path_run2)
+        # 3. Baca file .csv dan konversi ke DataFrame
+        df_run1 = pd.read_csv(path_run1, on_bad_lines='warn')
+        df_run2 = pd.read_csv(path_run2, on_bad_lines='warn')
 
-        df_run1 = las_run1.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
-        df_run2 = las_run2.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
+        # Rename DEPT to DEPTH if needed
+        if 'DEPT' in df_run1.columns and 'DEPTH' not in df_run1.columns:
+            df_run1 = df_run1.rename(columns={'DEPT': 'DEPTH'})
+        if 'DEPT' in df_run2.columns and 'DEPTH' not in df_run2.columns:
+            df_run2 = df_run2.rename(columns={'DEPT': 'DEPTH'})
 
-        print("File .las berhasil dimuat dan diubah ke DataFrame.")
+        print("File .csv berhasil dimuat dan diubah ke DataFrame.")
 
-        # Opsi: Lakukan data cleaning jika perlu (contoh dari kode Anda)
+        # Opsi data cleaning
         if 'RHOZ' in df_run1.columns:
-            df_run1['RHOZ'] = df_run1['RHOZ'] / 1000
+            df_run1['RHOZ'] /= 1000
         if 'RHOZ' in df_run2.columns:
-            df_run2['RHOZ'] = df_run2['RHOZ'] / 1000
+            df_run2['RHOZ'] /= 1000
 
-        # 3. Panggil Logika Inti untuk Memproses Data
+        # 4. Panggil Logika Inti untuk Memproses Data
         # Fungsi ini diimpor dari splicing_logic.py
-        processed_df = splice_and_merge_logs(df_run1, df_run2, params)
+        processed_df = splice_and_flag_logs(df_run1, df_run2, params)
 
-        # 4. Simpan Hasil ke File CSV Baru
-        output_filename = 'BNG-057.csv'
-        output_path = os.path.join(BNG57_DIR, output_filename)
+        # 5. Generate output file path based on input paths
+        output_dir = os.path.dirname(path_run1)
+        output_filename = f"{run1_well}_{run2_well}_spliced.csv"
+        output_path = os.path.join(output_dir, output_filename)
 
-        # Untuk menjaga agar kolom-kolom lain yang tidak diproses tetap ada,
-        # kita gabungkan hasil proses dengan data asli.
-        # Kita gunakan df_run1 sebagai basis untuk kolom-kolom tambahan.
+        # Logika penyimpanan (tidak berubah)
         final_output_df = pd.merge(
             df_run1.drop(columns=[
                          col for col in processed_df.columns if col != 'DEPTH'], errors='ignore'),
             processed_df,
             on='DEPTH',
             how='outer'
-        )
-        final_output_df.sort_values(by='DEPTH', inplace=True)
+        ).sort_values(by='DEPTH')
 
         final_output_df.to_csv(output_path, index=False)
         print(
             f"Proses selesai. Hasil disimpan sebagai file baru di: {output_path}")
 
-        # 5. Kirim Respons Sukses ke Frontend
+        # 6. Kirim Respons Sukses ke Frontend
         return jsonify({
-            "message": f"Splicing berhasil! Hasil disimpan dalam file baru '{output_filename}'."
+            "message": f"Splicing berhasil! Hasil disimpan dalam file baru '{output_filename}'.",
+            "output_file_path": output_path,
+            "output_filename": output_filename,
+            "run1_well": run1_well,
+            "run2_well": run2_well
         })
 
     except Exception as e:
         import traceback
-        traceback.print_exc()  # Cetak error lengkap di terminal backend untuk debugging
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/get-splicing-plot', methods=['POST', 'OPTIONS'])
 def get_splicing_plot():
     """
-    Endpoint untuk membuat dan menampilkan plot hasil kalkulasi porositas.
+    Endpoint untuk membuat dan menampilkan plot hasil splicing.
     """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
     if request.method == 'POST':
         try:
+            # Get file path from frontend
+            payload = request.get_json()
+            file_path = payload.get('file_path')
 
-            df = pd.read_csv(os.path.join(
-                BNG57_DIR, f"BNG-057.csv"), on_bad_lines='warn')
+            if not file_path:
+                return jsonify({"error": "file_path is required"}), 400
 
-            fig_result = plot_splicing(
-                df=df
-            )
+            print(f"Reading splicing results from: {file_path}")
 
+            # Check if file exists
+            if not os.path.exists(file_path):
+                return jsonify({"error": f"Output file not found: {file_path}"}), 404
+
+            df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            fig_result = plot_splicing(df=df)
+            print(jsonify(fig_result.to_json()))
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/flag-missing', methods=['POST', 'OPTIONS'])
+def run_flag_missing():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    try:
+        data = request.get_json()
+        well_names = data.get('selected_wells', [])
+        logs_to_check = data.get('logs_to_check', [])
+
+        if not well_names:
+            return jsonify({'error': 'Daftar `selected_wells` wajib diisi.'}), 400
+        if not logs_to_check:
+            return jsonify({'error': 'Daftar `logs_to_check` wajib diisi.'}), 400
+
+        responses = []
+        for well_name in well_names:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if not os.path.exists(file_path):
+                continue
+
+            df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            # Panggil fungsi untuk menandai nilai yang hilang
+            processed_df = flag_missing_values_in_range(df, logs_to_check)
+
+            processed_df.to_csv(file_path, index=False)
+            responses.append({'well': well_name, 'status': 'flagged'})
+
+        return jsonify({'message': 'Proses penandaan nilai hilang berhasil.', 'results': responses}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/fill-flagged-missing', methods=['POST', 'OPTIONS'])
+def run_fill_flagged_missing():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    try:
+        data = request.get_json()
+        well_names = data.get('selected_wells', [])
+        logs_to_fill = data.get('logs_to_fill', [])
+        max_consecutive = int(data.get('max_consecutive_nan', 3))
+
+        if not well_names:
+            return jsonify({'error': 'Daftar `selected_wells` wajib diisi.'}), 400
+        if not logs_to_fill:
+            return jsonify({'error': 'Daftar `logs_to_fill` wajib diisi.'}), 400
+
+        responses = []
+        for well_name in well_names:
+            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            if not os.path.exists(file_path):
+                continue
+
+            df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            # Panggil fungsi untuk mengisi nilai yang sudah ditandai
+            processed_df = fill_flagged_missing_values(
+                df, logs_to_fill, max_consecutive)
+
+            processed_df.to_csv(file_path, index=False)
+            responses.append({'well': well_name, 'status': 'filled'})
+
+        return jsonify({'message': 'Proses pengisian nilai yang ditandai berhasil.', 'results': responses}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/structure-folders/<field_name>/<structure_name>', methods=['GET'])
+def get_structure_folders(field_name: str, structure_name: str):
+    """
+    Get CSV files and folder names from a specific structure directory.
+
+    Args:
+        field_name: Name of the field (e.g., 'adera')
+        structure_name: Name of the structure (e.g., 'benuang')
+
+    Returns:
+        JSON response containing folder names and CSV files list
+    """
+    try:
+        # Use the folder navigation service to get structure contents
+        contents = get_structure_wells_folders(field_name, structure_name)
+
+        # Extract folder names only
+        folder_names = [folder['name'] for folder in contents['folders']]
+
+        # Extract CSV file names from the files list (filter by extension)
+        csv_file_names = [file['name']
+                          for file in contents['files'] if file['extension'] == '.csv']
+
+        return jsonify({
+            'field_name': field_name,
+            'structure_name': structure_name,
+            'folder_names': folder_names,
+            'csv_files': csv_file_names,
+            'total_folders': len(folder_names),
+            'total_csv_files': len(csv_file_names),
+            'structure_path': contents['structure_path']
+        }), 200
+
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/well-folder-files/<field_name>/<structure_name>/<well_folder>', methods=['GET'])
+def get_well_folder_files_route(field_name: str, structure_name: str, well_folder: str):
+    """
+    Get files inside a specific well folder within a structure.
+
+    Args:
+        field_name: Name of the field (e.g., 'adera')
+        structure_name: Name of the structure (e.g., 'benuang')
+        well_folder: Name of the well folder (e.g., 'BNG-057')
+
+    Returns:
+        JSON response containing categorized files information
+    """
+    try:
+        # Use the folder navigation service to get well folder contents
+        contents = get_well_folder_files(
+            field_name, structure_name, well_folder)
+
+        # Extract just the CSV file names for cleaner response
+        csv_file_names = [csv_file['name']
+                          for csv_file in contents['csv_files']]
+
+        return jsonify({
+            'field_name': contents['field_name'],
+            'structure_name': contents['structure_name'],
+            'well_folder': contents['well_folder'],
+            'well_path': contents['well_path'],
+            'csv_files': csv_file_names,
+            'total_csv_files': contents['csv_count'],
+            'total_files': contents['total_files'],
+            # Include full CSV file details
+            'csv_files_details': contents['csv_files']
+        }), 200
+
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-module1-plot', methods=['POST', 'OPTIONS'])
+def get_module1_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+
+            # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)
+            file_path = request_data.get('file_path')
+            selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
+
+            if file_path:
+                # DirectorySidebar mode - single file
+                if not os.path.exists(file_path):
+                    return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
+                df = pd.read_csv(file_path, on_bad_lines='warn')
+            # elif selected_wells:
+            #     # Dashboard mode - multiple wells from WELLS_DIR
+            #     df_list = [pd.read_csv(os.path.join(
+            #         WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+            #     df = pd.concat(df_list, ignore_index=True)
+
+            #     # Apply interval filtering if specified
+            #     if selected_intervals:
+            #         if 'MARKER' in df.columns:
+            #             df = df[df['MARKER'].isin(selected_intervals)]
+            #         else:
+            #             print("Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            #     if df.empty:
+            #         return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+            # else:
+            #     return jsonify({"error": "Either file_path or selected_wells is required"}), 400
+
+            # fig_result = plot_splicing(
+            #     df=df
+            # )
+
+            # Call plotting function with processed data
+            fig_result = plot_module1(df=df)
+
+            # Send finished plot as JSON
             return jsonify(fig_result.to_json())
 
         except Exception as e:

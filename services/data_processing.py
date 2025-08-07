@@ -251,3 +251,79 @@ def trim_log_by_masking(df: pd.DataFrame, columns_to_trim: list, trim_mode: str,
             df_out.loc[mask, col_out] = np.nan
 
     return df_out
+
+
+def flag_missing_values_in_range(df: pd.DataFrame, logs_to_check: list, flag_col_name: str = 'MISSING_FLAG') -> pd.DataFrame:
+    """
+    Membuat atau memperbarui kolom penanda ('MISSING_FLAG') untuk nilai null.
+    Menghasilkan flag 0 (lengkap) dan 1 (hilang).
+
+    Args:
+        df (pd.DataFrame): DataFrame input.
+        logs_to_check (list): Daftar nama kolom log yang akan diperiksa.
+        flag_col_name (str, optional): Nama untuk kolom penanda.
+
+    Returns:
+        pd.DataFrame: DataFrame dengan kolom penanda yang sudah dibuat/diperbarui.
+    """
+    df_out = df.copy()
+
+    # Inisialisasi kolom flag dengan 0 jika belum ada
+    if flag_col_name not in df_out.columns:
+        df_out[flag_col_name] = 0
+
+    existing_logs = [col for col in logs_to_check if col in df_out.columns]
+    if not existing_logs:
+        print("Peringatan: Tidak ada log yang dipilih ditemukan di DataFrame.")
+        return df_out
+
+    # Buat masker untuk baris yang memiliki nilai NaN di salah satu log yang diperiksa
+    missing_mask = df_out[existing_logs].isnull().any(axis=1)
+
+    # Terapkan flag 1 untuk baris dengan data hilang
+    # Hanya ubah yang saat ini bernilai 0 untuk menghindari menimpa flag 2 dari splicing
+    df_out.loc[missing_mask & (df_out[flag_col_name] == 0), flag_col_name] = 1
+
+    print(f"--> Penandaan nilai hilang selesai.")
+    return df_out
+
+
+def fill_flagged_missing_values(df: pd.DataFrame, logs_to_fill: list, max_consecutive_nan: int = 3) -> pd.DataFrame:
+    """
+    Mengisi nilai null pada kolom yang dipilih, TAPI HANYA jika:
+    1. Baris tersebut memiliki MISSING_FLAG == 1.
+    2. Jumlah nilai null yang berurutan <= max_consecutive_nan.
+    """
+    df_out = df.copy()
+
+    if 'MISSING_FLAG' not in df_out.columns:
+        print("Peringatan: Kolom 'MISSING_FLAG' tidak ditemukan. Tidak ada nilai yang akan diisi.")
+        return df_out
+
+    existing_logs = [col for col in logs_to_fill if col in df_out.columns]
+    if not existing_logs:
+        return df_out
+
+    print(
+        f"--> Mengisi nilai hilang untuk baris dengan flag 1 (maks {max_consecutive_nan} NaN berurutan).")
+
+    # Masker dasar: hanya pertimbangkan baris dengan flag 1
+    base_fill_mask = (df_out['MISSING_FLAG'] == 1)
+
+    for col in existing_logs:
+        is_nan = df_out[col].isnull()
+        group_id = (is_nan != is_nan.shift()).cumsum()
+        group_size = group_id.map(group_id.value_counts())
+
+        # Masker untuk NaN yang berada dalam grup kecil (boleh diisi)
+        nan_in_small_gap_mask = (is_nan) & (group_size <= max_consecutive_nan)
+
+        # Kondisi final: baris harus punya flag 1 DAN merupakan bagian dari celah kecil
+        final_col_mask = base_fill_mask & nan_in_small_gap_mask
+
+        if final_col_mask.any():
+            temp_col = df_out[col].copy()
+            filled_temp_col = temp_col.bfill().ffill()
+            df_out.loc[final_col_mask, col] = filled_temp_col[final_col_mask]
+
+    return df_out

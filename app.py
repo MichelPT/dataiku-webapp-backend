@@ -2314,12 +2314,32 @@ def run_splicing():
         traceback.print_exc()  # Cetak error lengkap di terminal backend untuk debugging
         return jsonify({"error": str(e)}), 500
 
-
 @app.route('/api/get-splicing-plot', methods=['POST', 'OPTIONS'])
 def get_splicing_plot():
     """
     Endpoint untuk membuat dan menampilkan plot hasil kalkulasi porositas.
     """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+
+            df = pd.read_csv(os.path.join(
+                BNG57_DIR, f"BNG-057.csv"), on_bad_lines='warn')
+
+            fig_result = plot_splicing(
+                df=df
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+    
 @app.route('/api/structure-folders/<field_name>/<structure_name>', methods=['GET'])
 def get_structure_folders(field_name: str, structure_name: str):
     """

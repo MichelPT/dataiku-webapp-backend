@@ -48,6 +48,7 @@ data_col = {
     'GR_DUAL': ['GR', 'GR_NORM'],
     'GR_DUAL_2': ['GR_RAW', 'GR_NORM'],
     'GR_RAW_NORM': ['GR_RAW_NORM'],
+    'GR_SM': ['GR_SM'],
     'GR_MovingAvg_5': ['GR_MovingAvg_5'],
     'GR_MovingAvg_10': ['GR_MovingAvg_10'],
     'RT': ['RT'],
@@ -123,6 +124,7 @@ unit_col = {
     'GR_DUAL': ['GAPI', 'GAPI'],
     'GR_DUAL_2': ['GAPI', 'GAPI'],
     'GR_RAW_NORM': ['GAPI'],
+    'GR_SM': ['GAPI'],
     'GR_MovingAvg_5': ['GAPI'],
     'GR_MovingAvg_10': ['GAPI'],
     'RT': ['OHMM'],
@@ -200,6 +202,7 @@ color_col = {
     'GR_DUAL': ['darkgreen', 'orange'],
     'GR_DUAL_2': ['darkgreen', 'orange'],
     'GR_RAW_NORM': ['orange'],
+    'GR_SM': ['darkgreen'],
     'GR_MovingAvg_5': ['darkgreen'],
     'GR_MovingAvg_10': ['darkgreen'],
     'GR': ['darkblue'],
@@ -309,6 +312,7 @@ range_col = {
     'GR_DUAL': [[0, 250], [0, 250]],
     'GR_DUAL_2': [[0, 250], [0, 250]],
     'GR_RAW_NORM': [[0, 250]],
+    'GR_SM': [[0, 250]],
     'GR_MovingAvg_5': [[0, 250]],
     'GR_MovingAvg_10': [[0, 250]],
     'RT': [[0.02, 100]],
@@ -378,6 +382,7 @@ ratio_plots = {
     'GR_DUAL': 1,
     'GR_DUAL_2': 1,
     'GR_RAW_NORM': 1,
+    'GR_SM': 1,
     'GR_MovingAvg_5': 1,
     'GR_MovingAvg_10': 1,
     'RT': 1,
@@ -2027,7 +2032,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT', 'RWA', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE']:
+            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_SM', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT', 'RWA', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE']:
                 fig.update_layout(
                     **{axis: dict(
                         # gridcolor='rgba(0,0,0,0)',
@@ -3154,7 +3159,7 @@ def plot_rwa_indo(df):
 
 
 def plot_smoothing(df, df_marker, df_well_marker):
-    sequence = ['MARKER', 'GR', 'GR_MovingAvg_5', 'GR_MovingAvg_10']
+    sequence = ['MARKER', 'GR', 'GR_SM']
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
     print(plot_sequence)
 
@@ -3180,12 +3185,9 @@ def plot_smoothing(df, df_marker, df_well_marker):
         if col == 'GR':
             fig, axes = plot_line(
                 df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
-        elif col == 'GR_MovingAvg_5':
+        elif col == 'GR_SM':
             fig, axes = plot_line(
-                df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
-        elif col == 'GR_MovingAvg_10':
-            fig, axes = plot_line(
-                df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
+                df, fig, axes, base_key='GR_SM', n_seq=n_seq, col=col, label=col)
         elif col == 'MARKER':
             fig, axes = plot_flag(df_well_marker, fig, axes, col, n_seq)
             fig, axes = plot_texts_marker(
@@ -3199,7 +3201,7 @@ def plot_smoothing(df, df_marker, df_well_marker):
         plot_bgcolor='white',
         showlegend=False,
         hovermode='y unified', hoverdistance=-1,
-        title_text="Well Log ABB-036",
+        title_text="Smoothing",
         title_x=0.5,
         modebar_remove=['lasso', 'autoscale', 'zoom',
                         'zoomin', 'zoomout', 'pan', 'select']

@@ -2407,7 +2407,6 @@ def get_module1_plot():
 
     if request.method == 'POST':
         try:
-
             request_data = request.get_json()
             
             # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)

@@ -1082,6 +1082,8 @@ def get_gsa_plot():
 #         traceback.print_exc()
 #         return jsonify({'error': str(e)}), 500
 
+
+
 @app.route('/api/trim-data', methods=['POST'])
 def run_trim_well_log():
     """
@@ -1098,27 +1100,30 @@ def run_trim_well_log():
         well_names = data.get('selected_wells', [])
         params = data.get('params', {})
         trim_mode = params.get('TRIM_MODE')
+        print(params)
 
         if not well_names:
             return jsonify({'error': 'Daftar `selected_wells` wajib diisi'}), 400
 
         # Konversi nilai depth ke float, tangani jika None
-        try:
-            depth_above = float(params.get('DEPTH_ABOVE')) if params.get(
-                'DEPTH_ABOVE') is not None else None
-            depth_below = float(params.get('DEPTH_BELOW')) if params.get(
-                'DEPTH_BELOW') is not None else None
-        except (ValueError, TypeError):
-            return jsonify({'error': 'Nilai DEPTH_ABOVE dan DEPTH_BELOW harus berupa angka.'}), 400
+        depth_above = params.get('DEPTH_ABOVE', 0)
+        depth_below = params.get('DEPTH_BELOW', 0)
 
         responses = []
 
         # 2. Proses Setiap Sumur
         for well_name in well_names:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            # Check if request contains direct file_path
+            if 'file_path' in data and data['file_path']:
+                file_path = data['file_path']
+                print(f"Using direct file_path from request: {file_path}")
+            else:
+                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                print(f"Using constructed file_path: {file_path}")
+            
             if not os.path.exists(file_path):
                 print(
-                    f"Peringatan: File {well_name}.csv tidak ditemukan, melewati.")
+                    f"Peringatan: File {file_path} tidak ditemukan, melewati.")
                 continue
 
             df = pd.read_csv(file_path, on_bad_lines='warn')
@@ -2229,15 +2234,10 @@ def search_structures():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-
-# UBAH PATH DISINI, TERUS GANTI NAMA YANG DI JOINKAN KE DIR INI, KARENA MASIH HARDCODE
-BNG57_DIR = 'data/BNG57'
-
-
 @app.route('/api/run-splicing', methods=['POST', 'OPTIONS'])
 def run_splicing():
     """
-    Endpoint API untuk menjalankan proses splicing/merging logs dari file .las.
+    Endpoint API untuk menjalankan proses splicing/merging logs dari file .csv.
     """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
@@ -2246,33 +2246,43 @@ def run_splicing():
         # 1. Ambil data dari payload frontend
         payload = request.get_json()
         params = payload.get('params', {})
-        # selected_wells diabaikan untuk sementara karena path di-hardcode
+        
+        # Get file paths from frontend
+        run1_file_path = payload.get('run1_file_path')
+        run2_file_path = payload.get('run2_file_path')
+        run1_well = payload.get('run1_well')
+        run2_well = payload.get('run2_well')
+        
+        print("Payload diterima:", payload)
+        
+        # Validate required parameters
+        if not run1_file_path or not run2_file_path:
+            return jsonify({"error": "run1_file_path and run2_file_path are required"}), 400
+        
+        if not run1_well or not run2_well:
+            return jsonify({"error": "run1_well and run2_well are required"}), 400
 
-        print("Payload diterima:", params)
+        # 2. Use file paths from frontend directly
+        path_run1 = run1_file_path  # Data ATAS
+        path_run2 = run2_file_path  # Data BAWAH
 
-        # 2. Muat Data Langsung dari File .las
-        # Menggunakan path yang di-hardcode sesuai permintaan.
-        # Logika: Run 1 = ATAS, Run 2 = BAWAH
-        # Sesuaikan nama file jika perlu.
-        path_run1 = os.path.join(
-            BNG57_DIR, 'bng-57_wl_12_25_trim.las')  # Data ATAS
-        path_run2 = os.path.join(
-            BNG57_DIR, 'bng-57_lwd_8_5_trim.las')  # Data BAWAH
-
-        print(f"Run 1 (data atas) dari file: {os.path.basename(path_run1)}")
-        print(f"Run 2 (data bawah) dari file: {os.path.basename(path_run2)}")
+        print(f"Run 1 (data atas) dari file: {path_run1}")
+        print(f"Run 2 (data bawah) dari file: {path_run2}")
 
         if not os.path.exists(path_run1) or not os.path.exists(path_run2):
-            return jsonify({"error": f"Satu atau kedua file .las tidak ditemukan."}), 404
+            return jsonify({"error": f"Satu atau kedua file .csv tidak ditemukan."}), 404
 
-        # Baca file .las dan konversi ke DataFrame
-        las_run1 = lasio.read(path_run1)
-        las_run2 = lasio.read(path_run2)
+        # 3. Baca file .csv dan konversi ke DataFrame
+        df_run1 = pd.read_csv(path_run1, on_bad_lines='warn')
+        df_run2 = pd.read_csv(path_run2, on_bad_lines='warn')
 
-        df_run1 = las_run1.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
-        df_run2 = las_run2.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
+        # Rename DEPT to DEPTH if needed
+        if 'DEPT' in df_run1.columns and 'DEPTH' not in df_run1.columns:
+            df_run1 = df_run1.rename(columns={'DEPT': 'DEPTH'})
+        if 'DEPT' in df_run2.columns and 'DEPTH' not in df_run2.columns:
+            df_run2 = df_run2.rename(columns={'DEPT': 'DEPTH'})
 
-        print("File .las berhasil dimuat dan diubah ke DataFrame.")
+        print("File .csv berhasil dimuat dan diubah ke DataFrame.")
 
         # Opsi: Lakukan data cleaning jika perlu (contoh dari kode Anda)
         if 'RHOZ' in df_run1.columns:
@@ -2280,13 +2290,14 @@ def run_splicing():
         if 'RHOZ' in df_run2.columns:
             df_run2['RHOZ'] = df_run2['RHOZ'] / 1000
 
-        # 3. Panggil Logika Inti untuk Memproses Data
+        # 4. Panggil Logika Inti untuk Memproses Data
         # Fungsi ini diimpor dari splicing_logic.py
         processed_df = splice_and_merge_logs(df_run1, df_run2, params)
 
-        # 4. Simpan Hasil ke File CSV Baru
-        output_filename = 'BNG-057.csv'
-        output_path = os.path.join(BNG57_DIR, output_filename)
+        # 5. Generate output file path based on input paths
+        output_dir = os.path.dirname(path_run1)
+        output_filename = f"{run1_well}_{run2_well}_spliced.csv"
+        output_path = os.path.join(output_dir, output_filename)
 
         # Untuk menjaga agar kolom-kolom lain yang tidak diproses tetap ada,
         # kita gabungkan hasil proses dengan data asli.
@@ -2304,9 +2315,13 @@ def run_splicing():
         print(
             f"Proses selesai. Hasil disimpan sebagai file baru di: {output_path}")
 
-        # 5. Kirim Respons Sukses ke Frontend
+        # 6. Kirim Respons Sukses ke Frontend
         return jsonify({
-            "message": f"Splicing berhasil! Hasil disimpan dalam file baru '{output_filename}'."
+            "message": f"Splicing berhasil! Hasil disimpan dalam file baru '{output_filename}'.",
+            "output_file_path": output_path,
+            "output_filename": output_filename,
+            "run1_well": run1_well,
+            "run2_well": run2_well
         })
 
     except Exception as e:
@@ -2314,24 +2329,34 @@ def run_splicing():
         traceback.print_exc()  # Cetak error lengkap di terminal backend untuk debugging
         return jsonify({"error": str(e)}), 500
 
+
 @app.route('/api/get-splicing-plot', methods=['POST', 'OPTIONS'])
 def get_splicing_plot():
     """
-    Endpoint untuk membuat dan menampilkan plot hasil kalkulasi porositas.
+    Endpoint untuk membuat dan menampilkan plot hasil splicing.
     """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
     if request.method == 'POST':
         try:
+            # Get file path from frontend
+            payload = request.get_json()
+            file_path = payload.get('file_path')
+            
+            if not file_path:
+                return jsonify({"error": "file_path is required"}), 400
+            
+            print(f"Reading splicing results from: {file_path}")
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                return jsonify({"error": f"Output file not found: {file_path}"}), 404
 
-            df = pd.read_csv(os.path.join(
-                BNG57_DIR, f"BNG-057.csv"), on_bad_lines='warn')
+            df = pd.read_csv(file_path, on_bad_lines='warn')
 
-            fig_result = plot_splicing(
-                df=df
-            )
-
+            fig_result = plot_splicing(df=df)
+            print(jsonify(fig_result.to_json()))
             return jsonify(fig_result.to_json())
 
         except Exception as e:

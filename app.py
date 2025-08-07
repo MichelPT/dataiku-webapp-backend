@@ -2292,7 +2292,7 @@ def run_splicing():
 
         # 4. Panggil Logika Inti untuk Memproses Data
         # Fungsi ini diimpor dari splicing_logic.py
-        processed_df = splice_and_merge_logs(df_run1, df_run2, params)
+        processed_df = splice_and_flag_logs(df_run1, df_run2, params)
 
         # 5. Generate output file path based on input paths
         output_dir = os.path.dirname(path_run1)

@@ -83,7 +83,7 @@ def min_max_normalize(log_in,
                       low_in=5, high_in=95,
                       cutoff_min=0, cutoff_max=250):
     """
-    Geolog-style MIN-MAX normalization using percentiles
+    Geolog-style MIN-MAX normalization.
     """
     log = np.array(log_in, dtype=float)
 
@@ -92,10 +92,6 @@ def min_max_normalize(log_in,
     if cutoff_max is not None:
         log[log > cutoff_max] = np.nan
 
-    # low_in = np.nanpercentile(log, pct_min)
-    # high_in = np.nanpercentile(log, pct_max)
-
-    # Hindari pembagian dengan nol jika semua data sama
     if high_in == low_in:
         return np.full_like(log, low_ref)
 
@@ -111,54 +107,53 @@ def selective_normalize_handler(df, log_column, marker_column,
                                 low_in=5, high_in=95,
                                 cutoff_min=0, cutoff_max=250,
                                 log_out_col=None):
-
-    # Copy DataFrame untuk menghindari modifikasi original
+    """
+    Handles normalization. If target_markers is empty or None, it normalizes the entire log.
+    Otherwise, it normalizes only within the specified markers.
+    """
     result_df = df.copy()
-
-    # Ambil data log asli
     log_data = result_df[log_column].values
 
-    # Jika target_markers tidak didefinisikan, gunakan semua marker
-    if target_markers is None:
-        target_markers = result_df[marker_column].dropna().unique()
+    # Jika tidak ada interval yang dipilih (kasus Data Prep),
+    # buat 'mask' yang mencakup semua data valid di log tersebut.
+    if not target_markers:
+        print("No intervals selected. Normalizing the entire log.")
+        # Mask akan memilih semua baris di mana log input tidak NaN
+        target_mask = ~np.isnan(log_data)
 
-    # Inisialisasi log_raw: data asli untuk marker yang TIDAK dipilih
-    target_mask = result_df[marker_column].isin(target_markers)
-    log_raw = log_data.copy()
-    log_raw[target_mask] = np.nan  # Set NaN untuk marker yang dipilih
+        # Data yang tidak dipilih (log_raw) akan kosong
+        log_raw = np.full_like(log_data, np.nan, dtype=float)
 
-    # Inisialisasi log_norm dengan NaN
+    # Jika ada interval yang dipilih (kasus Dashboard)
+    else:
+        print(f"Normalizing for selected intervals: {target_markers}")
+        # Mask akan memilih baris yang cocok dengan marker
+        target_mask = result_df[marker_column].isin(target_markers)
+
+        # Data yang tidak dipilih (log_raw) adalah data di luar interval
+        log_raw = log_data.copy()
+        log_raw[target_mask] = np.nan
+
     log_norm = np.full_like(log_data, np.nan, dtype=float)
-
-    # Inisialisasi log_raw_norm dengan log_raw
     log_raw_norm = log_raw.copy()
 
-    # Normalisasi hanya untuk target markers menggunakan function asli
-    if target_markers:
+    if np.any(target_mask):
         target_data = log_data[target_mask]
 
-        # Hanya lakukan normalisasi jika ada data yang valid
         if len(target_data) > 0 and not np.all(np.isnan(target_data)):
-
-            # PANGGIL FUNCTION ASLI min_max_normalize
-            normalized_target = min_max_normalize(target_data,
-                                                  low_ref=low_ref,
-                                                  high_ref=high_ref,
-                                                  low_in=low_in,
-                                                  high_in=high_in,
-                                                  cutoff_min=cutoff_min,
-                                                  cutoff_max=cutoff_max)
-
-            # Masukkan hasil normalisasi ke log_norm
+            normalized_target = min_max_normalize(
+                target_data,
+                low_ref=low_ref, high_ref=high_ref,
+                low_in=low_in, high_in=high_in,
+                cutoff_min=cutoff_min, cutoff_max=cutoff_max
+            )
             log_norm[target_mask] = normalized_target
-
-            # Overwrite log_raw_norm dengan data normalisasi untuk target markers
             log_raw_norm[target_mask] = normalized_target
 
-    # Tambahkan kolom hasil ke DataFrame
-    # result_df[f'{log_column}_RAW'] = log_raw
-    # result_df[f'{log_column}_NORM'] = log_norm
-    # result_df[f'{log_column}_RAW_NORM'] = log_raw_norm
+    # Gunakan nama kolom output yang diberikan dari frontend
+    if not log_out_col:
+        log_out_col = f'{log_column}_NO'
+
     result_df[log_out_col] = log_raw_norm
 
     return result_df

@@ -136,11 +136,11 @@ def handle_nulls_route():
 
 # Tentukan path ke file data secara andal
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(SCRIPT_DIR, 'data', 'pass_qc.csv')
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-WELLS_DIR = 'data/structures/adera/abab'  # This will be dynamically updated
+WELLS_DIR = 'data/structures/adera/abab'
 LAS_DIR = 'data/depth-matching'
 GWD_DIR = 'data/gwd'
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+DATA_ROOT = os.path.join(PROJECT_ROOT, 'data')
 
 # UTILS API
 
@@ -342,19 +342,40 @@ def list_intervals():
 
 @app.route('/api/get-well-columns', methods=['POST'])
 def get_well_columns():
+    """
+    Handles requests from both Dashboard and Data Prep.
+    It prioritizes 'file_paths' if available, otherwise falls back to 'wells'.
+    """
     try:
         data = request.get_json()
+        file_paths = data.get('file_paths', [])
         wells = data.get('wells', [])
         result = {}
 
-        for well in wells:
-            file_path = os.path.join(WELLS_DIR, f"{well}.csv")
-            if os.path.exists(file_path):
-                # Hanya baca baris pertama
-                df = pd.read_csv(file_path, nrows=1, on_bad_lines='warn')
-                result[well] = df.columns.tolist()
+        # If file_paths are not provided, construct them from 'wells' for backward compatibility
+        if not file_paths and wells:
+            print("Received 'wells', constructing file paths...")
+            # This assumes your "clean" data files are directly in WELLS_DIR
+            file_paths = [os.path.join(
+                WELLS_DIR, f"{well}.csv") for well in wells]
+
+        if not file_paths:
+            return jsonify({"error": "No wells or file paths provided."}), 400
+
+        for path in file_paths:
+            # IMPORTANT: Security check to prevent accessing files outside the 'data' directory
+            safe_path = os.path.abspath(path)
+            if not safe_path.startswith(os.path.abspath('data')):
+                print(f"Warning: Access denied for path '{path}'")
+                continue
+
+            if os.path.exists(safe_path):
+                df = pd.read_csv(safe_path, nrows=1, on_bad_lines='warn')
+                # Use the filename as the key for consistency
+                file_name = os.path.basename(safe_path)
+                result[file_name] = df.columns.tolist()
             else:
-                result[well] = []
+                result[os.path.basename(path)] = []
 
         return jsonify(result)
     except Exception as e:
@@ -364,45 +385,57 @@ def get_well_columns():
 @app.route('/api/get-log-percentiles', methods=['POST'])
 def get_log_percentiles():
     """
-    Menghitung dan mengembalikan nilai persentil ke-5 dan ke-95
-    dari kolom log tertentu berdasarkan sumur dan interval yang dipilih.
+    Menghitung dan mengembalikan nilai persentil P5 dan P95.
+    Fleksibel untuk menerima 'file_paths' (Data Prep) atau 'selected_wells' (Dashboard).
     """
     try:
         payload = request.get_json()
+        file_paths = payload.get('file_paths', [])
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
         log_column = payload.get('log_column', 'GR')
 
-        if not selected_wells or not log_column:
-            return jsonify({"error": "Sumur dan kolom log harus dipilih."}), 400
+        # Fallback untuk Dashboard (tidak berubah, tapi sekarang menggunakan WELLS_DIR yang benar)
+        if not file_paths and selected_wells:
+            print("Menerima 'selected_wells', membuat file paths untuk Dashboard...")
+            file_paths = [os.path.join(
+                WELLS_DIR, f"{well_name}.csv") for well_name in selected_wells]
 
-        # Kumpulkan data dari semua sumur yang dipilih
+        if not file_paths or not log_column:
+            return jsonify({"error": "Path file atau nama sumur dan kolom log harus dipilih."}), 400
+
         all_data_frames = []
-        for well_name in selected_wells:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-            if os.path.exists(file_path):
-                all_data_frames.append(pd.read_csv(file_path))
+        for path in file_paths:
+            full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
+            print(f"Backend mencoba mencari file di: {full_path}")
+
+            data_root = os.path.abspath(os.path.join(PROJECT_ROOT, 'data'))
+            if not full_path.startswith(data_root):
+                print(f"Peringatan: Akses ke path '{path}' tidak diizinkan.")
+                continue
+            # -------------------------------------------------------------
+
+            if os.path.exists(full_path):
+                all_data_frames.append(pd.read_csv(full_path))
+            else:
+                print(f"Peringatan: File tidak ditemukan di path: {full_path}")
 
         if not all_data_frames:
-            return jsonify({"error": "Data untuk sumur yang dipilih tidak ditemukan."}), 404
+            return jsonify({"error": "Data untuk file yang dipilih tidak ditemukan."}), 404
 
-        # Gabungkan semua data
         df = pd.concat(all_data_frames, ignore_index=True)
 
-        # Filter berdasarkan interval yang dipilih (jika ada)
         if selected_intervals and 'MARKER' in df.columns:
             df = df[df['MARKER'].isin(selected_intervals)]
 
         if df.empty or log_column not in df.columns:
             return jsonify({"error": f"Tidak ada data valid atau kolom '{log_column}' tidak ditemukan."}), 404
 
-        # Ambil data log dan hapus nilai NaN
         log_data = df[log_column].dropna()
 
         if log_data.empty:
             return jsonify({"error": "Tidak ada nilai log yang valid untuk perhitungan persentil."}), 404
 
-        # Hitung persentil P5 dan P95
         p5_value = np.nanpercentile(log_data, 5)
         p95_value = np.nanpercentile(log_data, 95)
 
@@ -581,18 +614,24 @@ def run_interval_normalization():
         return jsonify({'status': 'ok'}), 200
 
     try:
-        # Ambil data dari frontend
         payload = request.get_json()
         params = payload.get('params', {})
+        file_paths = payload.get('file_paths', [])
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
 
-        if not selected_wells or not selected_intervals:
-            return jsonify({"error": "Sumur dan interval harus dipilih."}), 400
+        # If file_paths are not provided, construct them from 'wells'
+        if not file_paths and selected_wells:
+            print("Received 'selected_wells', constructing file paths...")
+            file_paths = [os.path.join(
+                WELLS_DIR, f"{well_name}.csv") for well_name in selected_wells]
 
-        print(f"Mulai normalisasi untuk {len(selected_wells)} sumur...")
+        if not file_paths:
+            return jsonify({"error": "No wells or file paths were provided to process."}), 400
 
-        # Ambil parameter normalisasi
+        print(f"Mulai normalisasi untuk {len(file_paths)} file...")
+
+        # Ambil parameter normalisasi (logic does not change)
         log_in_col = params.get('LOG_IN', 'GR')
         log_out_col = params.get('LOG_OUT', log_in_col + '_NO')
         low_ref = float(params.get('LOW_REF', 40))
@@ -604,15 +643,22 @@ def run_interval_normalization():
 
         processed_dfs = []
 
-        for well_name in selected_wells:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-            if not os.path.exists(file_path):
-                print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
+        for path in file_paths:
+            # Security check
+            safe_path = os.path.abspath(path)
+            if not safe_path.startswith(os.path.abspath('data')):
+                print(f"Warning: Access denied for path '{path}'")
                 continue
 
-            df = pd.read_csv(file_path)
+            if not os.path.exists(safe_path):
+                print(f"Peringatan: File di {safe_path} tidak ditemukan.")
+                continue
 
-            # Jalankan handler normalisasi untuk marker terpilih
+            df = pd.read_csv(safe_path)
+
+            # The handler function now correctly processes both cases:
+            # - If selected_intervals has items, it normalizes by interval.
+            # - If selected_intervals is empty, it normalizes the whole log.
             df_norm = selective_normalize_handler(
                 df=df,
                 log_column=log_in_col,
@@ -627,21 +673,19 @@ def run_interval_normalization():
                 log_out_col=log_out_col
             )
 
-            # Simpan kembali ke file
-            df_norm.to_csv(file_path, index=False)
+            # Save the modified data back to the original file
+            df_norm.to_csv(safe_path, index=False)
             processed_dfs.append(df_norm)
-
-            print(f"Normalisasi selesai untuk {well_name}")
+            print(f"Normalisasi selesai untuk {os.path.basename(safe_path)}")
 
         if not processed_dfs:
             return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 400
 
-        # Gabungkan semua hasil jika diperlukan
         final_df = pd.concat(processed_dfs, ignore_index=True)
         result_json = final_df.to_json(orient='records')
 
         return jsonify({
-            "message": f"Normalisasi selesai untuk {len(processed_dfs)} sumur.",
+            "message": f"Normalisasi selesai untuk {len(processed_dfs)} file.",
             "data": result_json
         })
 
@@ -658,43 +702,77 @@ def run_smoothing():
 
     try:
         payload = request.get_json()
+        params = payload.get('params', {})  # Ambil 'params' jika ada
+
+        # Ambil parameter dari 'params' atau dari root payload untuk kompatibilitas
+        window = int(params.get('WINDOW', payload.get('WINDOW', 5)))
+        col_in = params.get('LOG_IN', payload.get('LOG_IN', 'GR'))
+        col_out = params.get('LOG_OUT', payload.get('LOG_OUT', f"{col_in}_SM"))
+
+        file_paths = payload.get('file_paths', [])
         selected_wells = payload.get('selected_wells', [])
-        selected_intervals = payload.get('selected_intervals', [])
-        window = int(payload.get('WINDOW', 5))
-        col_in = payload.get('LOG_IN', 'GR')
-        col_out = payload.get('LOG_OUT', col_in + '_SM')
 
-        if not selected_wells or not selected_intervals:
-            return jsonify({"error": "Sumur dan interval harus dipilih."}), 400
+        # --- PENAMBAHAN LOGIKA UNTUK MEMBEDAKAN KASUS ---
 
-        print(f"Mulai smoothing untuk {len(selected_wells)} sumur...")
+        # KASUS 1: DATA PREP (jika 'file_paths' dikirim)
+        if file_paths:
+            print(
+                f"Mulai smoothing untuk Data Prep pada {len(file_paths)} file...")
+            # Untuk Data Prep, kita tidak memerlukan interval
+            # Loop akan berjalan pada path file yang sudah lengkap
+            paths_to_process = []
+            for path in file_paths:
+                full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
+                data_root = os.path.abspath(os.path.join(PROJECT_ROOT, 'data'))
+                if full_path.startswith(data_root):
+                    paths_to_process.append(full_path)
+                else:
+                    print(
+                        f"Peringatan Keamanan: Akses ke path '{path}' ditolak.")
+
+        # KASUS 2: DASHBOARD (jika 'file_paths' tidak ada, gunakan logika lama)
+        else:
+            print(
+                f"Mulai smoothing untuk Dashboard pada {len(selected_wells)} sumur...")
+            selected_intervals = payload.get('selected_intervals', [])
+            # Pengecekan wajib untuk Dashboard, sesuai kode asli Anda
+            if not selected_wells or not selected_intervals:
+                return jsonify({"error": "Sumur dan interval harus dipilih untuk alur kerja dashboard."}), 400
+
+            # Buat path file dari selected_wells
+            paths_to_process = [os.path.join(
+                WELLS_DIR, f"{well_name}.csv") for well_name in selected_wells]
+
+        # --- AKHIR PENAMBAHAN LOGIKA ---
+
+        if not paths_to_process:
+            return jsonify({"error": "Tidak ada file valid yang ditemukan untuk diproses."}), 400
 
         processed_dfs = []
-
-        for well_name in selected_wells:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+        # Loop utama sekarang bekerja untuk kedua kasus
+        for file_path in paths_to_process:
             if not os.path.exists(file_path):
-                print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
+                print(f"Peringatan: File tidak ditemukan di path: {file_path}")
                 continue
 
             df = pd.read_csv(file_path, on_bad_lines='warn')
 
+            # Memanggil fungsi smoothing Anda yang sudah ada tanpa perubahan
             df_smooth = smoothing(df, window, col_in, col_out)
 
             # Simpan kembali ke file
             df_smooth.to_csv(file_path, index=False)
             processed_dfs.append(df_smooth)
-
-            print(f"Smoothing selesai untuk {well_name}")
+            print(f"Smoothing selesai untuk {os.path.basename(file_path)}")
 
         if not processed_dfs:
             return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 400
 
-        # Gabungkan semua hasil jika diperlukan
         final_df = pd.concat(processed_dfs, ignore_index=True)
         result_json = final_df.to_json(orient='records')
+
         return jsonify({
-            "message": f"Smoothing selesai untuk {len(processed_dfs)} sumur.",
+            "message": f"Smoothing selesai untuk {len(processed_dfs)} file.",
             "data": result_json
         })
 

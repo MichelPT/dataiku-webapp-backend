@@ -111,7 +111,24 @@ data_col = {
     'DGRCC': ['DGRCC'],
     'ARM48PC': ['ARM48PC'],
     'ALCDLC': ['ALCDLC'],
-    'TNPL': ['TNPL']
+    'TNPL': ['TNPL'],
+    # Normalization (_NO)
+    'GR_CAL_NO': ['GR_CAL_NO'], 'DGRCC_NO': ['DGRCC_NO'],
+    # Trimmed (_TR)
+    'GR_CAL_TR': ['GR_CAL_TR'], 'DGRCC_TR': ['DGRCC_TR'], 'RLA5_TR': ['RLA5_TR'],
+    'R39PC_TR': ['R39PC_TR'], 'A40H_TR': ['A40H_TR'], 'ARM48PC_TR': ['ARM48PC_TR'],
+    'RHOZ_TR': ['RHOZ_TR'], 'ALCDLC_TR': ['ALCDLC_TR'], 'ROBB_TR': ['ROBB_TR'],
+    'TNPH_TR': ['TNPH_TR'], 'TNPL_TR': ['TNPL_TR'],
+    # Smoothed (_SM)
+    'GR_CAL_SM': ['GR_CAL_SM'], 'DGRCC_SM': ['DGRCC_SM'], 'RLA5_SM': ['RLA5_SM'],
+    'R39PC_SM': ['R39PC_SM'], 'A40H_SM': ['A40H_SM'], 'ARM48PC_SM': ['ARM48PC_SM'],
+    'RHOZ_SM': ['RHOZ_SM'], 'ALCDLC_SM': ['ALCDLC_SM'], 'ROBB_SM': ['ROBB_SM'],
+    'TNPH_SM': ['TNPH_SM'], 'TNPL_SM': ['TNPL_SM'],
+    # Filled Missing (_FM)
+    'GR_CAL_FM': ['GR_CAL_FM'], 'DGRCC_FM': ['DGRCC_FM'], 'RLA5_FM': ['RLA5_FM'],
+    'R39PC_FM': ['R39PC_FM'], 'A40H_FM': ['A40H_FM'], 'ARM48PC_FM': ['ARM48PC_FM'],
+    'RHOZ_FM': ['RHOZ_FM'], 'ALCDLC_FM': ['ALCDLC_FM'], 'ROBB_FM': ['ROBB_FM'],
+    'TNPH_FM': ['TNPH_FM'], 'TNPL_FM': ['TNPL_FM'],
 }
 
 
@@ -191,6 +208,20 @@ unit_col = {
     'ROBB': ['G/C3'],          # Sama seperti RHOB
     'TNPL': ['V/V'],           # Sama seperti NPHI
     'TNPH': ['V/V'],           # Sama seperti NPHI
+    # Normalization (_NO)
+    'GR_CAL_NO': ['GAPI'], 'DGRCC_NO': ['GAPI'],
+    # Trimmed (_TR)
+    'GR_CAL_TR': ['GAPI'], 'DGRCC_TR': ['GAPI'], 'RLA5_TR': ['OHMM'], 'R39PC_TR': ['OHMM'],
+    'A40H_TR': ['OHMM'], 'ARM48PC_TR': ['OHMM'], 'RHOZ_TR': ['G/C3'], 'ALCDLC_TR': ['G/C3'],
+    'ROBB_TR': ['G/C3'], 'TNPH_TR': ['V/V'], 'TNPL_TR': ['V/V'],
+    # Smoothed (_SM)
+    'GR_CAL_SM': ['GAPI'], 'DGRCC_SM': ['GAPI'], 'RLA5_SM': ['OHMM'], 'R39PC_SM': ['OHMM'],
+    'A40H_SM': ['OHMM'], 'ARM48PC_SM': ['OHMM'], 'RHOZ_SM': ['G/C3'], 'ALCDLC_SM': ['G/C3'],
+    'ROBB_SM': ['G/C3'], 'TNPH_SM': ['V/V'], 'TNPL_SM': ['V/V'],
+    # Filled Missing (_FM)
+    'GR_CAL_FM': ['GAPI'], 'DGRCC_FM': ['GAPI'], 'RLA5_FM': ['OHMM'], 'R39PC_FM': ['OHMM'],
+    'A40H_FM': ['OHMM'], 'ARM48PC_FM': ['OHMM'], 'RHOZ_FM': ['G/C3'], 'ALCDLC_FM': ['G/C3'],
+    'ROBB_FM': ['G/C3'], 'TNPH_FM': ['V/V'], 'TNPL_FM': ['V/V'],
 }
 
 
@@ -269,6 +300,20 @@ color_col = {
     'ROBB': [colors_dict['red']],   # Sama seperti RHOB
     'TNPL': ['darkgreen'],          # Sama seperti NPHI
     'TNPH': ['darkgreen'],          # Sama seperti NPHI
+    # Normalization (_NO) - Oranye
+    'GR_CAL_NO': ['orange'], 'DGRCC_NO': ['orange'],
+    # Trimmed (_TR) - Coklat
+    'GR_CAL_TR': ['saddlebrown'], 'DGRCC_TR': ['saddlebrown'], 'RLA5_TR': ['saddlebrown'], 'R39PC_TR': ['saddlebrown'],
+    'A40H_TR': ['saddlebrown'], 'ARM48PC_TR': ['saddlebrown'], 'RHOZ_TR': ['saddlebrown'], 'ALCDLC_TR': ['saddlebrown'],
+    'ROBB_TR': ['saddlebrown'], 'TNPH_TR': ['saddlebrown'], 'TNPL_TR': ['saddlebrown'],
+    # Smoothed (_SM) - Ungu
+    'GR_CAL_SM': ['purple'], 'DGRCC_SM': ['purple'], 'RLA5_SM': ['purple'], 'R39PC_SM': ['purple'],
+    'A40H_SM': ['purple'], 'ARM48PC_SM': ['purple'], 'RHOZ_SM': ['purple'], 'ALCDLC_SM': ['purple'],
+    'ROBB_SM': ['purple'], 'TNPH_SM': ['purple'], 'TNPL_SM': ['purple'],
+    # Filled Missing (_FM) - Magenta
+    'GR_CAL_FM': ['magenta'], 'DGRCC_FM': ['magenta'], 'RLA5_FM': ['magenta'], 'R39PC_FM': ['magenta'],
+    'A40H_FM': ['magenta'], 'ARM48PC_FM': ['magenta'], 'RHOZ_FM': ['magenta'], 'ALCDLC_FM': ['magenta'],
+    'ROBB_FM': ['magenta'], 'TNPH_FM': ['magenta'], 'TNPL_FM': ['magenta'],
 }
 
 flag_color = {
@@ -372,6 +417,19 @@ range_col = {
     'ROBB': [[1.71, 2.71]],       # Sama seperti RHOB
     'TNPL': [[0.6, 0]],           # Sama seperti NPHI
     'TNPH': [[0.6, 0]],           # Sama seperti NPHI
+    'GR_CAL_NO': [[0, 250]], 'DGRCC_NO': [[0, 250]],
+    'GR_CAL_TR': [[0, 250]], 'DGRCC_TR': [[0, 250]], 'RLA5_TR': [[0.2, 2000]],
+    'R39PC_TR': [[0.2, 2000]], 'A40H_TR': [[0.2, 2000]], 'ARM48PC_TR': [[0.2, 2000]],
+    'RHOZ_TR': [[1.65, 2.65]], 'ALCDLC_TR': [[1.65, 2.65]], 'ROBB_TR': [[1.65, 2.65]],
+    'TNPH_TR': [[0.6, -0.1]], 'TNPL_TR': [[0.6, -0.1]],
+    'GR_CAL_SM': [[0, 250]], 'DGRCC_SM': [[0, 250]], 'RLA5_SM': [[0.2, 2000]],
+    'R39PC_SM': [[0.2, 2000]], 'A40H_SM': [[0.2, 2000]], 'ARM48PC_SM': [[0.2, 2000]],
+    'RHOZ_SM': [[1.65, 2.65]], 'ALCDLC_SM': [[1.65, 2.65]], 'ROBB_SM': [[1.65, 2.65]],
+    'TNPH_SM': [[0.6, -0.1]], 'TNPL_SM': [[0.6, -0.1]],
+    'GR_CAL_FM': [[0, 250]], 'DGRCC_FM': [[0, 250]], 'RLA5_FM': [[0.2, 2000]],
+    'R39PC_FM': [[0.2, 2000]], 'A40H_FM': [[0.2, 2000]], 'ARM48PC_FM': [[0.2, 2000]],
+    'RHOZ_FM': [[1.65, 2.65]], 'ALCDLC_FM': [[1.65, 2.65]], 'ROBB_FM': [[1.65, 2.65]],
+    'TNPH_FM': [[0.6, -0.1]], 'TNPL_FM': [[0.6, -0.1]],
 }
 
 ratio_plots = {
@@ -448,6 +506,13 @@ ratio_plots = {
     'ROBB': 1,          # Sama seperti RHOB
     'TNPL': 1,           # Sama seperti NPHI
     'TNPH': 1,           # Sama seperti NPHI
+    'GR_CAL_NO': 1, 'DGRCC_NO': 1,
+    'GR_CAL_TR': 1, 'DGRCC_TR': 1, 'RLA5_TR': 1, 'R39PC_TR': 1, 'A40H_TR': 1,
+    'ARM48PC_TR': 1, 'RHOZ_TR': 1, 'ALCDLC_TR': 1, 'ROBB_TR': 1, 'TNPH_TR': 1, 'TNPL_TR': 1,
+    'GR_CAL_SM': 1, 'DGRCC_SM': 1, 'RLA5_SM': 1, 'R39PC_SM': 1, 'A40H_SM': 1,
+    'ARM48PC_SM': 1, 'RHOZ_SM': 1, 'ALCDLC_SM': 1, 'ROBB_SM': 1, 'TNPH_SM': 1, 'TNPL_SM': 1,
+    'GR_CAL_FM': 1, 'DGRCC_FM': 1, 'RLA5_FM': 1, 'R39PC_FM': 1, 'A40H_FM': 1,
+    'ARM48PC_FM': 1, 'RHOZ_FM': 1, 'ALCDLC_FM': 1, 'ROBB_FM': 1, 'TNPH_FM': 1, 'TNPL_FM': 1,
 }
 
 flags_name = {
@@ -2813,43 +2878,45 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             fig, axes = plot_flag(df_well_zone, fig, axes, col, n_seq)
             fig, axes = plot_texts_marker(
                 df_zone, df_well_zone['DEPTH'].max(), fig, axes, col, n_seq)
-        elif col in ['GR_CAL', 'DGRCC']:
+        elif col in [
+            'GR_CAL', 'DGRCC',
+            'GR_CAL_NO', 'DGRCC_NO',
+            'GR_CAL_TR', 'DGRCC_TR',
+            'GR_CAL_SM', 'DGRCC_SM',
+            'GR_CAL_FM', 'DGRCC_FM'
+        ]:
             fig, axes = plot_line(
                 df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
 
-        # Group untuk log berbasis RT (dengan skala logaritmik)
-        elif col in ['RLA5', 'A40H', 'ARM48PC', 'R39PC']:
+        # Group untuk semua log berbasis RT (asli dan turunan, dengan skala logaritmik)
+        elif col in [
+            'RLA5', 'A40H', 'ARM48PC', 'R39PC',
+            'RLA5_TR', 'A40H_TR', 'ARM48PC_TR', 'R39PC_TR',
+            'RLA5_SM', 'A40H_SM', 'ARM48PC_SM', 'R39PC_SM',
+            'RLA5_FM', 'A40H_FM', 'ARM48PC_FM', 'R39PC_FM'
+        ]:
             fig, axes = plot_line(
                 df, fig, axes, base_key='RT', n_seq=n_seq, type="log", col=col, label=col)
 
-        # Group untuk log berbasis RHOB
-        elif col in ['RHOZ', 'ALCDLC', 'ROBB']:
+        # Group untuk semua log berbasis RHOB (asli dan turunan)
+        elif col in [
+            'RHOZ', 'ALCDLC', 'ROBB',
+            'RHOZ_TR', 'ALCDLC_TR', 'ROBB_TR',
+            'RHOZ_SM', 'ALCDLC_SM', 'ROBB_SM',
+            'RHOZ_FM', 'ALCDLC_FM', 'ROBB_FM'
+        ]:
             fig, axes = plot_line(
                 df, fig, axes, base_key='RHOB', n_seq=n_seq, col=col, label=col)
 
-        # Group untuk log berbasis NPHI
-        elif col in ['TNPL', 'TNPH']:
-            # Menggunakan NPHI_RHOB_NON_NORM sebagai base_key untuk mendapatkan properti NPHI
-            fig, axes = plot_line(
-                df, fig, axes, base_key='NPHI_RHOB_NON_NORM', n_seq=n_seq, col=col, label=col)
-
-        elif col in ['GR_CAL', 'DGRCC']:
-            fig, axes = plot_line(
-                df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
-
-        # Group untuk log berbasis RT (dengan skala logaritmik)
-        elif col in ['RLA5', 'A40H', 'ARM48PC', 'R39PC']:
-            fig, axes = plot_line(
-                df, fig, axes, base_key='RT', n_seq=n_seq, type="log", col=col, label=col)
-
-        # Group untuk log berbasis RHOB
-        elif col in ['RHOZ', 'ALCDLC', 'ROBB']:
-            fig, axes = plot_line(
-                df, fig, axes, base_key='RHOB', n_seq=n_seq, col=col, label=col)
-
-        # Group untuk log berbasis NPHI
-        elif col in ['TNPL', 'TNPH']:
-            # Menggunakan NPHI_RHOB_NON_NORM sebagai base_key untuk mendapatkan properti NPHI
+        # Group untuk semua log berbasis NPHI (asli dan turunan)
+        elif col in [
+            'TNPL', 'TNPH',
+            'TNPL_TR', 'TNPH_TR',
+            'TNPL_SM', 'TNPH_SM',
+            'TNPL_FM', 'TNPH_FM'
+        ]:
+            # Catatan: Menggunakan 'NPHI_RHOB_NON_NORM' sebagai base_key
+            # untuk mendapatkan properti NPHI yang benar dari dictionary Anda.
             fig, axes = plot_line(
                 df, fig, axes, base_key='NPHI_RHOB_NON_NORM', n_seq=n_seq, col=col, label=col)
 
@@ -3305,5 +3372,98 @@ def plot_module1(df):
         raise ValueError("No valid columns found for Module1 plot")
 
     fig = main_plot(df, available_sequence, title=title)
+
+    return fig
+
+
+def plot_norm_prep(df):
+    """
+    Membuat plot Normalization Preparation.
+    """
+    # Reset index seperti di colab code
+    df = df.reset_index()
+
+    # Ensure DEPTH column exists (rename DEPT to DEPTH if needed)
+    if 'DEPT' in df.columns and 'DEPTH' not in df.columns:
+        df = df.rename(columns={'DEPT': 'DEPTH'})
+
+    # Auto-detect LWD vs WL berdasarkan kolom yang tersedia
+    lwd_sequence = ['DGRCC_NO', 'ALCDLC', 'TNPL', 'R39PC']
+    wl_sequence = ['GR_CAL_NO', 'RHOZ', 'RLA5', 'TNPH']
+
+    # Check which type of data we have
+    lwd_available = sum(1 for col in lwd_sequence if col in df.columns)
+    wl_available = sum(1 for col in wl_sequence if col in df.columns)
+
+    if lwd_available >= wl_available:
+        # Use LWD sequence
+        sequence = lwd_sequence
+        title = 'LWD'
+    else:
+        # Use WL sequence and scale RHOZ if available
+        if 'RHOZ' in df.columns:
+            df['RHOZ'] = df['RHOZ'] / 1000
+        sequence = wl_sequence
+        title = 'WL'
+
+    # Filter sequence to only include available columns
+    sequence = [col for col in sequence if col in df.columns]
+
+    if not sequence:
+        raise ValueError("No valid columns found for Module1 plot")
+
+    fig = main_plot(df, sequence, title=title)
+
+    return fig
+
+
+def plot_smoothing_prep(df):
+    """
+    Membuat plot Normalization Preparation.
+    """
+    # Reset index seperti di colab code
+    df = df.reset_index()
+
+    # Ensure DEPTH column exists (rename DEPT to DEPTH if needed)
+    if 'DEPT' in df.columns and 'DEPTH' not in df.columns:
+        df = df.rename(columns={'DEPT': 'DEPTH'})
+
+    # Auto-detect LWD vs WL berdasarkan kolom yang tersedia
+    lwd_sequence = [
+        'DGRCC', 'DGRCC_SM',
+        'ALCDLC', 'ALCDLC_SM',
+        'TNPL', 'TNPL_SM',
+        'R39PC', 'R39PC_SM'
+    ]
+
+    wl_sequence = [
+        'GR_CAL', 'GR_CAL_SM',
+        'RHOZ', 'RHOZ_SM',
+        'RLA5', 'RLA5_SM',
+        'TNPH', 'TNPH_SM'
+    ]
+
+    # Check which type of data we have
+    lwd_available = sum(1 for col in lwd_sequence if col in df.columns)
+    wl_available = sum(1 for col in wl_sequence if col in df.columns)
+
+    if lwd_available >= wl_available:
+        # Use LWD sequence
+        sequence = lwd_sequence
+        title = 'LWD'
+    else:
+        # Use WL sequence and scale RHOZ if available
+        if 'RHOZ' in df.columns:
+            df['RHOZ'] = df['RHOZ'] / 1000
+        sequence = wl_sequence
+        title = 'WL'
+
+    # Filter sequence to only include available columns
+    sequence = [col for col in sequence if col in df.columns]
+
+    if not sequence:
+        raise ValueError("No valid columns found for Module1 plot")
+
+    fig = main_plot(df, sequence, title=title)
 
     return fig

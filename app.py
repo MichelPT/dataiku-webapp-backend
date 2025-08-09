@@ -22,6 +22,7 @@ from services.plotting_service import (
     plot_log_default,
     plot_module_2,
     plot_module1,
+    plot_norm_prep,
     plot_smoothing,
     plot_phie_den,
     plot_gsa_main,
@@ -2618,30 +2619,73 @@ def get_module1_plot():
                 if not os.path.exists(file_path):
                     return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
                 df = pd.read_csv(file_path, on_bad_lines='warn')
-            # elif selected_wells:
-            #     # Dashboard mode - multiple wells from WELLS_DIR
-            #     df_list = [pd.read_csv(os.path.join(
-            #         WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
-            #     df = pd.concat(df_list, ignore_index=True)
-
-            #     # Apply interval filtering if specified
-            #     if selected_intervals:
-            #         if 'MARKER' in df.columns:
-            #             df = df[df['MARKER'].isin(selected_intervals)]
-            #         else:
-            #             print("Warning: 'MARKER' column not found, cannot filter by interval.")
-
-            #     if df.empty:
-            #         return jsonify({"error": "No data available for the selected wells and intervals."}), 404
-            # else:
-            #     return jsonify({"error": "Either file_path or selected_wells is required"}), 400
-
-            # fig_result = plot_splicing(
-            #     df=df
-            # )
 
             # Call plotting function with processed data
             fig_result = plot_module1(df=df)
+
+            # Send finished plot as JSON
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-normalization-prep-plot', methods=['POST', 'OPTIONS'])
+def get_normalization_prep_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+
+            # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)
+            file_path = request_data.get('file_path')
+            # selected_wells = request_data.get('selected_wells', [])
+            # selected_intervals = request_data.get('selected_intervals', [])
+
+            if file_path:
+                # DirectorySidebar mode - single file
+                if not os.path.exists(file_path):
+                    return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
+                df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            # Call plotting function with processed data
+            fig_result = plot_norm_prep(df=df)
+
+            # Send finished plot as JSON
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-smoothing-prep-plot', methods=['POST', 'OPTIONS'])
+def get_smoothing_prep_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+
+            # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)
+            file_path = request_data.get('file_path')
+            # selected_wells = request_data.get('selected_wells', [])
+            # selected_intervals = request_data.get('selected_intervals', [])
+
+            if file_path:
+                # DirectorySidebar mode - single file
+                if not os.path.exists(file_path):
+                    return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
+                df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            # Call plotting function with processed data
+            fig_result = plot_smoothing(df=df)
 
             # Send finished plot as JSON
             return jsonify(fig_result.to_json())

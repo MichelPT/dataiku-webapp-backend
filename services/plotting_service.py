@@ -3467,3 +3467,14 @@ def plot_smoothing_prep(df):
     fig = main_plot(df, sequence, title=title)
 
     return fig
+
+
+def plot_fill_missing(df, title="Fill Missing Plot"):
+    """Membuat plot Fill Missing dengan sequence yang sudah ditentukan."""
+    # Definisikan urutan track yang ingin ditampilkan
+    sequence = ['GR', 'NPHI_RHOB', 'RT', 'MISSING_FLAG']
+
+    # Panggil fungsi plotting utama
+    fig = main_plot(df, sequence, title=title)
+
+    return fig

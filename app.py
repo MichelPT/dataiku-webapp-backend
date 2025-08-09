@@ -1,4 +1,5 @@
 # /api/app.py
+from flask import request, jsonify
 from services.autoplot import calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
 from services.splicing import splice_and_flag_logs
@@ -16,6 +17,7 @@ from services.porosity import calculate_porosity
 from services.plotting_service import (
     extract_markers_with_mean_depth,
     normalize_xover,
+    plot_fill_missing,
     plot_gsa_main,
     plot_gwd,
     plot_iqual,
@@ -26,6 +28,7 @@ from services.plotting_service import (
     plot_smoothing,
     plot_phie_den,
     plot_gsa_main,
+    plot_smoothing_prep,
     plot_splicing,
     plot_vsh_linear,
     plot_sw_indo,
@@ -46,6 +49,7 @@ from services.sw import calculate_sw
 from services.structures_service import get_fields_list, get_field_structures, get_structure_details, get_well_details
 from services.folder_nav_service import get_structure_wells_folders, get_well_folder_files
 from services.module1_service import get_module1_plot_data
+from services.fill_missing import fill_flagged_values, flag_missing_values, flag_missing_values
 
 from typing import Optional
 import numpy as np
@@ -1162,77 +1166,103 @@ def get_gsa_plot():
 #         return jsonify({'error': str(e)}), 500
 
 
+# Asumsikan path dasar (PROJECT_ROOT, DATA_ROOT, WELLS_DIR) dan
+# fungsi 'trim_log_by_masking' sudah diimpor/didefinisikan di atas.
+
+
 @app.route('/api/trim-data', methods=['POST'])
 def run_trim_well_log():
     """
-    Endpoint API untuk menjalankan proses trimming dengan logika baru (masking).
-    Sekarang akan melakukan trim pada SEMUA kolom kecuali DEPTH.
+    Endpoint API fleksibel untuk menjalankan proses trimming.
     """
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-
     try:
         data = request.get_json()
-
-        # 1. Ambil Parameter dari frontend
-        well_names = data.get('selected_wells', [])
         params = data.get('params', {})
+        file_paths = data.get('file_paths', [])
+        well_names = data.get('selected_wells', [])
+
+        # Fallback: Jika 'file_paths' tidak ada (dari Dashboard), buat dari 'selected_wells'
+        if not file_paths and well_names:
+            print(f"Menerima 'selected_wells' dari Dashboard: {well_names}")
+            file_paths = [os.path.join(
+                WELLS_DIR, f"{well}.csv") for well in well_names]
+
+        if not file_paths:
+            return jsonify({'error': 'Tidak ada sumur atau file yang dipilih untuk diproses.'}), 400
+
         trim_mode = params.get('TRIM_MODE')
-        print(params)
+        if not trim_mode:
+            return jsonify({'error': 'Parameter `TRIM_MODE` wajib diisi'}), 400
 
-        if not well_names:
-            return jsonify({'error': 'Daftar `selected_wells` wajib diisi'}), 400
+        # --- BAGIAN YANG HILANG & DIPERBAIKI ---
+        depth_above = None
+        depth_below = None
 
-        # Konversi nilai depth ke float, tangani jika None
-        depth_above = params.get('DEPTH_ABOVE', 0)
-        depth_below = params.get('DEPTH_BELOW', 0)
+        try:
+            # Hanya ambil dan konversi depth_above jika mode memerlukannya
+            if trim_mode in ['DEPTH_ABOVE', 'CUSTOM_TRIM']:
+                val = params.get('DEPTH_ABOVE')
+                if val is None or str(val).strip() == '':
+                    return jsonify({'error': f'DEPTH_ABOVE wajib diisi untuk mode {trim_mode}.'}), 400
+                depth_above = float(val)
+
+            # Hanya ambil dan konversi depth_below jika mode memerlukannya
+            if trim_mode in ['DEPTH_BELOW', 'CUSTOM_TRIM']:
+                val = params.get('DEPTH_BELOW')
+                if val is None or str(val).strip() == '':
+                    return jsonify({'error': f'DEPTH_BELOW wajib diisi untuk mode {trim_mode}.'}), 400
+                depth_below = float(val)
+
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Nilai DEPTH_ABOVE atau DEPTH_BELOW harus berupa angka yang valid.'}), 400
+        # --- AKHIR PERBAIKAN ---
 
         responses = []
+        for path in file_paths:
+            full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
 
-        # 2. Proses Setiap Sumur
-        for well_name in well_names:
-            # Check if request contains direct file_path
-            if 'file_path' in data and data['file_path']:
-                file_path = data['file_path']
-                print(f"Using direct file_path from request: {file_path}")
-            else:
-                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-                print(f"Using constructed file_path: {file_path}")
-
-            if not os.path.exists(file_path):
-                print(
-                    f"Peringatan: File {file_path} tidak ditemukan, melewati.")
+            if not full_path.startswith(DATA_ROOT):  # Validasi keamanan
+                print(f"Peringatan Keamanan: Akses ke path '{path}' ditolak.")
                 continue
 
-            df = pd.read_csv(file_path, on_bad_lines='warn')
+            if not os.path.exists(full_path):
+                print(
+                    f"Peringatan: File {full_path} tidak ditemukan, melewati.")
+                continue
 
+            df = pd.read_csv(full_path, on_bad_lines='warn')
             if 'DEPTH' not in df.columns:
                 print(
-                    f"Peringatan: Kolom DEPTH tidak ditemukan di {well_name}, melewati.")
+                    f"Peringatan: Kolom DEPTH tidak ditemukan di {os.path.basename(full_path)}, melewati.")
                 continue
 
-            # Ambil semua nama kolom dari DataFrame, KECUALI 'DEPTH'
-            columns_to_trim = [col for col in df.columns if col != 'DEPTH']
-            print(
-                f"Akan melakukan trim pada kolom: {columns_to_trim} untuk sumur {well_name}")
+            # Logika pemilihan kolom asli (sudah benar)
+            all_columns = df.columns.tolist()
+            processed_suffixes = ('_TR', '_NO', '_SM', '_FM')
+            excluded_columns = ['DEPTH', 'WELL_NAME',
+                                'MARKER', 'ZONE', 'GROUP_ID', 'IQUAL']
+            columns_to_trim = [
+                col for col in all_columns
+                if not col.endswith(processed_suffixes) and col not in excluded_columns
+            ]
 
-            # 3. Panggil Fungsi Logika dari data_preprocessing.py
+            # Panggil fungsi logika dengan daftar kolom dan parameter depth yang sudah benar
             processed_df = trim_log_by_masking(
                 df=df,
-                columns_to_trim=columns_to_trim,  # Gunakan daftar kolom yang baru
+                columns_to_trim=columns_to_trim,
                 trim_mode=trim_mode,
                 depth_above=depth_above,
                 depth_below=depth_below
             )
 
-            # 4. Simpan Hasil
-            processed_df.to_csv(file_path, index=False)
+            processed_df.to_csv(full_path, index=False)
 
-            # Siapkan respons untuk frontend
-            created_cols = [f"{col}_TR" for col in columns_to_trim]
+            original_cols_set = set(df.columns)
+            new_cols_set = set(processed_df.columns)
+            created_cols = list(new_cols_set - original_cols_set)
+
             responses.append({
-                'well': well_name,
-                'file_updated': f'{well_name}.csv',
+                'file_updated': os.path.basename(full_path),
                 'columns_created': created_cols
             })
 
@@ -2441,80 +2471,86 @@ def get_splicing_plot():
             return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/flag-missing', methods=['POST', 'OPTIONS'])
-def run_flag_missing():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-
+@app.route('/api/flag-missing', methods=['POST'])
+def flag_missing_route():
+    """
+    Endpoint untuk menjalankan Tahap 1: Menandai (flag) nilai yang hilang.
+    Sekarang fleksibel untuk Data Prep dan Dashboard.
+    """
     try:
-        data = request.get_json()
-        well_names = data.get('selected_wells', [])
-        logs_to_check = data.get('logs_to_check', [])
+        payload = request.get_json()
+        logs_to_check = payload.get('logs_to_check', [])
 
-        if not well_names:
-            return jsonify({'error': 'Daftar `selected_wells` wajib diisi.'}), 400
-        if not logs_to_check:
-            return jsonify({'error': 'Daftar `logs_to_check` wajib diisi.'}), 400
+        # --- LOGIKA PATH FLEKSIBEL ---
+        file_paths = payload.get('file_paths', [])
+        selected_wells = payload.get('selected_wells', [])
 
-        responses = []
-        for well_name in well_names:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-            if not os.path.exists(file_path):
+        if not file_paths and selected_wells:
+            # Fallback untuk Dashboard
+            file_paths = [os.path.join(
+                WELLS_DIR, f"{well}.csv") for well in selected_wells]
+
+        if not file_paths or not logs_to_check:
+            return jsonify({"error": "File/sumur dan log harus dipilih."}), 400
+        # --- AKHIR LOGIKA PATH ---
+
+        for path in file_paths:
+            # Gunakan path yang aman
+            full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
+            if not full_path.startswith(DATA_ROOT) or not os.path.exists(full_path):
+                print(
+                    f"Peringatan: File tidak ditemukan atau akses ditolak untuk {full_path}")
                 continue
 
-            df = pd.read_csv(file_path, on_bad_lines='warn')
+            df = pd.read_csv(full_path)
+            df_flagged = flag_missing_values(df, logs_to_check)
+            df_flagged.to_csv(full_path, index=False)
 
-            # Panggil fungsi untuk menandai nilai yang hilang
-            processed_df = flag_missing_values_in_range(df, logs_to_check)
-
-            processed_df.to_csv(file_path, index=False)
-            responses.append({'well': well_name, 'status': 'flagged'})
-
-        return jsonify({'message': 'Proses penandaan nilai hilang berhasil.', 'results': responses}), 200
-
+        return jsonify({
+            "message": "Flagging missing values complete.",
+            "flag_columns": ["MISSING_FLAG"]
+        }), 200
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/fill-flagged-missing', methods=['POST', 'OPTIONS'])
-def run_fill_flagged_missing():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
+# @app.route('/api/fill-flagged-missing', methods=['POST'])
+# def fill_flagged_route():
+#     """
+#     Endpoint untuk menjalankan Tahap 2: Mengisi nilai yang sudah ditandai.
+#     Sekarang fleksibel untuk Data Prep dan Dashboard.
+#     """
+#     try:
+#         payload = request.get_json()
+#         logs_to_fill = payload.get('logs_to_fill', [])
+#         max_consecutive = payload.get('max_consecutive_nan', 3)
 
-    try:
-        data = request.get_json()
-        well_names = data.get('selected_wells', [])
-        logs_to_fill = data.get('logs_to_fill', [])
-        max_consecutive = int(data.get('max_consecutive_nan', 3))
+#         # --- LOGIKA PATH FLEKSIBEL (SAMA SEPERTI DI ATAS) ---
+#         file_paths = payload.get('file_paths', [])
+#         selected_wells = payload.get('selected_wells', [])
 
-        if not well_names:
-            return jsonify({'error': 'Daftar `selected_wells` wajib diisi.'}), 400
-        if not logs_to_fill:
-            return jsonify({'error': 'Daftar `logs_to_fill` wajib diisi.'}), 400
+#         if not file_paths and selected_wells:
+#             file_paths = [os.path.join(
+#                 WELLS_DIR, f"{well}.csv") for well in selected_wells]
 
-        responses = []
-        for well_name in well_names:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-            if not os.path.exists(file_path):
-                continue
+#         if not file_paths or not logs_to_fill:
+#             return jsonify({"error": "File/sumur dan log harus dipilih."}), 400
+#         # --- AKHIR LOGIKA PATH ---
 
-            df = pd.read_csv(file_path, on_bad_lines='warn')
+#         for path in file_paths:
+#             full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
+#             if not full_path.startswith(DATA_ROOT) or not os.path.exists(full_path):
+#                 print(
+#                     f"Peringatan: File tidak ditemukan atau akses ditolak untuk {full_path}")
+#                 continue
 
-            # Panggil fungsi untuk mengisi nilai yang sudah ditandai
-            processed_df = fill_flagged_missing_values(
-                df, logs_to_fill, max_consecutive)
+#             df = pd.read_csv(full_path)
+#             df_filled = fill_flagged_values(df, logs_to_fill, max_consecutive)
+#             df_filled.to_csv(full_path, index=False)
 
-            processed_df.to_csv(file_path, index=False)
-            responses.append({'well': well_name, 'status': 'filled'})
-
-        return jsonify({'message': 'Proses pengisian nilai yang ditandai berhasil.', 'results': responses}), 200
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+#         return jsonify({"message": "Fill missing process complete."}), 200
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/structure-folders/<field_name>/<structure_name>', methods=['GET'])
@@ -2685,7 +2721,7 @@ def get_smoothing_prep_plot():
                 df = pd.read_csv(file_path, on_bad_lines='warn')
 
             # Call plotting function with processed data
-            fig_result = plot_smoothing(df=df)
+            fig_result = plot_smoothing_prep(df=df)
 
             # Send finished plot as JSON
             return jsonify(fig_result.to_json())
@@ -2694,6 +2730,142 @@ def get_smoothing_prep_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
+# ====================================================================
+# FILL MISSING API
+# ====================================================================
+
+
+# @app.route('/api/flag-missing', methods=['POST'])
+# def flag_missing_route():
+#     """
+#     Endpoint to run Stage 1: Flagging missing values.
+#     Handles requests from both Data Prep (file_paths) and Dashboard (selected_wells).
+#     """
+#     try:
+#         payload = request.get_json()
+#         file_paths = payload.get('file_paths', [])
+#         selected_wells = payload.get('selected_wells', [])
+#         logs_to_check = payload.get('logs_to_check', [])
+
+#         # Fallback for Dashboard: If file_paths is empty, build it from selected_wells
+#         if not file_paths and selected_wells:
+#             print(
+#                 f"Dashboard Request: Building paths from selected_wells: {selected_wells}")
+#             file_paths = [os.path.join(
+#                 WELLS_DIR, f"{well}.csv") for well in selected_wells]
+
+#         if not file_paths or not logs_to_check:
+#             return jsonify({"error": "Files (or wells) and logs must be selected."}), 400
+
+#         for path in file_paths:
+#             full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
+#             if not full_path.startswith(DATA_ROOT):
+#                 print(f"Security Warning: Access denied for path '{path}'")
+#                 continue
+
+#             if not os.path.exists(full_path):
+#                 print(f"Warning: File not found at path: {full_path}")
+#                 continue
+
+#             df = pd.read_csv(full_path)
+#             df_flagged = flag_missing_values(df, logs_to_check)
+#             df_flagged.to_csv(full_path, index=False)
+
+#         return jsonify({
+#             "message": "Flagging missing values complete.",
+#             "flag_columns": ["MISSING_FLAG"]
+#         }), 200
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/fill-flagged-missing', methods=['POST'])
+def fill_flagged_route():
+    """
+    Endpoint to run Stage 2: Filling flagged missing values.
+    Handles requests from both Data Prep (file_paths) and Dashboard (selected_wells).
+    """
+    try:
+        payload = request.get_json()
+        file_paths = payload.get('file_paths', [])
+        selected_wells = payload.get('selected_wells', [])
+        logs_to_fill = payload.get('logs_to_fill', [])
+        max_consecutive = payload.get('max_consecutive_nan', 3)
+
+        # Fallback for Dashboard
+        if not file_paths and selected_wells:
+            print(
+                f"Dashboard Request: Building paths from selected_wells: {selected_wells}")
+            file_paths = [os.path.join(
+                WELLS_DIR, f"{well}.csv") for well in selected_wells]
+
+        if not file_paths or not logs_to_fill:
+            return jsonify({"error": "Files (or wells) and logs must be selected."}), 400
+
+        for path in file_paths:
+            full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
+            if not full_path.startswith(DATA_ROOT):
+                print(f"Security Warning: Access denied for path '{path}'")
+                continue
+
+            if not os.path.exists(full_path):
+                print(f"Warning: File not found at path: {full_path}")
+                continue
+
+            df = pd.read_csv(full_path)
+            df_filled = fill_flagged_values(df, logs_to_fill, max_consecutive)
+            df_filled.to_csv(full_path, index=False)
+
+        return jsonify({"message": "Fill missing process complete."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-fill-missing-plot', methods=['POST'])
+def get_fill_missing_plot():
+    """
+    Endpoint untuk membuat dan mengambil plot hasil proses Fill Missing.
+    """
+    try:
+        payload = request.get_json()
+        file_paths = payload.get('file_paths', [])
+        selected_wells = payload.get('selected_wells', [])
+
+        # Fallback untuk Dashboard
+        if not file_paths and selected_wells:
+            file_paths = [os.path.join(
+                WELLS_DIR, f"{w}.csv") for w in selected_wells]
+
+        if not file_paths:
+            return jsonify({'error': 'No files or wells were selected to plot.'}), 400
+
+        # Muat data dari file yang ditentukan
+        df_list = []
+        for path in file_paths:
+            full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
+            if not full_path.startswith(DATA_ROOT):
+                continue
+            if os.path.exists(full_path):
+                df_list.append(pd.read_csv(full_path))
+
+        if not df_list:
+            return jsonify({'error': 'Data for the selected files could not be found.'}), 404
+
+        df_combined = pd.concat(df_list, ignore_index=True)
+
+        # --- PERUBAHAN: Menggunakan fungsi plot_fill_missing ---
+        # Plot placeholder diganti dengan pemanggilan fungsi Anda yang sebenarnya.
+        title = f"Fill Missing Result for {', '.join(selected_wells) if selected_wells else os.path.basename(file_paths[0])}"
+        fig_result = plot_fill_missing(df_combined, title=title)
+
+        # Konversi figure Plotly ke format JSON
+        return jsonify(fig_result.to_json())
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 # This is for local development testing, Vercel will use its own server

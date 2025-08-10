@@ -198,52 +198,50 @@ def smoothing(df, window, col_in, col_out):
 
 def trim_log_by_masking(df: pd.DataFrame, columns_to_trim: list, trim_mode: str, depth_above: float = None, depth_below: float = None) -> pd.DataFrame:
     """
-    Melakukan trimming log dengan cara masking (mengubah menjadi NaN) dan menyimpan
-    hasilnya di kolom baru dengan akhiran '_TR'.
-
-    Args:
-        df (pd.DataFrame): DataFrame input dengan kolom 'DEPTH'.
-        columns_to_trim (list): Daftar nama kolom yang akan di-trim.
-        trim_mode (str): Mode trimming ('ABOVE', 'BELOW', 'CUSTOM_TRIM').
-        depth_above (float, optional): Batas kedalaman atas. Defaults to None.
-        depth_below (float, optional): Batas kedalaman bawah. Defaults to None.
-
-    Returns:
-        pd.DataFrame: DataFrame dengan kolom-kolom baru hasil trimming.
+    Melakukan trimming log dengan cara masking dan menyimpan hasilnya di kolom baru
+    yang namanya dibuat secara dinamis (_TR, _TR_TR, dst.) untuk menghindari penimpaan.
     """
     if 'DEPTH' not in df.columns:
         raise ValueError("DataFrame input harus memiliki kolom 'DEPTH'.")
 
-    # Buat salinan untuk menghindari mengubah DataFrame asli secara tidak sengaja
     df_out = df.copy()
 
+    # Tentukan mask terlebih dahulu, karena akan digunakan untuk semua kolom
+    mask = None
+    if trim_mode == 'CUSTOM_TRIM' and depth_above is not None and depth_below is not None:
+        mask = (df_out['DEPTH'] < depth_above) | (
+            df_out['DEPTH'] > depth_below)
+    elif trim_mode == 'DEPTH_ABOVE' and depth_above is not None:
+        mask = df_out['DEPTH'] < depth_above
+    elif trim_mode == 'DEPTH_BELOW' and depth_below is not None:
+        mask = df_out['DEPTH'] > depth_below
+
+    if mask is None:
+        print("Peringatan: Kondisi trim tidak valid. Tidak ada kolom baru yang dibuat.")
+        return df
+
+    # --- PERBAIKAN UTAMA: Logika Penamaan Kolom Dinamis ---
     for col_in in columns_to_trim:
         if col_in not in df_out.columns:
             print(f"Peringatan: Kolom '{col_in}' tidak ditemukan, melewati.")
             continue
 
-        # Nama kolom output baru, contoh: 'GR_TR'
+        # Tentukan nama kolom output awal
         col_out = f"{col_in}_TR"
 
-        # Buat kolom baru dengan menyalin data asli
+        # Loop untuk menemukan nama kolom yang unik dengan menambahkan '_TR'
+        while col_out in df_out.columns:
+            col_out = f"{col_out}_TR"
+
+        print(
+            f"Membuat kolom output baru: '{col_out}' dari kolom input '{col_in}'")
+
+        # Buat kolom baru dengan menyalin data ASLI dari 'col_in'
         df_out[col_out] = df_out[col_in]
 
-        # Tentukan kondisi (mask) untuk menutupi data (mengubah jadi NaN)
-        mask = None
-        if trim_mode == 'CUSTOM_TRIM' and depth_above is not None and depth_below is not None:
-            # Mask untuk data DI LUAR rentang [depth_above, depth_below]
-            mask = (df_out['DEPTH'] < depth_above) | (
-                df_out['DEPTH'] > depth_below)
-        elif trim_mode == 'ABOVE' and depth_above is not None:
-            # Mask untuk data DI ATAS (lebih kecil dari) depth_above
-            mask = df_out['DEPTH'] < depth_above
-        elif trim_mode == 'BELOW' and depth_below is not None:
-            # Mask untuk data DI BAWAH (lebih besar dari) depth_below
-            mask = df_out['DEPTH'] > depth_below
-
-        # Jika mask valid, terapkan dengan mengubah nilai menjadi NaN
-        if mask is not None:
-            df_out.loc[mask, col_out] = np.nan
+        # Terapkan mask ke kolom BARU yang unik ini
+        df_out.loc[mask, col_out] = np.nan
+    # --- AKHIR PERBAIKAN ---
 
     return df_out
 

@@ -24,6 +24,7 @@ from services.plotting_service import (
     plot_log_default,
     plot_module_2,
     plot_module1,
+    plot_module_3,
     plot_norm_prep,
     plot_smoothing,
     plot_phie_den,
@@ -990,73 +991,87 @@ def get_porosity_plot():
             return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/run-gsa-calculation', methods=['POST', 'OPTIONS'])
-def run_gsa_calculation():
+def _run_gsa_process(payload, gsa_function_to_run):
+    """
+    A generic helper to run a specific GSA process (RGSA, NGSA, or DGSA).
+
+    Args:
+        payload (dict): The JSON payload from the frontend request.
+        gsa_function_to_run (function): The specific processing function to execute.
+    """
+    params = payload.get('params', {})
+    selected_wells = payload.get('selected_wells', [])
+    selected_intervals = payload.get('selected_intervals', [])
+
+    if not selected_wells:
+        return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+    for well_name in selected_wells:
+        file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+        if not os.path.exists(file_path):
+            print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
+            continue
+
+        df_well = pd.read_csv(file_path, on_bad_lines='warn')
+
+        # Call the specific processing function passed as an argument
+        df_processed = gsa_function_to_run(
+            df_well, params, selected_intervals
+        )
+
+        # Save the result back to the file
+        df_processed.to_csv(file_path, index=False)
+        print(f"Hasil untuk sumur '{well_name}' telah disimpan.")
+
+    return jsonify({"message": f"Kalkulasi berhasil untuk {len(selected_wells)} sumur."}), 200
+
+# --- 1. New Endpoint for RGSA ---
+
+
+@app.route('/api/run-rgsa', methods=['POST', 'OPTIONS'])
+def run_rgsa():
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
-    if request.method == 'POST':
-        try:
-            payload = request.get_json()
-            params = payload.get('params', {})
-            selected_wells = payload.get('selected_wells', [])
-            selected_intervals = payload.get('selected_intervals', [])
-            print(selected_intervals)
+    try:
+        payload = request.get_json()
+        # Call the helper with the RGSA processing function
+        return _run_gsa_process(payload, process_all_wells_rgsa)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
-            if not selected_wells:
-                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+# --- 2. New Endpoint for NGSA ---
 
-            for well_name in selected_wells:
-                file_path = os.path.join(
-                    WELLS_DIR, f"{well_name}.csv")
 
-                df_well = pd.read_csv(file_path, on_bad_lines='warn')
+@app.route('/api/run-ngsa', methods=['POST', 'OPTIONS'])
+def run_ngsa():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    try:
+        payload = request.get_json()
+        # Call the helper with the NGSA processing function
+        return _run_gsa_process(payload, process_all_wells_ngsa)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
-                # Panggil fungsi orkestrator GSA
-                df_rgsa = process_all_wells_rgsa(
-                    df_well, params, selected_intervals)
-                df_ngsa = process_all_wells_ngsa(
-                    df_rgsa, params, selected_intervals)
-                df_dgsa = process_all_wells_dgsa(
-                    df_ngsa, params, selected_intervals)
+# --- 3. New Endpoint for DGSA ---
 
-                # Validasi kolom penting
-                required_cols = ['GR', 'RT', 'NPHI',
-                                 'RHOB', 'RGSA', 'NGSA', 'DGSA']
-                df_dgsa = df_dgsa.dropna(subset=required_cols)
-                # df_dgsa = df_dgsa.dropna(subset=required_cols)
 
-                # Hitung anomali
-                df_dgsa['RGSA_ANOM'] = df_dgsa['RT'] > df_dgsa['RGSA']
-                df_dgsa['NGSA_ANOM'] = df_dgsa['NPHI'] < df_dgsa['NGSA']
-                df_dgsa['DGSA_ANOM'] = df_dgsa['RHOB'] < df_dgsa['DGSA']
-
-                # Skoring
-                df_dgsa['SCORE'] = df_dgsa[['RGSA_ANOM',
-                                            'NGSA_ANOM', 'DGSA_ANOM']].sum(axis=1)
-
-                # Klasifikasi zona
-                def classify_zone(score):
-                    if score == 3:
-                        return 'Zona Prospek Kuat'
-                    elif score == 2:
-                        return 'Zona Menarik'
-                    elif score == 1:
-                        return 'Zona Lemah'
-                    else:
-                        return 'Non Prospek'
-
-                df_dgsa['ZONA'] = df_dgsa['SCORE'].apply(classify_zone)
-
-                # Simpan kembali file CSV dengan kolom GSA baru
-                df_dgsa.to_csv(file_path, index=False)
-                print(f"Hasil GSA untuk sumur '{well_name}' telah disimpan.")
-
-            return jsonify({"message": f"Kalkulasi GSA berhasil untuk {len(selected_wells)} sumur."}), 200
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": str(e)}), 500
+@app.route('/api/run-dgsa', methods=['POST', 'OPTIONS'])
+def run_dgsa():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    try:
+        payload = request.get_json()
+        # Call the helper with the DGSA processing function
+        return _run_gsa_process(payload, process_all_wells_dgsa)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/get-gsa-plot', methods=['POST', 'OPTIONS'])
@@ -1399,9 +1414,9 @@ def get_rgbe_rpbe_plot():
 
             required_cols = ['DEPTH', 'GR', 'RT', 'NPHI',
                              'RHOB', 'VSH', 'IQUAL', 'RGBE', 'RPBE']
-            if not all(col in df.columns for col in required_cols):
-                # This error will now be correctly shown if the calculation hasn't been run
-                return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RGBE-RPBE terlebih dahulu."}), 400
+            # if not all(col in df.columns for col in required_cols):
+            #     # This error will now be correctly shown if the calculation hasn't been run
+            #     return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RGBE-RPBE terlebih dahulu."}), 400
 
             if selected_intervals:
                 if 'MARKER' in df.columns:
@@ -1527,6 +1542,9 @@ def run_dns_dnsv_calculation():
             payload = request.get_json()
             params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
+            # prcnt_qz = params.get('prcntz_qz', 5)
+            # prcnt_wtr = params.get('prcntz_wtr', 5)
+            print(payload)
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1585,7 +1603,7 @@ def get_rt_r0_plot():
 
             # Validate required columns
             required_cols = ['DEPTH', 'GR', 'RT', 'NPHI',
-                             'RHOB', 'VSH', 'IQUAL', 'RO', 'RT_RO', 'RWA']
+                             'RHOB', 'VSH', 'IQUAL', 'RO', 'RT_RO', 'RWA_FULL']
             if not all(col in df.columns for col in required_cols):
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi RT-R0 terlebih dahulu."}), 400
 
@@ -2866,6 +2884,49 @@ def get_fill_missing_plot():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-module3-plot', methods=['POST', 'OPTIONS'])
+def get_module3_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data
+            df_list = [pd.read_csv(os.path.join(
+                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            # df = df.rename(columns={'VSH_GR': 'VSH_LINEAR', 'RWA_FULL': 'RWA'})
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+
+            # Panggil fungsi plotting RWA
+            fig_result = plot_module_3(
+                df=df,
+            )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
 
 # This is for local development testing, Vercel will use its own server

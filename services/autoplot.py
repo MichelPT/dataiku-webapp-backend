@@ -64,3 +64,84 @@ def calculate_nphi_rhob_intersection(df: pd.DataFrame, prcnt_qz: float, prcnt_wt
         return {"nphi_sh": round(xx0, 4), "rhob_sh": round(yy0, 4)}
     else:
         raise ValueError("Tidak ditemukan titik potong (intersection).")
+
+
+def find_closest_point_value(df: pd.DataFrame, x_col: str, y_col: str, target_x: float, target_y: float, value_col: str):
+    """
+    Fungsi helper untuk mencari nilai di 'value_col' dari baris data
+    yang paling dekat dengan titik target (target_x, target_y).
+    """
+    if df.empty or x_col not in df.columns or y_col not in df.columns or value_col not in df.columns:
+        return None
+
+    # Pastikan data bersih dari NaN pada kolom yang akan digunakan
+    df_clean = df[[x_col, y_col, value_col]].dropna()
+    if df_clean.empty:
+        return None
+
+    # Hitung jarak kuadrat Euclidean (lebih cepat dari akar kuadrat)
+    distances = (df_clean[x_col] - target_x)**2 + \
+        (df_clean[y_col] - target_y)**2
+
+    # Dapatkan indeks dari baris dengan jarak terkecil
+    closest_idx = distances.idxmin()
+
+    # Kembalikan nilai dari kolom yang diinginkan pada baris tersebut
+    closest_value = df_clean.loc[closest_idx, value_col]
+
+    return closest_value
+
+
+def calculate_gr_ma_sh_from_nphi_rhob(df: pd.DataFrame, prcnt_qz: float, prcnt_wtr: float) -> dict:
+    """
+    Menghitung gr_ma dan gr_sh berdasarkan titik terdekat pada crossplot NPHI vs RHOB.
+
+    Returns:
+        dict: Berisi {'gr_ma': float, 'gr_sh': float}
+    """
+    # 1. Pastikan kolom yang dibutuhkan ada
+    required_cols = ['NPHI', 'RHOB', 'GR']
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"Kolom yang dibutuhkan '{col}' tidak ditemukan.")
+
+    # 2. Hitung titik shale (intersection) terlebih dahulu
+    try:
+        shale_point = calculate_nphi_rhob_intersection(df, prcnt_qz, prcnt_wtr)
+        nphi_sh = shale_point['nphi_sh']
+        rhob_sh = shale_point['rhob_sh']
+    except ValueError as e:
+        # Jika intersection gagal, kita tidak bisa menghitung gr_sh
+        raise ValueError(f"Gagal menghitung titik shale: {e}")
+
+    # 3. Definisikan titik referensi
+    x_quartz, y_quartz = -0.02, 2.65
+
+    # 4. Cari nilai GR terdekat dari titik Quartz untuk mendapatkan gr_ma
+    gr_ma = find_closest_point_value(
+        df=df,
+        x_col='NPHI',
+        y_col='RHOB',
+        target_x=x_quartz,
+        target_y=y_quartz,
+        value_col='GR'
+    )
+
+    # 5. Cari nilai GR terdekat dari titik Shale (intersection) untuk mendapatkan gr_sh
+    gr_sh = find_closest_point_value(
+        df=df,
+        x_col='NPHI',
+        y_col='RHOB',
+        target_x=nphi_sh,
+        target_y=rhob_sh,
+        value_col='GR'
+    )
+
+    if gr_ma is None or gr_sh is None:
+        raise ValueError(
+            "Tidak dapat menemukan titik terdekat untuk menentukan GR Matrix atau GR Shale.")
+
+    return {
+        "gr_ma": round(gr_ma, 4),
+        "gr_sh": round(gr_sh, 4)
+    }

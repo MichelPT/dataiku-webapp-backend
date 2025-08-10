@@ -7,6 +7,7 @@ from services.rgsa import process_rgsa_for_well
 from services.ngsa import process_ngsa_for_well
 from services.dgsa import process_dgsa_for_well
 
+
 def _interpolate_coeffs(depth, coeff_df):
     """(Internal) Melakukan interpolasi linear pada koefisien regresi."""
     if coeff_df.empty:
@@ -105,54 +106,38 @@ def calculate_gsa_log(df_input: pd.DataFrame, params: dict, ref_log: str, target
     return pd.merge(df_input, df_gsa[['DEPTH', output_log_name]], on='DEPTH', how='left')
 
 
-def run_full_gsa_analysis(df: pd.DataFrame, params: dict) -> pd.DataFrame:
-    """
-    Orkestrator untuk menjalankan seluruh alur kerja GSA (RGSA, NGSA, DGSA).
-    """
-    df_processed = df.copy()
-
-    # --- Proses RGSA ---
+def run_rgsa_analysis(df: pd.DataFrame, params: dict) -> pd.DataFrame:
+    """Hanya menjalankan proses RGSA."""
     print("Memproses RGSA...")
     df_processed = process_rgsa_for_well(
-        df_well=df_processed, params=params,
+        df_well=df, params=params,
         ref_log='GR', target_log='RT', output_log_name='RGSA'
     )
     if 'RT' in df_processed and 'RGSA' in df_processed:
         df_processed['RGSA_GAS_EFFECT'] = df_processed['RT'] > df_processed['RGSA']
-        print("Kolom RGSA_GAS_EFFECT ditambahkan.")
+    return df_processed
 
-    # --- Proses NGSA ---
+
+def run_ngsa_analysis(df: pd.DataFrame, params: dict) -> pd.DataFrame:
+    """Hanya menjalankan proses NGSA."""
     print("Memproses NGSA...")
     df_processed = process_ngsa_for_well(
-        df_well=df_processed, params=params,
+        df_well=df, params=params,
         ref_log='GR', target_log='NPHI', output_log_name='NGSA'
     )
     if 'NPHI' in df_processed and 'NGSA' in df_processed:
         df_processed['NGSA_GAS_EFFECT'] = df_processed['NPHI'] < df_processed['NGSA']
-        print("Kolom NGSA_GAS_EFFECT ditambahkan.")
+    return df_processed
 
-    # --- Proses DGSA ---
+
+def run_dgsa_analysis(df: pd.DataFrame, params: dict) -> pd.DataFrame:
+    """Hanya menjalankan proses DGSA."""
     print("Memproses DGSA...")
     df_processed = process_dgsa_for_well(
-        df_well=df_processed, params=params,
+        df_well=df, params=params,
         ref_log='GR', target_log='RHOB', output_log_name='DGSA'
     )
     if 'RHOB' in df_processed and 'DGSA' in df_processed:
         df_processed['DGSA_GAS_EFFECT'] = df_processed['RHOB'] < df_processed['DGSA']
         df_processed['DENS_DIFF'] = df_processed['DGSA'] - df_processed['RHOB']
-        print("Kolom DGSA_GAS_EFFECT dan DENS_DIFF ditambahkan.")
-
-    print("Proses Kalkulasi GSA selesai.")
-    print("Menghitung anomali, skor, dan klasifikasi zona...")
-
-    # Hitung anomali dan skor
-    df_processed['RGSA_ANOM'] = df_processed['RT'] > df_processed['RGSA']
-    df_processed['NGSA_ANOM'] = df_processed['NPHI'] < df_processed['NGSA']
-    df_processed['DGSA_ANOM'] = df_processed['RHOB'] < df_processed['DGSA']
-
-    df_processed['SCORE'] = df_processed[[
-        'RGSA_ANOM', 'NGSA_ANOM', 'DGSA_ANOM']].sum(axis=1)
-    df_processed['ZONA'] = df_processed['SCORE'].apply(_classify_zone)
-    print("Kolom ZONA berhasil dibuat.")
-
     return df_processed

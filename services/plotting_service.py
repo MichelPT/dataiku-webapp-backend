@@ -613,7 +613,7 @@ def fillcol_dual(label, data_value, threshold, above_color='green', below_color=
 
 
 def xover_label_df(df_well, key, type=1):
-    if key in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'VSH_LINEAR', 'PHIE', 'RGBE', 'RPBE', 'VSH', 'SW']:
+    if key in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'VSH_LINEAR', 'PHIE', 'RGBE', 'RPBE', 'SW', 'VSH']:
         xover_df = pd.DataFrame(df_well[data_col[key]].copy())
         xover_df['thres'] = [thres[key]]*len(xover_df)
         xover_df['label'] = np.where(
@@ -648,7 +648,7 @@ def xover_label_df(df_well, key, type=1):
     return xover_dfs
 
 
-def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=None, axes_key=None):
+def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=None):
     """
     Plot a line curve on the well log plot.
 
@@ -660,7 +660,7 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
         Figure to add trace to
     axes : dict
         Dictionary with axes information
-    base_key : str
+    key : str
         Key for display settings (colors, ranges, units)
     n_seq : int
         Sequence number for the plot
@@ -670,8 +670,6 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
         Column name in df_well to plot (if None, uses data_col[key][0])
     label : str, optional
         Label to display for the curve (if None, uses col)
-    axes_key : str, optional
-        Key to use for storing axes in the axes dictionary (if None, uses col)
 
     Returns:
     --------
@@ -687,10 +685,6 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
     # If label is not provided, use the column name
     if label is None:
         label = col
-
-    # If axes_key is not provided, use col
-    if axes_key is None:
-        axes_key = col
 
     # Add trace to figure
     fig.add_trace(
@@ -726,8 +720,8 @@ def plot_line(df_well, fig, axes, base_key, n_seq, type=None, col=None, label=No
         )
 
     # Update axes dictionary
-    axes[axes_key].append('yaxis'+str(n_seq))
-    axes[axes_key].append('xaxis'+str(n_seq))
+    axes[col].append('yaxis'+str(n_seq))
+    axes[col].append('xaxis'+str(n_seq))
 
     return fig, axes
 
@@ -1178,7 +1172,6 @@ def plot_three_features_simple(df_well, fig, axes, key, n_seq, counter, n_plots,
     Plot tiga feature dengan triple x-axis untuk range yang berbeda.
     Feature kedua dan ketiga menggunakan x-axis overlay dengan garis putus-putus dan titik-titik.
     """
-
     if log_scale:
         # Periksa dan perbaiki rentang untuk sumbu pertama
         if range_col[key][0][0] <= 0:
@@ -1678,7 +1671,7 @@ def plot_xover_bar_horizontal(df_well, fig, axes, key, n_seq, counter,
             y=xover_df[depth],
             orientation='h',
             marker=dict(color=xover_df['color']),
-            width=1.2,
+            # width=1.2,
             text=None,
             hovertemplate=f"{key}: %{{x:.2f}}<br>Depth: %{{y}}<extra></extra>",
             showlegend=False
@@ -1878,10 +1871,6 @@ def plot_flag(df_well, fig, axes, key, n_seq):
 
     custom_data = []
     flag_names = df_well[col].map(flags_names.get)
-
-    if key == 'IQUAL':
-        flag_names = flag_names.fillna('0')
-
     for i in flag_names:
         custom_data.append([i]*int(max_val+1))
 
@@ -2077,7 +2066,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['RT_RO', 'PERM', 'RWAPP_RW', 'RT_F', 'RT_RHOB', 'RT_RGSA', 'RT', 'RT_GR', 'RT_PHIE', 'TGC']:
+            elif key in ['RT_RO', 'PERM', 'RWAPP_RW', 'RT_F', 'RT_RHOB', 'RT_RGSA', 'RT', 'RT_GR', 'RT_PHIE', 'TGC', 'RWA']:
                 a = range_col[key][0][0]
                 b = range_col[key][0][1]
                 n = int(np.log10(b/a))
@@ -2097,7 +2086,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_SM', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT', 'RWA', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE']:
+            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE']:
                 fig.update_layout(
                     **{axis: dict(
                         # gridcolor='rgba(0,0,0,0)',
@@ -2667,9 +2656,9 @@ def rgb_to_hex(rgb):
     )
 
 # ------------------------------- Main Plot --------------------------------
-
-
 # @title
+
+
 def main_plot(df, sequence=[], title="", height_plot=1600):
     # Zona RGSA-NGSA-DGSA
     zona_mapping = {
@@ -2767,15 +2756,13 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             fig, axes, counter = plot_two_features_simple(df, fig, axes, 'VSH_GR_DN', n_seq,
                                                           counter, n_plots=subplot_col, log_scale=False)
         elif col == 'VSH':
-            # fig, axes = plot_line(
-            #     df, fig, axes, base_key='VSH', n_seq=n_seq, col=col, label=col)
+            # fig, axes = plot_line(df, fig, axes, base_key='VSH', n_seq=n_seq, col=col, label=col)
             fig, axes, counter = plot_xover_thres_dual(
                 df, fig, axes, col, n_seq, counter)
 
         # POROSITY
         elif col == 'PHIE':
-            # fig, axes = plot_line(
-            #     df, fig, axes, base_key='PHIE', n_seq=n_seq, col=col, label=col)
+            # fig, axes = plot_line(df, fig, axes, base_key='PHIE', n_seq=n_seq, col=col, label=col)
             fig, axes, counter = plot_xover_thres_dual(
                 df, fig, axes, col, n_seq, counter, above_thres_color="yellow", below_thres_color="green")
         elif col == 'PHIE_PHIT':
@@ -2817,14 +2804,14 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
         elif col == 'RGBE':
             # fig,axes = plot_flag(df_well_marker_rgbe,fig,axes,col,n_seq)
             # fig, axes, counter = plot_xover_thres_dual(df, fig, axes, col, n_seq, counter,above_thres_color="darkgreen", below_thres_color="lightblue")
-            fig, axes, counter = plot_xover_bar_horizontal(df, fig, axes, col, n_seq, counter, above_thres_color='lightblue',
-                                                           below_thres_color='darkgreen')
-
+            fig, axes, counter = plot_xover_bar_horizontal(
+                df, fig, axes, col, n_seq, counter)
         elif col == 'RPBE':
             # fig,axes = plot_flag(df_well_marker_rpbe,fig,axes,col,n_seq)
             # fig, axes, counter = plot_xover_thres_dual(df, fig, axes, col, n_seq, counter,above_thres_color="lightblue", below_thres_color="darkgreen")
             fig, axes, counter = plot_xover_bar_horizontal(
                 df, fig, axes, col, n_seq, counter)
+
         elif col == 'RGBE_TEXT':
             fig, axes = plot_text_values(
                 df_marker_rgbe, df_well_marker_rgbe['DEPTH'].max(), fig, axes, col, n_seq)
@@ -2834,7 +2821,8 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
 
         # SWGRAD
         elif col == 'SWGRAD':
-            fig, axes = plot_line(df, fig, axes, col, n_seq)
+            fig, axes = plot_line(
+                df, fig, axes, base_key=col, n_seq=n_seq, col=col, label=col)
         elif col == 'SWARRAY':
             fig, axes, counter = plot_four_features_simple(
                 df, fig, axes, col, n_seq, counter, n_plots=subplot_col, log_scale=False)
@@ -2878,6 +2866,7 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             fig, axes = plot_flag(df_well_zone, fig, axes, col, n_seq)
             fig, axes = plot_texts_marker(
                 df_zone, df_well_zone['DEPTH'].max(), fig, axes, col, n_seq)
+
         elif col in [
             'GR_CAL', 'DGRCC',
             'GR_CAL_NO', 'DGRCC_NO',
@@ -2919,6 +2908,7 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             # untuk mendapatkan properti NPHI yang benar dari dictionary Anda.
             fig, axes = plot_line(
                 df, fig, axes, base_key='NPHI_RHOB_NON_NORM', n_seq=n_seq, col=col, label=col)
+    print(axes)
 
     fig = layout_range_all_axis(fig, axes, plot_sequence)
 
@@ -2942,9 +2932,8 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
     fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=0)
 
     fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
-    return fig
 
-# @title
+    return fig
 
 
 def extract_markers_with_mean_depth(df):
@@ -3475,6 +3464,16 @@ def plot_fill_missing(df, title="Fill Missing Plot"):
     sequence = ['GR', 'NPHI_RHOB', 'RT', 'MISSING_FLAG']
 
     # Panggil fungsi plotting utama
+    fig = main_plot(df, sequence, title=title)
+
+    return fig
+
+
+def plot_module_3(df, title="Module 3 Plot"):
+    """Membuat plot untuk Module 3 dengan sequence yang sudah ditentukan."""
+    # Definisikan urutan track yang ingin ditampilkan
+    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB', 'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA',
+                'VSH', 'PHIE', 'IQUAL', 'RGBE', 'RPBE', 'SWARRAY', 'DNS', 'DNSV', 'RT_RO']
     fig = main_plot(df, sequence, title=title)
 
     return fig

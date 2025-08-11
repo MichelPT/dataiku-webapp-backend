@@ -3,7 +3,9 @@
 import os
 import pandas as pd
 from flask import Flask, request, jsonify
-from services.dns_dnsv_plot import plot_dns_dnsv # Assuming your plot function is here
+from services.autoplot import calculate_nphi_rhob_intersection
+# Assuming your plot function is here
+from services.dns_dnsv_plot import plot_dns_dnsv
 
 # --- Configuration ---
 app = Flask(__name__)
@@ -11,15 +13,19 @@ app = Flask(__name__)
 WELLS_DIR = os.path.join('..', 'data', 'wells')
 
 # --- Calculation Functions (Your existing code) ---
+
+
 def dns(rhob_in, nphi_in):
     """Calculate DNS (Density-Neutron Separation)"""
     return ((2.71 - rhob_in) / 1.71) - nphi_in
+
 
 def dnsv(rhob_in, nphi_in, rhob_sh, nphi_sh, vsh):
     """Calculate DNSV (Density-Neutron Separation corrected for shale Volume)"""
     rhob_corv = rhob_in + vsh * (2.65 - rhob_sh)
     nphi_corv = nphi_in + vsh * (0 - nphi_sh)
     return ((2.71 - rhob_corv) / 1.71) - nphi_corv
+
 
 def process_dns_dnsv(df, params=None):
     """Main function to process DNS-DNSV analysis"""
@@ -28,8 +34,10 @@ def process_dns_dnsv(df, params=None):
 
     try:
         # Safely get parameters with defaults
-        rhob_sh = float(params.get('RHOB_SH', 2.528)) 
-        nphi_sh = float(params.get('NPHI_SH', 0.35))
+        shale_point = calculate_nphi_rhob_intersection(
+            df, params.get('prcntz_qz', 5), params.get('prcntz_wtr', 5))
+        nphi_sh = shale_point['nphi_sh']
+        rhob_sh = shale_point['rhob_sh']
 
         # First rename VSH_LINEAR to VSH if it exists
         if 'VSH_LINEAR' in df.columns and 'VSH' not in df.columns:
@@ -54,6 +62,7 @@ def process_dns_dnsv(df, params=None):
 
 # --- API Endpoints ---
 
+
 @app.route('/api/run-dns-dnsv', methods=['POST', 'OPTIONS'])
 def run_dns_dnsv_calculation():
     """
@@ -71,13 +80,15 @@ def run_dns_dnsv_calculation():
             if not selected_wells:
                 return jsonify({"error": "No wells selected."}), 400
 
-            print(f"Starting DNS-DNSV calculation for {len(selected_wells)} wells...")
+            print(
+                f"Starting DNS-DNSV calculation for {len(selected_wells)} wells...")
 
             for well_name in selected_wells:
                 file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
-                    print(f"Warning: Skipping well {well_name}, file not found.")
+                    print(
+                        f"Warning: Skipping well {well_name}, file not found.")
                     continue
 
                 # --- FIX APPLIED HERE ---
@@ -87,17 +98,20 @@ def run_dns_dnsv_calculation():
                 try:
                     df_well = pd.read_csv(file_path, on_bad_lines='warn')
                 except Exception as e:
-                    print(f"Could not process file for well {well_name}. Error: {e}")
+                    print(
+                        f"Could not process file for well {well_name}. Error: {e}")
                     continue
                 # --- END OF FIX ---
 
                 columns_to_drop = ['DNS', 'DNSV']
-                df_well.drop(columns=[col for col in columns_to_drop if col in df_well.columns], inplace=True)
+                df_well.drop(
+                    columns=[col for col in columns_to_drop if col in df_well.columns], inplace=True)
 
                 df_processed = process_dns_dnsv(df_well, params)
 
                 df_processed.to_csv(file_path, index=False)
-                print(f"DNS-DNSV results for well '{well_name}' have been saved.")
+                print(
+                    f"DNS-DNSV results for well '{well_name}' have been saved.")
 
             return jsonify({"message": f"DNS-DNSV calculation successful for {len(selected_wells)} wells."}), 200
 
@@ -105,6 +119,7 @@ def run_dns_dnsv_calculation():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/get-dns-dnsv-plot', methods=['POST', 'OPTIONS'])
 def get_dns_dnsv_plot():
@@ -122,7 +137,8 @@ def get_dns_dnsv_plot():
             return jsonify({"error": "No wells selected."}), 400
 
         # Read and combine data from the selected wells
-        df_list = [pd.read_csv(os.path.join(WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+        df_list = [pd.read_csv(os.path.join(
+            WELLS_DIR, f"{well}.csv")) for well in selected_wells]
         df_combined = pd.concat(df_list, ignore_index=True)
 
         # Generate the plot using your existing function
@@ -136,5 +152,5 @@ def get_dns_dnsv_plot():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# Your plotting function (plot_dns_dnsv) and its helpers 
+# Your plotting function (plot_dns_dnsv) and its helpers
 # from services.plotting_service would be defined here or imported.

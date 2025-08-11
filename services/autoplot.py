@@ -145,3 +145,4 @@ def calculate_gr_ma_sh_from_nphi_rhob(df: pd.DataFrame, prcnt_qz: float, prcnt_w
         "gr_ma": round(gr_ma, 4),
         "gr_sh": round(gr_sh, 4)
     }
+

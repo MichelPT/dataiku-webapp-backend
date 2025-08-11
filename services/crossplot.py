@@ -7,7 +7,7 @@ import math
 
 # Pastikan Anda mengimpor fungsi terpusat yang telah dibuat sebelumnya
 # Asumsikan file ini bernama petrophysics_calculations.py
-from services.autoplot import calculate_nphi_rhob_intersection
+from services.autoplot import calculate_gr_ma_sh_from_nphi_rhob, calculate_nphi_rhob_intersection
 
 
 def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, prcnt_qz, prcnt_wtr, selected_intervals, nbins=25):
@@ -89,6 +89,8 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
             # Tambahkan shapes dan traces ke 'fig'
             fig.add_trace(go.Scatter(x=[x_quartz, x_water], y=[y_quartz, y_water], mode='markers', marker=dict(
                 color='black', size=5, symbol='cross'), name='Quartz & Water'))
+            fig.add_shape(type="line", x0=x_quartz, y0=y_quartz, x1=x_water,
+                          y1=y_water, line=dict(color="red", width=2), layer='above')
             fig.add_shape(type="line", x0=x_line_qz1[0], y0=y_line_qz1[0], x1=x_line_qz1[-1],
                           y1=y_line_qz1[-1], line=dict(color="red", width=2), layer='above')
             fig.add_shape(type="line", x0=x_line_wtr1[0], y0=y_line_wtr1[0], x1=x_line_wtr1[-1],
@@ -141,11 +143,25 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
         yaxis_range = [0, y_max + 20]
         yaxis_dtick = 20
 
-        fig.add_shape(type="line", x0=1, y0=0, x1=-0.02, y1=gr_ma, xref='x',
+        gr_value = calculate_gr_ma_sh_from_nphi_rhob(
+            df_filtered, prcnt_qz, prcnt_wtr)
+        gr_ma = gr_value['gr_ma']
+        gr_sh = gr_value['gr_sh']
+
+        intersection_coords = calculate_nphi_rhob_intersection(
+            df_filtered, prcnt_qz, prcnt_wtr)
+
+        xx0 = intersection_coords["nphi_sh"]
+
+        # Gunakan koordinat untuk menggambar garis dan titik pada plot
+        nphi_ma = -0.02
+        nphi_sh = xx0
+
+        fig.add_shape(type="line", x0=1, y0=0, x1=nphi_ma, y1=gr_ma, xref='x',
                       yref='y', line=dict(color="red", width=2, dash="solid"), layer='above')
-        fig.add_shape(type="line", x0=-0.02, y0=gr_ma, x1=0.4, y1=gr_sh, xref='x',
+        fig.add_shape(type="line", x0=nphi_ma, y0=gr_ma, x1=nphi_sh, y1=gr_sh, xref='x',
                       yref='y', line=dict(color="red", width=2, dash="solid"), layer='above')
-        fig.add_shape(type="line", x0=0.4, y0=gr_sh, x1=1, y1=0, xref='x', yref='y', line=dict(
+        fig.add_shape(type="line", x0=nphi_sh, y0=gr_sh, x1=1, y1=0, xref='x', yref='y', line=dict(
             color="red", width=2, dash="solid"), layer='above')
 
         min_freq = df_clean['COLOR'].min()
@@ -156,6 +172,66 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
         fig.update_layout(
             title=f"Crossplot {x_col} vs {y_col}",
             xaxis=dict(title='NPHI (V/V)', range=[-0.1, 1], dtick=0.1,
+                       showgrid=True, gridcolor="black", gridwidth=0.2),
+            yaxis=dict(title='GR (API)', range=yaxis_range, dtick=yaxis_dtick,
+                       showgrid=True, gridcolor="black", gridwidth=0.2),
+            plot_bgcolor='white', margin=dict(l=20, r=20, t=60, b=40),
+            coloraxis_colorbar=dict(title=dict(text=color_label, side='bottom'),
+                                    orientation='h', y=-0.3, x=0.5, xanchor='center', len=1, dtick=tick_step),
+        )
+
+    elif x_col == "RHOB" and (y_col == "GR" or y_col == "GR_RAW_NORM"):
+        count = Counter(df_clean[y_col])
+        freq = [count[v] for v in df_clean[y_col]]
+        df_clean["COLOR"] = freq
+        color_label = "Frekuensi"
+
+        df_clean = df_clean.sort_values(by='COLOR', ascending=True)
+
+        fig = px.scatter(
+            df_clean, x=x_col, y=y_col, color="COLOR",
+            color_continuous_scale=[
+                [0.0, "blue"], [0.25, "cyan"], [0.5, "yellow"], [
+                    0.75, "orange"], [1.0, "red"]
+            ],
+            labels={x_col: "RHOB (G/C3)", y_col: "GR (API)",
+                    "COLOR": color_label},
+            height=600,
+        )
+
+        y_max = df_clean[y_col].max()
+        yaxis_range = [0, y_max + 20]
+        yaxis_dtick = 20
+
+        gr_value = calculate_gr_ma_sh_from_nphi_rhob(
+            df_filtered, prcnt_qz, prcnt_wtr)
+        gr_ma = gr_value['gr_ma']
+        gr_sh = gr_value['gr_sh']
+
+        intersection_coords = calculate_nphi_rhob_intersection(
+            df_filtered, prcnt_qz, prcnt_wtr)
+
+        yy0 = intersection_coords["rhob_sh"]
+
+        # Gunakan koordinat untuk menggambar garis dan titik pada plot
+        rhob_ma = 2.65
+        rhob_sh = yy0
+
+        fig.add_shape(type="line", x0=1, y0=0, x1=rhob_ma, y1=gr_ma, xref='x',
+                      yref='y', line=dict(color="red", width=2, dash="solid"), layer='above')
+        fig.add_shape(type="line", x0=rhob_ma, y0=gr_ma, x1=rhob_sh, y1=gr_sh, xref='x',
+                      yref='y', line=dict(color="red", width=2, dash="solid"), layer='above')
+        fig.add_shape(type="line", x0=rhob_sh, y0=gr_sh, x1=1, y1=0, xref='x', yref='y', line=dict(
+            color="red", width=2, dash="solid"), layer='above')
+
+        min_freq = df_clean['COLOR'].min()
+        max_freq = df_clean['COLOR'].max()
+        tick_step = max(1, round((max_freq - min_freq) / 5)
+                        ) if max_freq > min_freq else 1
+
+        fig.update_layout(
+            title=f"Crossplot {x_col} vs {y_col}",
+            xaxis=dict(title='RHOB (G/C3)', range=[1, 3], dtick=0.1,
                        showgrid=True, gridcolor="black", gridwidth=0.2),
             yaxis=dict(title='GR (API)', range=yaxis_range, dtick=yaxis_dtick,
                        showgrid=True, gridcolor="black", gridwidth=0.2),

@@ -2691,8 +2691,8 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
                       'PHIT_DN': 'PHIT_DEN'}, inplace=True)
         elif seq == 'SW':
             df = df.rename(columns={'SWE_INDO': 'SW'})
-        elif seq == 'RT_RGSA':
-            df['ZONA'] = df['ZONA'].map(zona_mapping)
+        # elif seq == 'RT_RGSA':
+        #     df['ZONA'] = df['ZONA'].map(zona_mapping)
         elif seq == 'RGBE':
             df['RGBE'] = round(df['RGBE'])
             df_marker_rgbe = extract_markers_customize(df, 'RGBE')
@@ -3221,11 +3221,13 @@ def plot_gsa_main(df):
     #     showlegend=False,
     #     height=1600,
     # )
+
     marker_zone_sequence = ['ZONE', 'MARKER']
     # Filter the sequence to include only columns that exist in the DataFrame
-    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
     sequence_rgsa = filtered_sequence + ['GR', 'RT', 'NPHI_RHOB',
-                     'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA']
+                                         'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA']
     fig = main_plot(df, sequence_rgsa, title="Gas Show Anomaly Analysis")
 
     return fig
@@ -3238,9 +3240,10 @@ def plot_vsh_linear(df):
     marker_zone_sequence = ['ZONE', 'MARKER']
 
     # Filter the sequence to include only columns that exist in the DataFrame
-    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
     sequence_vsh = filtered_sequence + ['GR',
-                    'RT', 'NPHI_RHOB', 'VSH_GR_DN']
+                                        'RT', 'NPHI_RHOB', 'VSH_GR_DN']
     fig = main_plot(df, sequence_vsh, title="Log VSH GR-DN")
 
     return fig
@@ -3253,9 +3256,10 @@ def plot_sw_indo(df):
     marker_zone_sequence = ['ZONE', 'MARKER']
 
     # Filter the sequence to include only columns that exist in the DataFrame
-    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
     sequence_swe = filtered_sequence + ['GR', 'RT',
-                                         'NPHI_RHOB', 'VSH', 'PHIE_PHIT', 'SW']
+                                        'NPHI_RHOB', 'VSH', 'PHIE_PHIT', 'SW']
     fig = main_plot(df, sequence_swe, title="Water Saturation")
     return fig
 
@@ -3266,9 +3270,10 @@ def plot_rwa_indo(df):
     """
     marker_zone_sequence = ['ZONE', 'MARKER']
     # Filter the sequence to include only columns that exist in the DataFrame
-    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
     sequence_rwa = filtered_sequence + ['GR',
-                    'RT', 'NPHI_RHOB', 'VSH', 'PHIE', 'RWA']
+                                        'RT', 'NPHI_RHOB', 'VSH', 'PHIE', 'RWA']
     fig = main_plot(df, sequence_rwa, title="Water Resistivity")
     return fig
 
@@ -3279,10 +3284,12 @@ def plot_sw_simandoux(df):
     """
     marker_zone_sequence = ['ZONE', 'MARKER']
     # Filter the sequence to include only columns that exist in the DataFrame
-    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
     sequence_sw_sim = filtered_sequence + ['GR', 'RT',
-                                            'NPHI_RHOB', 'VSH', 'PHIE_PHIT', 'SW_SIMANDOUX', 'RESERVOIR_CLASS']
-    fig = main_plot(df, sequence_sw_sim, title="Water Saturation (Modified Simandoux)")
+                                           'NPHI_RHOB', 'VSH', 'PHIE_PHIT', 'SW_SIMANDOUX', 'RESERVOIR_CLASS']
+    fig = main_plot(df, sequence_sw_sim,
+                    title="Water Saturation (Modified Simandoux)")
     return fig
 
 
@@ -3369,9 +3376,10 @@ def plot_iqual(df):
     df = calculate_iqual(df)
     marker_zone_sequence = ['ZONE', 'MARKER']
     # Filter the sequence to include only columns that exist in the DataFrame
-    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
     sequence_iqual = filtered_sequence + ['GR', 'RT',
-                                           'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'IQUAL']
+                                          'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'IQUAL']
     fig = main_plot(df, sequence_iqual, title="IQUAL")
 
     return fig
@@ -3534,9 +3542,10 @@ def plot_module_3(df, title="Module 3 Plot"):
     # Definisikan urutan track yang ingin ditampilkan
     marker_zone_sequence = ['ZONE', 'MARKER']
     # Filter the sequence to include only columns that exist in the DataFrame
-    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
-    sequence = filtered_sequence + ['GR', 'RT', 'NPHI_RHOB', 'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA',
-                                     'VSH', 'PHIE', 'IQUAL', 'RGBE', 'RPBE', 'SWARRAY', 'DNS', 'DNSV', 'RT_RO']
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
+    sequence = ['GR', 'RT', 'NPHI_RHOB', 'VSH', 'PHIE', 'IQUAL', 'RT_RGSA',
+                'NPHI_NGSA', 'RHOB_DGSA', 'RGBE', 'RPBE', 'SWGRAD', 'DNS', 'DNSV', 'RT_RO']
     fig = main_plot(df, sequence, title=title)
 
     return fig

@@ -917,6 +917,7 @@ def run_depth_matching_endpoint():
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 
+
 @app.route('/api/run-vsh-calculation', methods=['POST', 'OPTIONS'])
 def run_vsh_calculation():
     """
@@ -1121,6 +1122,7 @@ def _run_gsa_process(payload, gsa_function_to_run):
     selected_wells = payload.get('selected_wells', [])
     selected_intervals = payload.get('selected_intervals', [])
     selected_zones = payload.get('selected_zones', [])
+
     if not selected_wells:
         return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
@@ -1132,9 +1134,21 @@ def _run_gsa_process(payload, gsa_function_to_run):
 
         df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
+        if selected_zones:
+            if 'ZONE' in df_well.columns:
+                df_well = df_well[df_well['ZONE'].isin(selected_zones)]
+            else:
+                print("Warning: 'ZONE' column not found, cannot filter by zone.")
+
+        if selected_intervals:
+            if 'MARKER' in df_well.columns:
+                df_well = df_well[df_well['MARKER'].isin(selected_intervals)]
+            else:
+                print("Warning: 'MARKER' column not found, cannot filter by interval.")
+
         # Call the specific processing function passed as an argument
         df_processed = gsa_function_to_run(
-            df_well, params, selected_intervals, selected_zones
+            df_well, params
         )
 
         # Save the result back to the file
@@ -1618,7 +1632,7 @@ def run_rt_r0_calculation():
                     else:
                         print(
                             "Warning: 'ZONE' column not found, cannot filter by zone.")
-                        
+
                 # Process RT-R0 calculations
                 df_processed = process_rt_r0(df_well, params)
                 df_processed = df_processed.rename(
@@ -1664,7 +1678,7 @@ def run_swgrad_calculation():
                     [f'SWARRAY_{i}' for i in range(1, 26)]
                 df_well.drop(columns=df_well.columns.intersection(
                     cols_to_drop), inplace=True)
-                
+
                 if selected_intervals:
                     if 'MARKER' in df_well.columns:
                         df_well = df_well[df_well['MARKER'].isin(
@@ -3243,6 +3257,7 @@ def get_module3_plot():
             request_data = request.get_json()
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -3260,6 +3275,13 @@ def get_module3_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404

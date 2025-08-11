@@ -542,6 +542,7 @@ def get_gr_ma_sh_defaults():
         payload = request.get_json()
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
+        selected_zones = payload.get('selected_zones', [])
         prcnt_qz = float(payload.get('prcnt_qz', 5))
         prcnt_wtr = float(payload.get('prcnt_wtr', 5))
 
@@ -554,6 +555,9 @@ def get_gr_ma_sh_defaults():
 
         if selected_intervals and 'MARKER' in df.columns:
             df = df[df['MARKER'].isin(selected_intervals)]
+
+        if selected_zones and 'ZONE' in df.columns:
+            df = df[df['ZONE'].isin(selected_zones)]
 
         # Panggil fungsi autoplot Anda
         # Kita bisa berikan nilai default untuk percentile di sini
@@ -3079,41 +3083,6 @@ def get_fill_missing_plot():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
-@app.route('/api/get-gr-ma-sh', methods=['POST'])
-def get_gr_ma_sh_defaults():
-    """
-    Endpoint untuk menghitung nilai default GR_MA dan GR_SH
-    berdasarkan titik terdekat dari crossplot NPHI-RHOB.
-    """
-    try:
-        payload = request.get_json()
-        selected_wells = payload.get('selected_wells', [])
-        selected_intervals = payload.get('selected_intervals', [])
-        prcnt_qz = float(payload.get('prcnt_qz', 5))
-        prcnt_wtr = float(payload.get('prcnt_wtr', 5))
-
-        if not selected_wells:
-            return jsonify({"error": "Well harus dipilih."}), 400
-
-        df_list = [pd.read_csv(os.path.join(
-            WELLS_DIR, f"{w}.csv")) for w in selected_wells]
-        df = pd.concat(df_list, ignore_index=True)
-
-        if selected_intervals and 'MARKER' in df.columns:
-            df = df[df['MARKER'].isin(selected_intervals)]
-
-        # Panggil fungsi autoplot Anda
-        # Kita bisa berikan nilai default untuk percentile di sini
-        gr_params = calculate_gr_ma_sh_from_nphi_rhob(
-            df, prcnt_qz, prcnt_wtr)
-
-        return jsonify(gr_params)
-
-    except ValueError as ve:
-        return jsonify({"error": str(ve)}), 404
-    except Exception as e:
-        return jsonify({"error": f"Terjadi kesalahan internal: {str(e)}"}), 500
 
 @app.route('/api/get-module3-plot', methods=['POST', 'OPTIONS'])
 def get_module3_plot():

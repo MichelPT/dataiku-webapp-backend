@@ -58,6 +58,7 @@ data_col = {
     'RHOB': ['RHOB'],
     'NPHI_RHOB': ['NPHI', 'RHOB', 'NPHI_NORM', 'RHOB_NORM_NPHI'],
     'SW': ['SW'],
+    'SW_SIMANDOUX': ['SW_SIMANDOUX'],
     'PHIE_PHIT': ['PHIE', 'PHIT'],
     'PERM': ['PERM'],
     'VCL': ['VCL'],
@@ -152,6 +153,7 @@ unit_col = {
     'RHOB': ['G/C3'],
     'SW': ['V/V'],
     'SW': ['V/V'],
+    'SW_SIMANDOUX': ['V/V'],
     'PHIE_PHIT': ['V/V', 'V/V'],
     'PERM': ['mD'],
     'VCL': ['V/V'],
@@ -244,6 +246,7 @@ color_col = {
     'NPHI_RHOB': ['darkgreen', colors_dict['red'], colors_dict['blue'], colors_dict['red'],],
     'RHOB': [colors_dict['red']],
     'SW': ['darkgreen'],
+    'SW_SIMANDOUX': ['darkgreen'],
     'PHIE_PHIT': ['darkblue', colors_dict['cyan']],
     'PERM': [colors_dict['blue']],
     'VCL': [colors_dict['black']],
@@ -368,6 +371,7 @@ range_col = {
     'NPHI_RHOB': [[0.6, 0], [1.71, 2.71], [1, 0], [1, 0]],
     'RHOB': [[1.71, 2.71]],
     'SW': [[1, 0]],
+    'SW_SIMANDOUX': [[1, 0]],
     'PHIE_PHIT': [[0.5, 0], [0.5, 0]],
     'PERM': [[0.02, 2000]],
     'VCL': [[0, 1]],
@@ -451,6 +455,7 @@ ratio_plots = {
     'NPHI_RHOB': 1,
     'RHOB': 1,
     'SW': 1,
+    'SW_SIMANDOUX': 1,
     'PHIE_PHIT': 1,
     'PERM': 1,
     'VCL': 1,
@@ -3028,10 +3033,34 @@ def normalize_xover(df_well, log_1, log_2):
 
 
 def plot_log_default(df):
-    sequence_default = ['MARKER', 'GR', 'RT', 'NPHI_RHOB']
+    """
+    Creates a default well log plot that dynamically includes or excludes ZONE based on data availability.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame containing well log data
+    
+    Returns:
+    --------
+    plotly.graph_objects.Figure
+        The generated well log plot
+    """
+    # Define the base sequence with all potential tracks
+    marker_zone_sequence = ['ZONE', 'MARKER']
+
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    
+    # Create a flat list by extending filtered_sequence with other track names
+    sequence_default = filtered_sequence + ['GR', 'RT', 'NPHI_RHOB']
+    
+    # Create the plot with the filtered sequence
     fig = main_plot(df, sequence=sequence_default,
                     title="Plot Well Log Selected", height_plot=1600)
     return fig
+
+
 
 
 def plot_normalization(df):
@@ -3229,6 +3258,16 @@ def plot_rwa_indo(df):
     sequence_rwa = ['MARKER', 'GR',
                     'RT', 'NPHI_RHOB', 'VSH', 'PHIE', 'RWA']
     fig = main_plot(df, sequence_rwa, title="Water Resistivity")
+    return fig
+
+
+def plot_sw_simandoux(df):
+    """
+    Membuat plot multi-panel untuk visualisasi hasil kalkulasi Water Saturation (Simandoux).
+    """
+    sequence_sw_sim = ['MARKER', 'GR', 'RT',
+                       'NPHI_RHOB', 'VSH', 'PHIE_PHIT', 'SW_SIMANDOUX', 'RESERVOIR_CLASS']
+    fig = main_plot(df, sequence_sw_sim, title="Water Saturation (Modified Simandoux)")
     return fig
 
 

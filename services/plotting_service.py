@@ -3377,8 +3377,8 @@ def plot_norm_prep(df):
         df = df.rename(columns={'DEPT': 'DEPTH'})
 
     # Auto-detect LWD vs WL berdasarkan kolom yang tersedia
-    lwd_sequence = ['DGRCC_NO', 'ALCDLC', 'TNPL', 'R39PC']
-    wl_sequence = ['GR_CAL_NO', 'RHOZ', 'RLA5', 'TNPH']
+    lwd_sequence = ['DGRCC', 'DGRCC_NO', 'ALCDLC', 'TNPL', 'R39PC']
+    wl_sequence = ['GR_CAL', 'GR_CAL_NO', 'RHOZ', 'RLA5', 'TNPH']
 
     # Check which type of data we have
     lwd_available = sum(1 for col in lwd_sequence if col in df.columns)

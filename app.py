@@ -1,6 +1,6 @@
 # /api/app.py
 from flask import request, jsonify
-from services.autoplot import calculate_nphi_rhob_intersection
+from services.autoplot import calculate_gr_ma_sh_from_nphi_rhob, calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
 from services.splicing import splice_and_flag_logs
 from services.vsh_dn import calculate_vsh_dn
@@ -489,6 +489,42 @@ def get_intersection_point():
     except Exception as e:
         return jsonify({"error": f"Terjadi kesalahan internal: {str(e)}"}), 500
 
+
+@app.route('/api/get-gr-ma-sh', methods=['POST'])
+def get_gr_ma_sh_defaults():
+    """
+    Endpoint untuk menghitung nilai default GR_MA dan GR_SH
+    berdasarkan titik terdekat dari crossplot NPHI-RHOB.
+    """
+    try:
+        payload = request.get_json()
+        selected_wells = payload.get('selected_wells', [])
+        selected_intervals = payload.get('selected_intervals', [])
+        prcnt_qz = float(payload.get('prcnt_qz', 5))
+        prcnt_wtr = float(payload.get('prcnt_wtr', 5))
+
+        if not selected_wells:
+            return jsonify({"error": "Well harus dipilih."}), 400
+
+        df_list = [pd.read_csv(os.path.join(
+            WELLS_DIR, f"{w}.csv")) for w in selected_wells]
+        df = pd.concat(df_list, ignore_index=True)
+
+        if selected_intervals and 'MARKER' in df.columns:
+            df = df[df['MARKER'].isin(selected_intervals)]
+
+        # Panggil fungsi autoplot Anda
+        # Kita bisa berikan nilai default untuk percentile di sini
+        gr_params = calculate_gr_ma_sh_from_nphi_rhob(
+            df, prcnt_qz, prcnt_wtr)
+
+        return jsonify(gr_params)
+
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Terjadi kesalahan internal: {str(e)}"}), 500
+
 # PLOT AND CALCULATION API
 
 
@@ -873,6 +909,14 @@ def run_vsh_calculation():
 
                 # Baca data sumur
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
+
+                if selected_intervals:
+                    if 'MARKER' in df_well.columns:
+                        df_well = df_well[df_well['MARKER'].isin(
+                            selected_intervals)]
+                    else:
+                        print(
+                            "Warning: 'MARKER' column not found, cannot filter by interval.")
 
                 # Panggil fungsi logika untuk menghitung VSH
                 df_updated = calculate_vsh_from_gr(
@@ -2035,6 +2079,7 @@ def run_vsh_dn_calculation():
             payload = request.get_json()
             params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
+            selected_intervals = payload.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -2046,6 +2091,13 @@ def run_vsh_dn_calculation():
                     continue
 
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
+                if selected_intervals:
+                    if 'MARKER' in df.columns:
+                        df = df[df['MARKER'].isin(selected_intervals)]
+                    else:
+                        print(
+                            "Warning: 'MARKER' column not found, cannot filter by interval.")
+
                 df_updated = calculate_vsh_dn(df_well, params)
                 df_updated.to_csv(file_path, index=False)
                 print(

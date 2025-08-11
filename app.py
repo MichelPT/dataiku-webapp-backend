@@ -299,6 +299,7 @@ def fill_null_marker():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/api/list-zones', methods=['GET'])
 def list_zones():
     """
@@ -321,7 +322,8 @@ def list_zones():
                 df_temp = pd.read_csv(file_path, on_bad_lines='warn')
                 data.append(df_temp)
             except Exception as read_error:
-                print(f"Warning: Failed to read file {file_path}. Error: {read_error}")
+                print(
+                    f"Warning: Failed to read file {file_path}. Error: {read_error}")
 
         df = pd.concat(data, ignore_index=True)
 
@@ -332,7 +334,7 @@ def list_zones():
             return jsonify({"error": "Combined data is empty after processing all files."}), 500
 
         unique_zones = df['ZONE'].dropna().unique().tolist()
-        
+
         print(f"Sending {len(unique_zones)} unique zones to frontend.")
 
         return jsonify(unique_zones)
@@ -341,6 +343,7 @@ def list_zones():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/list-intervals', methods=['GET'])
 def list_intervals():
@@ -623,6 +626,7 @@ def get_plot():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"An unexpected server error occurred: {str(e)}"}), 500
+
 
 @app.route('/api/get-normalization-plot', methods=['POST', 'OPTIONS'])
 def get_normalization_plot():
@@ -1005,6 +1009,7 @@ def run_porosity_calculation():
             params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
+            selected_zones = payload.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1017,6 +1022,22 @@ def run_porosity_calculation():
                     continue
 
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
+
+                if selected_zones:
+                    if 'ZONE' in df_well.columns:
+                        df_well = df_well[df_well['ZONE'].isin(
+                            selected_zones)]
+                    else:
+                        print(
+                            "Warning: 'ZONE' column not found, cannot filter by zone.")
+
+                if selected_intervals:
+                    if 'MARKER' in df_well.columns:
+                        df_well = df_well[df_well['MARKER'].isin(
+                            selected_intervals)]
+                    else:
+                        print(
+                            "Warning: 'MARKER' column not found, cannot filter by interval.")
 
                 # Panggil fungsi logika untuk menghitung Porositas
                 df_updated = calculate_porosity(
@@ -2037,6 +2058,8 @@ def run_sw_calculation():
             payload = request.get_json()
             params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
+            selected_intervals = payload.get('selected_intervals', [])
+            selected_zones = payload.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -2047,6 +2070,22 @@ def run_sw_calculation():
                     continue
 
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
+
+                if selected_intervals:
+                    if 'MARKER' in df_well.columns:
+                        df_well = df_well[df_well['MARKER'].isin(
+                            selected_intervals)]
+                    else:
+                        print(
+                            "Warning: 'MARKER' column not found, cannot filter by marker.")
+
+                if selected_zones:
+                    if 'ZONE' in df_well.columns:
+                        df_well = df_well[df_well['ZONE'].isin(
+                            selected_zones)]
+                    else:
+                        print(
+                            "Warning: 'ZONE' column not found, cannot filter by zone.")
 
                 df_updated = calculate_sw(df_well, params)
 
@@ -2120,6 +2159,8 @@ def run_rwa_calculation():
             payload = request.get_json()
             params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
+            selected_intervals = payload.get('selected_intervals', [])
+            selected_zones = payload.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -2130,6 +2171,22 @@ def run_rwa_calculation():
                     continue
 
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
+
+                if selected_intervals:
+                    if 'MARKER' in df_well.columns:
+                        df_well = df_well[df_well['MARKER'].isin(
+                            selected_intervals)]
+                    else:
+                        print(
+                            "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+                if selected_zones:
+                    if 'ZONE' in df_well.columns:
+                        df_well = df_well[df_well['ZONE'].isin(
+                            selected_zones)]
+                    else:
+                        print(
+                            "Warning: 'ZONE' column not found, cannot filter by zone.")
 
                 # Panggil fungsi logika untuk menghitung RWA
                 df_updated = calculate_rwa(df_well, params)
@@ -2201,6 +2258,7 @@ def run_vsh_dn_calculation():
             params = payload.get('params', {})
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
+            selected_zones = payload.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -2213,11 +2271,18 @@ def run_vsh_dn_calculation():
 
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
                 if selected_intervals:
-                    if 'MARKER' in df.columns:
-                        df = df[df['MARKER'].isin(selected_intervals)]
+                    if 'MARKER' in df_well.columns:
+                        df_well = df_well[df_well['MARKER'].isin(
+                            selected_intervals)]
                     else:
                         print(
                             "Warning: 'MARKER' column not found, cannot filter by interval.")
+                if selected_zones:
+                    if 'ZONE' in df_well.columns:
+                        df_well = df_well[df_well['ZONE'].isin(selected_zones)]
+                    else:
+                        print(
+                            "Warning: 'ZONE' column not found, cannot filter by zone.")
 
                 df_updated = calculate_vsh_dn(df_well, params)
                 df_updated.to_csv(file_path, index=False)
@@ -2547,7 +2612,7 @@ def run_splicing():
     try:
         # Import the marker functions
         from services.qc_service import read_marker_file, append_markers_to_dataframe
-        
+
         # 1. Ambil data dari payload frontend
         payload = request.get_json()
         params = payload.get('params', {})
@@ -2599,7 +2664,7 @@ def run_splicing():
 
         # 4. Panggil Logika Inti untuk Memproses Data
         processed_df = splice_and_flag_logs(df_run1, df_run2, params)
-        
+
         # 5. Generate output path: one directory up, using folder name as filename
         # Get current directory (will be like .../BNG-057/)
         current_dir = os.path.dirname(path_run1)
@@ -2611,7 +2676,7 @@ def run_splicing():
         output_filename = f"{folder_name}.csv"
         # Full output path in the parent directory
         output_path = os.path.join(parent_dir, output_filename)
-        
+
     # 6. NEW: Find and apply marker file before saving
         marker_applied = False
         marker_file_path = None
@@ -2620,46 +2685,51 @@ def run_splicing():
         try:
             # First apply zones for BNG wells
             if 'BNG' in folder_name.upper():
-                processed_df = append_zones_to_dataframe(processed_df, folder_name)
+                processed_df = append_zones_to_dataframe(
+                    processed_df, folder_name)
                 zone_applied = True
                 print(f"Applied zone classification to {folder_name}")
-            
+
             # Look for any file containing "MARKER" in its name in the parent directory
             marker_file_found = False
             for filename in os.listdir(parent_dir):
                 if "MARKER" in filename.upper() and filename.endswith('.csv'):
                     marker_file_path = os.path.join(parent_dir, filename)
                     print(f"Found marker file: {marker_file_path}")
-                    
+
                     try:
                         # Read marker file
                         marker_df = read_marker_file(marker_file_path)
-                        print(f"Successfully read marker file with {len(marker_df)} rows")
-                        
+                        print(
+                            f"Successfully read marker file with {len(marker_df)} rows")
+
                         # Apply markers to the spliced dataframe
                         # Use the folder name as the well identifier for marker matching
                         processed_df_with_markers = append_markers_to_dataframe(
                             processed_df, marker_df, folder_name
                         )
-                        
+
                         # If markers were successfully applied, use the updated dataframe
                         if 'MARKER' in processed_df_with_markers.columns:
                             processed_df = processed_df_with_markers
                             marker_applied = True
-                            print(f"Successfully applied markers to {folder_name}")
+                            print(
+                                f"Successfully applied markers to {folder_name}")
                         else:
-                            print(f"No markers found for well {folder_name} in marker file")
-                        
+                            print(
+                                f"No markers found for well {folder_name} in marker file")
+
                         marker_file_found = True
                         break  # Stop after finding and processing the first marker file
-                        
+
                     except Exception as marker_error:
-                        print(f"Error processing marker file {filename}: {marker_error}")
+                        print(
+                            f"Error processing marker file {filename}: {marker_error}")
                         continue
 
             if not marker_file_found:
                 print(f"No marker file found in {parent_dir}")
-                    
+
         except Exception as marker_search_error:
             print(f"Error searching for marker files: {marker_search_error}")
 
@@ -2669,35 +2739,36 @@ def run_splicing():
         if os.path.exists(output_path):
             # Read existing file
             existing_df = pd.read_csv(output_path, on_bad_lines='warn')
-            print(f"File {output_filename} already exists - updating specific columns only")
-            
+            print(
+                f"File {output_filename} already exists - updating specific columns only")
+
             # Identify columns to update (only in processed_df)
             columns_to_update = processed_df.columns.tolist()
-            
+
             # Create a new DataFrame with all columns from existing file
             merged_df = existing_df.copy()
-            
+
             # Update DEPTH index for matching
             merged_df.set_index('DEPTH', inplace=True)
             processed_df.set_index('DEPTH', inplace=True)
-            
+
             # Update only the columns that exist in processed_df
             for col in columns_to_update:
                 if col != 'DEPTH':  # Skip the index column
                     merged_df[col] = processed_df[col]
-            
+
             # Reset index to get DEPTH back as a column
             merged_df.reset_index(inplace=True)
             processed_df.reset_index(inplace=True)
-            
+
             # Save the merged result
             merged_df.to_csv(output_path, index=False)
             print(f"Updated columns {columns_to_update} in existing file")
-            
+
         else:
             # If file doesn't exist, save the processed_df directly
             processed_df.to_csv(output_path, index=False)
-            print(f"Created new file {output_filename}")    
+            print(f"Created new file {output_filename}")
         # Update response to include zone information
         response = {
             "message": f"Splicing berhasil! Hasil disimpan sebagai '{output_filename}' di direktori '{parent_dir}'.",
@@ -2710,14 +2781,16 @@ def run_splicing():
             "marker_file_path": marker_file_path,
             "zone_applied": zone_applied
         }
-        
+
         # Add marker-specific information if markers were applied
         if marker_applied:
-            response["message"] += f" Markers have been applied from {os.path.basename(marker_file_path)}."
-            
+            response[
+                "message"] += f" Markers have been applied from {os.path.basename(marker_file_path)}."
+
             # Count unique markers applied
             if 'MARKER' in processed_df.columns:
-                unique_markers = processed_df['MARKER'].dropna().unique().tolist()
+                unique_markers = processed_df['MARKER'].dropna(
+                ).unique().tolist()
                 response["markers_applied"] = unique_markers
                 response["total_markers"] = len(unique_markers)
 
@@ -3159,6 +3232,7 @@ def get_fill_missing_plot():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/get-module3-plot', methods=['POST', 'OPTIONS'])
 def get_module3_plot():

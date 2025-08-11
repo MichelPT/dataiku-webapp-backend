@@ -3035,12 +3035,12 @@ def normalize_xover(df_well, log_1, log_2):
 def plot_log_default(df):
     """
     Creates a default well log plot that dynamically includes or excludes ZONE based on data availability.
-    
+
     Parameters:
     -----------
     df : pandas.DataFrame
         DataFrame containing well log data
-    
+
     Returns:
     --------
     plotly.graph_objects.Figure
@@ -3050,17 +3050,16 @@ def plot_log_default(df):
     marker_zone_sequence = ['ZONE', 'MARKER']
 
     # Filter the sequence to include only columns that exist in the DataFrame
-    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
-    
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
+
     # Create a flat list by extending filtered_sequence with other track names
     sequence_default = filtered_sequence + ['GR', 'RT', 'NPHI_RHOB']
-    
+
     # Create the plot with the filtered sequence
     fig = main_plot(df, sequence=sequence_default,
                     title="Plot Well Log Selected", height_plot=1600)
     return fig
-
-
 
 
 def plot_normalization(df):
@@ -3347,13 +3346,12 @@ def plot_smoothing(df, df_marker, df_well_marker):
 
 
 def plot_module_2(df):
-    """ Membuat plot Module 2 untuk interpretasi log terpilih.
-    """
     marker_zone_sequence = ['ZONE', 'MARKER']
     # Filter the sequence to include only columns that exist in the DataFrame
-    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
     seq_module_2 = filtered_sequence + ['GR', 'RT',
-                                         'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'SW', 'IQUAL']
+                                        'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'SW', 'IQUAL']
     fig = main_plot(df, seq_module_2, title="Log Interpretation Selected Well")
     return fig
 

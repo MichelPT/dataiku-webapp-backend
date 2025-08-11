@@ -139,6 +139,48 @@ def run_full_qc_pipeline(files_data: list, logger):
 
     return {'qc_summary': qc_results, 'output_files': output_files}
 
+def append_zones_to_dataframe(df, well_name, depth_column='DEPTH'):
+    """
+    Append zone information to a DataFrame based on predefined depth ranges.
+    Only applies to BNG wells with specific zone classifications.
+    
+    Args:
+        df (pd.DataFrame): Main DataFrame containing well log data with depth column
+        well_name (str): Well identifier to check (must contain 'BNG')
+        depth_column (str): Name of the depth column in df (default: 'DEPTH')
+    
+    Returns:
+        pd.DataFrame: DataFrame with added 'ZONE' column
+    """
+    # Create a copy to avoid modifying the original DataFrame
+    result_df = df.copy()
+    
+    # Initialize ZONE column
+    result_df['ZONE'] = None
+    
+    # Check if well name contains BNG (case insensitive)
+    if 'BNG' not in well_name.upper():
+        print(f"Zone classification only applies to BNG wells. Skipping well: {well_name}")
+        return result_df
+    
+    # Define zone boundaries
+    zones = [
+        {'name': 'ABF', 'top': 554.0, 'bottom': 1138.3},
+        {'name': 'GUF', 'top': 1138.3, 'bottom': 1539.5},
+        {'name': 'BRF', 'top': 1539.5, 'bottom': 1579.2},
+        {'name': 'TAF', 'top': 1579.2, 'bottom': 2301.0}
+    ]
+    
+    # Apply zones based on depth ranges
+    for zone in zones:
+        mask = (result_df[depth_column] >= zone['top']) & (result_df[depth_column] < zone['bottom'])
+        result_df.loc[mask, 'ZONE'] = zone['name']
+    
+    # Count how many rows were assigned a zone
+    zone_count = result_df['ZONE'].notna().sum()
+    print(f"Applied zones to {well_name}: {zone_count} depth points classified")
+    
+    return result_df
 
 def append_markers_to_dataframe(df, marker_df, well_name, depth_column='DEPTH'):
     """

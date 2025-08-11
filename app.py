@@ -1,6 +1,6 @@
 # /api/app.py
 from flask import request, jsonify
-from services.autoplot import calculate_nphi_rhob_intersection
+from services.autoplot import calculate_gr_ma_sh_from_nphi_rhob, calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
 from services.splicing import splice_and_flag_logs
 from services.vsh_dn import calculate_vsh_dn
@@ -60,7 +60,7 @@ import logging
 import lasio
 from services.vsh_calculation import calculate_vsh_from_gr
 from services.data_processing import fill_flagged_missing_values, fill_null_values_in_marker_range, flag_missing_values_in_range, handle_null_values, selective_normalize_handler, smoothing, trim_data_depth, trim_log_by_masking
-from services.qc_service import run_full_qc_pipeline
+from services.qc_service import append_zones_to_dataframe, run_full_qc_pipeline
 from services.vsh_calculation import calculate_vsh_from_gr
 from services.data_processing import handle_null_values, fill_null_values_in_marker_range, min_max_normalize, selective_normalize_handler, smoothing, trim_data_auto, trim_data_depth
 from services.qc_service import run_full_qc_pipeline
@@ -298,6 +298,48 @@ def fill_null_marker():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/list-zones', methods=['GET'])
+def list_zones():
+    """
+    Reads the main data files, finds all unique values in the 'ZONE' column,
+    and returns them as a JSON list.
+    """
+    try:
+        if not os.path.exists(WELLS_DIR):
+            return jsonify({"error": f"Main data directory not found at {WELLS_DIR}"}), 404
+
+        files = [f for f in os.listdir(WELLS_DIR) if f.endswith('.csv')]
+        if not files:
+            return jsonify({"error": "No CSV files found in the 'wells' folder."}), 404
+
+        data = []
+
+        for filename in files:
+            file_path = os.path.join(WELLS_DIR, filename)
+            try:
+                df_temp = pd.read_csv(file_path, on_bad_lines='warn')
+                data.append(df_temp)
+            except Exception as read_error:
+                print(f"Warning: Failed to read file {file_path}. Error: {read_error}")
+
+        df = pd.concat(data, ignore_index=True)
+
+        if 'ZONE' not in df.columns:
+            return jsonify({"error": "Column 'ZONE' not found in the CSV files."}), 404
+
+        if df.empty:
+            return jsonify({"error": "Combined data is empty after processing all files."}), 500
+
+        unique_zones = df['ZONE'].dropna().unique().tolist()
+        
+        print(f"Sending {len(unique_zones)} unique zones to frontend.")
+
+        return jsonify(unique_zones)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/list-intervals', methods=['GET'])
 def list_intervals():
@@ -540,7 +582,6 @@ def get_plot():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"An unexpected server error occurred: {str(e)}"}), 500
-
 
 @app.route('/api/get-normalization-plot', methods=['POST', 'OPTIONS'])
 def get_normalization_plot():
@@ -2421,11 +2462,18 @@ def run_splicing():
         # Full output path in the parent directory
         output_path = os.path.join(parent_dir, output_filename)
         
-        # 6. NEW: Find and apply marker file before saving
+    # 6. NEW: Find and apply marker file before saving
         marker_applied = False
         marker_file_path = None
-        
+        zone_applied = False
+
         try:
+            # First apply zones for BNG wells
+            if 'BNG' in folder_name.upper():
+                processed_df = append_zones_to_dataframe(processed_df, folder_name)
+                zone_applied = True
+                print(f"Applied zone classification to {folder_name}")
+            
             # Look for any file containing "MARKER" in its name in the parent directory
             marker_file_found = False
             for filename in os.listdir(parent_dir):
@@ -2461,10 +2509,12 @@ def run_splicing():
 
             if not marker_file_found:
                 print(f"No marker file found in {parent_dir}")
-                
+                    
         except Exception as marker_search_error:
             print(f"Error searching for marker files: {marker_search_error}")
-        
+
+        # Add this code after marker and zone processing is complete
+
         # 7. Handle existing file (preserve columns not in current operation)
         if os.path.exists(output_path):
             # Read existing file
@@ -2497,9 +2547,8 @@ def run_splicing():
         else:
             # If file doesn't exist, save the processed_df directly
             processed_df.to_csv(output_path, index=False)
-            print(f"Created new file {output_filename}")
-
-        # 8. Prepare response with marker information
+            print(f"Created new file {output_filename}")    
+        # Update response to include zone information
         response = {
             "message": f"Splicing berhasil! Hasil disimpan sebagai '{output_filename}' di direktori '{parent_dir}'.",
             "output_file_path": output_path,
@@ -2508,7 +2557,8 @@ def run_splicing():
             "field_name": field_name,
             "structure_name": structure_name,
             "marker_applied": marker_applied,
-            "marker_file_path": marker_file_path
+            "marker_file_path": marker_file_path,
+            "zone_applied": zone_applied
         }
         
         # Add marker-specific information if markers were applied
@@ -2960,6 +3010,40 @@ def get_fill_missing_plot():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/get-gr-ma-sh', methods=['POST'])
+def get_gr_ma_sh_defaults():
+    """
+    Endpoint untuk menghitung nilai default GR_MA dan GR_SH
+    berdasarkan titik terdekat dari crossplot NPHI-RHOB.
+    """
+    try:
+        payload = request.get_json()
+        selected_wells = payload.get('selected_wells', [])
+        selected_intervals = payload.get('selected_intervals', [])
+        prcnt_qz = float(payload.get('prcnt_qz', 5))
+        prcnt_wtr = float(payload.get('prcnt_wtr', 5))
+
+        if not selected_wells:
+            return jsonify({"error": "Well harus dipilih."}), 400
+
+        df_list = [pd.read_csv(os.path.join(
+            WELLS_DIR, f"{w}.csv")) for w in selected_wells]
+        df = pd.concat(df_list, ignore_index=True)
+
+        if selected_intervals and 'MARKER' in df.columns:
+            df = df[df['MARKER'].isin(selected_intervals)]
+
+        # Panggil fungsi autoplot Anda
+        # Kita bisa berikan nilai default untuk percentile di sini
+        gr_params = calculate_gr_ma_sh_from_nphi_rhob(
+            df, prcnt_qz, prcnt_wtr)
+
+        return jsonify(gr_params)
+
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Terjadi kesalahan internal: {str(e)}"}), 500
 
 # This is for local development testing, Vercel will use its own server
 if __name__ == '__main__':

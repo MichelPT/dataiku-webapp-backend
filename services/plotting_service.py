@@ -3222,8 +3222,10 @@ def plot_gsa_main(df):
     #     showlegend=False,
     #     height=1600,
     # )
-
-    sequence_rgsa = ['MARKER', 'GR', 'RT', 'NPHI_RHOB',
+    marker_zone_sequence = ['ZONE', 'MARKER']
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    sequence_rgsa = filtered_sequence + ['GR', 'RT', 'NPHI_RHOB',
                      'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA']
     fig = main_plot(df, sequence_rgsa, title="Gas Show Anomaly Analysis")
 
@@ -3234,7 +3236,11 @@ def plot_vsh_linear(df):
     """
     Membuat plot multi-panel untuk visualisasi hasil kalkulasi VSH.
     """
-    sequence_vsh = ['MARKER', 'GR',
+    marker_zone_sequence = ['ZONE', 'MARKER']
+
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    sequence_vsh = filtered_sequence + ['GR',
                     'RT', 'NPHI_RHOB', 'VSH_GR_DN']
     fig = main_plot(df, sequence_vsh, title="Log VSH GR-DN")
 
@@ -3245,8 +3251,12 @@ def plot_sw_indo(df):
     """
     Membuat plot multi-panel untuk visualisasi hasil kalkulasi Saturasi Air (Indonesia).
     """
-    sequence_swe = ['MARKER', 'GR', 'RT',
-                    'NPHI_RHOB', 'VSH', 'PHIE_PHIT', 'SW']
+    marker_zone_sequence = ['ZONE', 'MARKER']
+
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    sequence_swe = filtered_sequence + ['GR', 'RT',
+                                         'NPHI_RHOB', 'VSH', 'PHIE_PHIT', 'SW']
     fig = main_plot(df, sequence_swe, title="Water Saturation")
     return fig
 
@@ -3255,7 +3265,10 @@ def plot_rwa_indo(df):
     """
     Membuat plot multi-panel untuk visualisasi hasil kalkulasi RWA.
     """
-    sequence_rwa = ['MARKER', 'GR',
+    marker_zone_sequence = ['ZONE', 'MARKER']
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    sequence_rwa = filtered_sequence + ['GR',
                     'RT', 'NPHI_RHOB', 'VSH', 'PHIE', 'RWA']
     fig = main_plot(df, sequence_rwa, title="Water Resistivity")
     return fig
@@ -3265,8 +3278,11 @@ def plot_sw_simandoux(df):
     """
     Membuat plot multi-panel untuk visualisasi hasil kalkulasi Water Saturation (Simandoux).
     """
-    sequence_sw_sim = ['MARKER', 'GR', 'RT',
-                       'NPHI_RHOB', 'VSH', 'PHIE_PHIT', 'SW_SIMANDOUX', 'RESERVOIR_CLASS']
+    marker_zone_sequence = ['ZONE', 'MARKER']
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    sequence_sw_sim = filtered_sequence + ['GR', 'RT',
+                                            'NPHI_RHOB', 'VSH', 'PHIE_PHIT', 'SW_SIMANDOUX', 'RESERVOIR_CLASS']
     fig = main_plot(df, sequence_sw_sim, title="Water Saturation (Modified Simandoux)")
     return fig
 
@@ -3331,8 +3347,13 @@ def plot_smoothing(df, df_marker, df_well_marker):
 
 
 def plot_module_2(df):
-    seq_module_2 = ['MARKER', 'GR', 'RT',
-                    'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'SW', 'IQUAL']
+    """ Membuat plot Module 2 untuk interpretasi log terpilih.
+    """
+    marker_zone_sequence = ['ZONE', 'MARKER']
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    seq_module_2 = filtered_sequence + ['GR', 'RT',
+                                         'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'SW', 'IQUAL']
     fig = main_plot(df, seq_module_2, title="Log Interpretation Selected Well")
     return fig
 
@@ -3348,9 +3369,11 @@ def plot_iqual(df):
     Membuat plot IQUAL.
     """
     df = calculate_iqual(df)
-
-    sequence_iqual = ['MARKER', 'GR', 'RT',
-                      'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'IQUAL']
+    marker_zone_sequence = ['ZONE', 'MARKER']
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    sequence_iqual = filtered_sequence + ['GR', 'RT',
+                                           'NPHI_RHOB', 'PHIE', 'VSH_LINEAR', 'IQUAL']
     fig = main_plot(df, sequence_iqual, title="IQUAL")
 
     return fig
@@ -3511,8 +3534,11 @@ def plot_fill_missing(df, title="Fill Missing Plot"):
 def plot_module_3(df, title="Module 3 Plot"):
     """Membuat plot untuk Module 3 dengan sequence yang sudah ditentukan."""
     # Definisikan urutan track yang ingin ditampilkan
-    sequence = ['MARKER', 'GR', 'RT', 'NPHI_RHOB', 'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA',
-                'VSH', 'PHIE', 'IQUAL', 'RGBE', 'RPBE', 'SWARRAY', 'DNS', 'DNSV', 'RT_RO']
+    marker_zone_sequence = ['ZONE', 'MARKER']
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [col for col in marker_zone_sequence if col in df.columns]
+    sequence = filtered_sequence + ['GR', 'RT', 'NPHI_RHOB', 'RT_RGSA', 'NPHI_NGSA', 'RHOB_DGSA',
+                                     'VSH', 'PHIE', 'IQUAL', 'RGBE', 'RPBE', 'SWARRAY', 'DNS', 'DNSV', 'RT_RO']
     fig = main_plot(df, sequence, title=title)
 
     return fig

@@ -2347,14 +2347,21 @@ def search_structures():
 def run_splicing():
     """
     Endpoint API untuk menjalankan proses splicing/merging logs dari file .csv.
+    Output akan disimpan satu level di atas folder data dengan nama folder sebagai nama file.
+    Automatically applies markers from marker file if available.
     """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
     try:
+        # Import the marker functions
+        from services.qc_service import read_marker_file, append_markers_to_dataframe
+        
         # 1. Ambil data dari payload frontend
         payload = request.get_json()
         params = payload.get('params', {})
+        field_name = payload.get('field_name', 'adera')
+        structure_name = payload.get('structure_name', 'benuang')
 
         # Get file paths from frontend
         run1_file_path = payload.get('run1_file_path')
@@ -2400,35 +2407,121 @@ def run_splicing():
             df_run2['RHOZ'] /= 1000
 
         # 4. Panggil Logika Inti untuk Memproses Data
-        # Fungsi ini diimpor dari splicing_logic.py
         processed_df = splice_and_flag_logs(df_run1, df_run2, params)
+        
+        # 5. Generate output path: one directory up, using folder name as filename
+        # Get current directory (will be like .../BNG-057/)
+        current_dir = os.path.dirname(path_run1)
+        # Get parent directory (will be like .../benuang/)
+        parent_dir = os.path.dirname(current_dir)
+        # Get folder name (will be like BNG-057)
+        folder_name = os.path.basename(current_dir)
+        # Create output filename from folder name
+        output_filename = f"{folder_name}.csv"
+        # Full output path in the parent directory
+        output_path = os.path.join(parent_dir, output_filename)
+        
+        # 6. NEW: Find and apply marker file before saving
+        marker_applied = False
+        marker_file_path = None
+        
+        try:
+            # Look for any file containing "MARKER" in its name in the parent directory
+            marker_file_found = False
+            for filename in os.listdir(parent_dir):
+                if "MARKER" in filename.upper() and filename.endswith('.csv'):
+                    marker_file_path = os.path.join(parent_dir, filename)
+                    print(f"Found marker file: {marker_file_path}")
+                    
+                    try:
+                        # Read marker file
+                        marker_df = read_marker_file(marker_file_path)
+                        print(f"Successfully read marker file with {len(marker_df)} rows")
+                        
+                        # Apply markers to the spliced dataframe
+                        # Use the folder name as the well identifier for marker matching
+                        processed_df_with_markers = append_markers_to_dataframe(
+                            processed_df, marker_df, folder_name
+                        )
+                        
+                        # If markers were successfully applied, use the updated dataframe
+                        if 'MARKER' in processed_df_with_markers.columns:
+                            processed_df = processed_df_with_markers
+                            marker_applied = True
+                            print(f"Successfully applied markers to {folder_name}")
+                        else:
+                            print(f"No markers found for well {folder_name} in marker file")
+                        
+                        marker_file_found = True
+                        break  # Stop after finding and processing the first marker file
+                        
+                    except Exception as marker_error:
+                        print(f"Error processing marker file {filename}: {marker_error}")
+                        continue
 
-        # 5. Generate output file path based on input paths
-        output_dir = os.path.dirname(path_run1)
-        output_filename = f"{run1_well}_{run2_well}_spliced.csv"
-        output_path = os.path.join(output_dir, output_filename)
+            if not marker_file_found:
+                print(f"No marker file found in {parent_dir}")
+                
+        except Exception as marker_search_error:
+            print(f"Error searching for marker files: {marker_search_error}")
+        
+        # 7. Handle existing file (preserve columns not in current operation)
+        if os.path.exists(output_path):
+            # Read existing file
+            existing_df = pd.read_csv(output_path, on_bad_lines='warn')
+            print(f"File {output_filename} already exists - updating specific columns only")
+            
+            # Identify columns to update (only in processed_df)
+            columns_to_update = processed_df.columns.tolist()
+            
+            # Create a new DataFrame with all columns from existing file
+            merged_df = existing_df.copy()
+            
+            # Update DEPTH index for matching
+            merged_df.set_index('DEPTH', inplace=True)
+            processed_df.set_index('DEPTH', inplace=True)
+            
+            # Update only the columns that exist in processed_df
+            for col in columns_to_update:
+                if col != 'DEPTH':  # Skip the index column
+                    merged_df[col] = processed_df[col]
+            
+            # Reset index to get DEPTH back as a column
+            merged_df.reset_index(inplace=True)
+            processed_df.reset_index(inplace=True)
+            
+            # Save the merged result
+            merged_df.to_csv(output_path, index=False)
+            print(f"Updated columns {columns_to_update} in existing file")
+            
+        else:
+            # If file doesn't exist, save the processed_df directly
+            processed_df.to_csv(output_path, index=False)
+            print(f"Created new file {output_filename}")
 
-        # Logika penyimpanan (tidak berubah)
-        final_output_df = pd.merge(
-            df_run1.drop(columns=[
-                         col for col in processed_df.columns if col != 'DEPTH'], errors='ignore'),
-            processed_df,
-            on='DEPTH',
-            how='outer'
-        ).sort_values(by='DEPTH')
-
-        final_output_df.to_csv(output_path, index=False)
-        print(
-            f"Proses selesai. Hasil disimpan sebagai file baru di: {output_path}")
-
-        # 6. Kirim Respons Sukses ke Frontend
-        return jsonify({
-            "message": f"Splicing berhasil! Hasil disimpan dalam file baru '{output_filename}'.",
+        # 8. Prepare response with marker information
+        response = {
+            "message": f"Splicing berhasil! Hasil disimpan sebagai '{output_filename}' di direktori '{parent_dir}'.",
             "output_file_path": output_path,
             "output_filename": output_filename,
-            "run1_well": run1_well,
-            "run2_well": run2_well
-        })
+            "folder_name": folder_name,
+            "field_name": field_name,
+            "structure_name": structure_name,
+            "marker_applied": marker_applied,
+            "marker_file_path": marker_file_path
+        }
+        
+        # Add marker-specific information if markers were applied
+        if marker_applied:
+            response["message"] += f" Markers have been applied from {os.path.basename(marker_file_path)}."
+            
+            # Count unique markers applied
+            if 'MARKER' in processed_df.columns:
+                unique_markers = processed_df['MARKER'].dropna().unique().tolist()
+                response["markers_applied"] = unique_markers
+                response["total_markers"] = len(unique_markers)
+
+        return jsonify(response)
 
     except Exception as e:
         import traceback

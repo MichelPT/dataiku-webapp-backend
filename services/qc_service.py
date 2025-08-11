@@ -140,6 +140,110 @@ def run_full_qc_pipeline(files_data: list, logger):
     return {'qc_summary': qc_results, 'output_files': output_files}
 
 
+def append_markers_to_dataframe(df, marker_df, well_name, depth_column='DEPTH'):
+    """
+    Append marker information to a DataFrame based on depth ranges and well name.
+    
+    Args:
+        df (pd.DataFrame): Main DataFrame containing well log data with depth column
+        marker_df (pd.DataFrame): Marker DataFrame with columns ['Well identifier', 'MD', 'Surface']
+        well_name (str): Well identifier to match (e.g., 'BNG-007')
+        depth_column (str): Name of the depth column in df (default: 'DEPTH')
+    
+    Returns:
+        pd.DataFrame: DataFrame with added 'MARKER' column
+    """
+    # Create a copy to avoid modifying the original DataFrame
+    result_df = df.copy()
+    
+    # Initialize MARKER column
+    result_df['MARKER'] = None
+    
+    # Clean well name for matching
+    well_name_cleaned = well_name.strip().upper()
+    
+    # Filter marker data for the specific well
+    well_markers = marker_df[marker_df['Well identifier'].str.strip().str.upper() == well_name_cleaned].copy()
+    
+    if well_markers.empty:
+        print(f"No markers found for well: {well_name}")
+        return result_df
+    
+    # Clean and convert MD column (handle comma decimal separator)
+    if well_markers['MD'].dtype == object:
+        well_markers['MD'] = pd.to_numeric(
+            well_markers['MD'].astype(str).str.replace(',', '.', regex=False), 
+            errors='coerce'
+        )
+    
+    # Remove rows with invalid MD values
+    well_markers = well_markers.dropna(subset=['MD'])
+    
+    if well_markers.empty:
+        print(f"No valid marker depths found for well: {well_name}")
+        return result_df
+    
+    # Sort markers by depth
+    well_markers = well_markers.sort_values('MD').reset_index(drop=True)
+    
+    # Apply markers based on depth ranges
+    for i in range(len(well_markers)):
+        current_depth = well_markers.loc[i, 'MD']
+        surface_name = str(well_markers.loc[i, 'Surface'])
+        
+        if i == 0:
+            # For the first marker, assign from the beginning up to this depth
+            mask = result_df[depth_column] <= current_depth
+        else:
+            # For subsequent markers, assign from previous depth to current depth
+            previous_depth = well_markers.loc[i-1, 'MD']
+            mask = (result_df[depth_column] > previous_depth) & (result_df[depth_column] <= current_depth)
+        
+        result_df.loc[mask, 'MARKER'] = surface_name
+    
+    # For depths beyond the last marker, assign the last surface
+    if len(well_markers) > 0:
+        last_depth = well_markers.iloc[-1]['MD']
+        last_surface = str(well_markers.iloc[-1]['Surface'])
+        mask = result_df[depth_column] > last_depth
+        result_df.loc[mask, 'MARKER'] = last_surface
+    
+    print(f"Successfully applied {len(well_markers)} markers to {well_name}")
+    return result_df
+
+
+def read_marker_file(marker_file_path):
+    """
+    Read marker file and return cleaned DataFrame.
+    
+    Args:
+        marker_file_path (str): Path to the marker CSV file
+    
+    Returns:
+        pd.DataFrame: Cleaned marker DataFrame
+    """
+    try:
+        # Try reading with different separators
+        try:
+            marker_df = pd.read_csv(marker_file_path, sep=';')
+        except:
+            try:
+                marker_df = pd.read_csv(marker_file_path, sep=',')
+            except:
+                marker_df = pd.read_csv(marker_file_path, sep='\t')
+        
+        # Verify required columns exist
+        required_columns = ['Well identifier', 'MD', 'Surface']
+        if not all(col in marker_df.columns for col in required_columns):
+            raise ValueError(f"Marker file must contain columns: {required_columns}")
+        
+        return marker_df
+        
+    except Exception as e:
+        print(f"Error reading marker file: {e}")
+        return pd.DataFrame()
+
+
 def handle_null_values(csv_content: str) -> str:
     """Fungsi dari data_utils.py lama Anda."""
     csv_file_like_object = io.StringIO(csv_content)
@@ -149,3 +253,4 @@ def handle_null_values(csv_content: str) -> str:
         df[numeric_cols] = df[numeric_cols].interpolate(method='linear', limit_direction='both', axis=0)
     df.fillna('NA', inplace=True)
     return df.to_csv(index=False)
+

@@ -976,7 +976,7 @@ def _run_gsa_process(payload, gsa_function_to_run):
         gsa_function_to_run (function): The specific processing function to execute.
     """
     params = payload.get('params', {})
-    full_path = payload.get('full_path', []) 
+    full_path = payload.get('full_path', '') 
     selected_wells = payload.get('selected_wells', [])
     selected_intervals = payload.get('selected_intervals', [])
     selected_zones = payload.get('selected_zones', [])
@@ -2578,8 +2578,8 @@ def run_splicing():
             return jsonify({"error": "run1_well and run2_well are required"}), 400
 
         # 2. Use file paths from frontend directly
-        path_run1 = run1_file_path  # Data ATAS
-        path_run2 = run2_file_path  # Data BAWAH
+        path_run1 = run1_file_path + '.csv'  # Data ATAS
+        path_run2 = run2_file_path + '.csv'  # Data BAWAH
 
         print(f"Run 1 (data atas) dari file: {path_run1}")
         print(f"Run 2 (data bawah) dari file: {path_run2}")

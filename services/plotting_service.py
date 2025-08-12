@@ -3414,16 +3414,19 @@ def plot_module1(df):
     if lwd_available >= wl_available:
         # Use LWD sequence
         sequence = lwd_sequence
+        print(f"Available sequence LWD for Module1: {sequence}")
         title = 'LWD'
     else:
         # Use WL sequence and scale RHOZ if available
         if 'RHOZ' in df.columns:
             df['RHOZ'] = df['RHOZ'] / 1000
         sequence = wl_sequence
+        print(f"Available sequence WL for Module1: {sequence}")
         title = 'WL'
 
     # Filter sequence to only include available columns
     available_sequence = [col for col in sequence if col in df.columns]
+    print(f"Available sequence for Module1: {available_sequence}")
 
     if not available_sequence:
         raise ValueError("No valid columns found for Module1 plot")

@@ -9,8 +9,6 @@ from services.dns_dnsv_plot import plot_dns_dnsv
 
 # --- Configuration ---
 app = Flask(__name__)
-# IMPORTANT: Make sure this path is correct for your project structure
-WELLS_DIR = os.path.join('..', 'data', 'wells')
 
 # --- Calculation Functions (Your existing code) ---
 
@@ -75,6 +73,7 @@ def run_dns_dnsv_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
 
             if not selected_wells:
@@ -84,7 +83,7 @@ def run_dns_dnsv_calculation():
                 f"Starting DNS-DNSV calculation for {len(selected_wells)} wells...")
 
             for well_name in selected_wells:
-                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
                     print(
@@ -131,6 +130,7 @@ def get_dns_dnsv_plot():
 
     try:
         request_data = request.get_json()
+        full_path = request_data.get('full_path', '')
         selected_wells = request_data.get('selected_wells', [])
 
         if not selected_wells:
@@ -138,7 +138,7 @@ def get_dns_dnsv_plot():
 
         # Read and combine data from the selected wells
         df_list = [pd.read_csv(os.path.join(
-            WELLS_DIR, f"{well}.csv")) for well in selected_wells]
+            full_path, f"{well}.csv")) for well in selected_wells]
         df_combined = pd.concat(df_list, ignore_index=True)
 
         # Generate the plot using your existing function

@@ -52,6 +52,7 @@ def calculate_sw_simandoux(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     """
     Calculate Water Saturation using Modified Simandoux method with Newton-Raphson iteration.
     This is an advanced method that accounts for shale effects in resistivity calculations.
+    The final output column is 'SW'.
     """
     df_processed = df.copy()
     
@@ -106,16 +107,21 @@ def calculate_sw_simandoux(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     
     print(f"Calculating Water Saturation using {OPT_SIM} Simandoux method...")
     
-    # Calculate SWE_SIM using Newton-Raphson
-    swe_sim = []
+    # --- MODIFICATION START ---
+    # Define the final output column name for consistency
+    SW_COL = 'SW'
+
+    # Calculate SW using Newton-Raphson by iterating over rows
+    sw_values = []
     for _, row in df_processed.iterrows():
         if pd.notna(row["ILD"]) and pd.notna(row["PHIE"]) and pd.notna(row["VSH"]):
             phie = row["PHIE"]
             if phie < 0.005:
-                swe = 1.0
+                # For very low porosity, saturation is considered 100%
+                sw = 1.0
             else:
                 ff = A / (phie ** M)
-                swe = newton_simandoux(
+                sw = newton_simandoux(
                     rt=row["ILD"], 
                     ff=ff, 
                     rwtemp=row["RW_TEMP"], 
@@ -125,41 +131,19 @@ def calculate_sw_simandoux(df: pd.DataFrame, params: dict) -> pd.DataFrame:
                     opt=OPT_SIM, 
                     c=C
                 )
-            swe_sim.append(swe)
+            sw_values.append(sw)
         else:
-            swe_sim.append(np.nan)
+            sw_values.append(np.nan)
     
-    df_processed["SWE_SIM"] = swe_sim
-    df_processed["SWE"] = df_processed["SWE_SIM"].clip(lower=SWE_IRR, upper=1.0)
-    df_processed["SW"] = df_processed["SWE"]  # Alias for compatibility
+    # Assign the raw calculated values to a temporary series
+    temp_sw = pd.Series(sw_values, index=df_processed.index)
     
-    # Calculate additional parameters
-    df_processed["VOL_UWAT"] = df_processed["PHIE"] * df_processed["SWE"]
+    # Clip the result to be between SWE_IRR and 1.0 and assign to the final 'SW' column
+    df_processed[SW_COL] = temp_sw.clip(lower=SWE_IRR, upper=1.0)
     
-    # Reservoir classification
-    def klasifikasi_reservoir(phie):
-        if pd.isna(phie):
-            return "NoData"
-        elif phie >= 0.20:
-            return "Prospek Kuat"
-        elif phie >= 0.15:
-            return "Zona Menarik"
-        elif phie >= 0.10:
-            return "Zona Lemah"
-        else:
-            return "Non Prospek"
-    
-    df_processed["RESERVOIR_CLASS"] = df_processed["PHIE"].apply(klasifikasi_reservoir)
-    
-    # Color mapping for visualization
-    color_map = {
-        "Prospek Kuat": "yellow",
-        "Zona Menarik": "lime", 
-        "Zona Lemah": "green",
-        "Non Prospek": "black",
-        "NoData": "gray"
-    }
-    df_processed["COLOR"] = df_processed["RESERVOIR_CLASS"].map(color_map)
+    # Calculate additional parameters based on the final SW
+    df_processed["VOL_UWAT"] = df_processed["PHIE"] * df_processed[SW_COL]
+    # --- MODIFICATION END ---
     
     print("Water Saturation calculation (Simandoux) completed successfully.")
     return df_processed
@@ -213,4 +197,3 @@ def calculate_sw(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     df_processed[SW] = df_processed[SW].clip(lower=0, upper=1)
 
     return df_processed
-

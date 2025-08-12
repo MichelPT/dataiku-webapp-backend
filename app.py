@@ -5,7 +5,7 @@ from services.iqual import calculate_iqual
 from services.splicing import splice_and_flag_logs
 from services.vsh_dn import calculate_vsh_dn
 from services.rwa import calculate_rwa
-from services.sw import calculate_sw
+from services.sw import calculate_sw, calculate_sw_simandoux
 from services.crossplot import generate_crossplot
 from services.histogram import plot_histogram
 from services.ngsa import process_all_wells_ngsa
@@ -142,182 +142,32 @@ def handle_nulls_route():
 
 # Tentukan path ke file data secara andal
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-WELLS_DIR = 'data/structures/adera/abab'
 LAS_DIR = 'data/depth-matching'
 GWD_DIR = 'data/gwd'
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(PROJECT_ROOT, 'data')
 
-# UTILS API
-
-
-def update_wells_dir(new_path):
-    """
-    Update the global WELLS_DIR variable dynamically.
-    """
-    global WELLS_DIR
-    # Basic path validation - prevent directory traversal attacks
-    if new_path and isinstance(new_path, str) and '..' not in new_path:
-        WELLS_DIR = new_path
-        return True
-    return False
-
-
-def get_current_wells_dir():
-    """
-    Get the current WELLS_DIR value.
-    """
-    global WELLS_DIR
-    return WELLS_DIR
-
-
-@app.route('/api/set-wells-dir', methods=['POST'])
-def set_wells_dir():
-    """
-    Endpoint for frontend to dynamically change the WELLS_DIR.
-    Expected JSON: {"wells_dir": "data/structures/adera/abab"}
-    """
-    try:
-        data = request.get_json()
-        new_wells_dir = data.get('wells_dir')
-
-        if not new_wells_dir:
-            return jsonify({"error": "wells_dir parameter is required"}), 400
-
-        # Update the global WELLS_DIR
-        if update_wells_dir(new_wells_dir):
-            return jsonify({
-                "message": "Wells directory updated successfully",
-                "wells_dir": get_current_wells_dir()
-            }), 200
-        else:
-            return jsonify({"error": "Invalid wells_dir path"}), 400
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/select-structure', methods=['POST'])
-def select_structure():
-    """
-    Endpoint for frontend to select a structure and automatically set WELLS_DIR.
-    Expected JSON: {"field_name": "adera", "structure_name": "abab"}
-    """
-    try:
-        data = request.get_json()
-        field_name = data.get('field_name')
-        structure_name = data.get('structure_name')
-
-        if not field_name or not structure_name:
-            return jsonify({"error": "field_name and structure_name are required"}), 400
-
-        # Construct the wells directory path
-        new_wells_dir = f"data/structures/{field_name}/{structure_name}"
-
-        # Update the global WELLS_DIR
-        if update_wells_dir(new_wells_dir):
-            # Check if the directory exists and get wells list
-            import os
-            if os.path.exists(new_wells_dir):
-                well_files = [f.replace('.csv', '') for f in os.listdir(
-                    new_wells_dir) if f.endswith('.csv')]
-                well_files.sort()
-
-                return jsonify({
-                    "message": f"Structure {field_name}/{structure_name} selected successfully",
-                    "field_name": field_name,
-                    "structure_name": structure_name,
-                    "wells_dir": get_current_wells_dir(),
-                    "available_wells": well_files,
-                    "total_wells": len(well_files)
-                }), 200
-            else:
-                return jsonify({
-                    "message": f"Structure {field_name}/{structure_name} selected, but directory doesn't exist yet",
-                    "field_name": field_name,
-                    "structure_name": structure_name,
-                    "wells_dir": get_current_wells_dir(),
-                    "available_wells": [],
-                    "total_wells": 0
-                }), 200
-        else:
-            return jsonify({"error": "Invalid structure path"}), 400
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/get-wells-dir', methods=['GET'])
-def get_wells_dir():
-    """
-    Get the current WELLS_DIR value.
-    """
-    try:
-        return jsonify({
-            "wells_dir": get_current_wells_dir()
-        }), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/fill-null-marker', methods=['POST'])
-def fill_null_marker():
-    try:
-        payload = request.get_json()
-        selected_wells = payload.get('selected_wells', [])
-        selected_logs = payload.get('selected_logs', [])
-
-        if not selected_wells:
-            return jsonify({'error': 'selected_wells wajib diisi'}), 400
-
-        results = []
-
-        for well_name in selected_wells:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-            if not os.path.exists(file_path):
-                results.append(
-                    {'well': well_name, 'status': 'File tidak ditemukan'})
-                continue
-
-            df = pd.read_csv(file_path, on_bad_lines='warn')
-
-            struktur = df['STRUKTUR'].iloc[0] if 'STRUKTUR' in df.columns else 'UNKNOWN'
-
-            df_filled = fill_null_values_in_marker_range(
-                df, selected_logs)
-            df_filled.to_csv(file_path, index=False)
-
-            results.append({'well': well_name, 'rows': len(
-                df_filled), 'status': 'Berhasil diproses'})
-
-        return jsonify({'message': 'Pengisian nilai null selesai', 'results': results}), 200
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/list-zones', methods=['GET'])
+@app.route('/api/list-zones', methods=['POST'])
 def list_zones():
     """
     Reads the main data files, finds all unique values in the 'ZONE' column,
     and returns them as a JSON list.
     """
-    try:
-        if not os.path.exists(WELLS_DIR):
-            return jsonify({"error": f"Main data directory not found at {WELLS_DIR}"}), 404
+    request_data = request.get_json()
+    full_path = request_data.get('full_path', '')
 
-        files = [f for f in os.listdir(WELLS_DIR) if f.endswith('.csv')]
+    try:
+        if not os.path.exists(full_path):
+            return jsonify({"error": f"Main data directory not found at {full_path}"}), 404
+
+        files = [f for f in os.listdir(full_path) if f.endswith('.csv')]
         if not files:
             return jsonify({"error": "No CSV files found in the 'wells' folder."}), 404
 
         data = []
 
         for filename in files:
-            file_path = os.path.join(WELLS_DIR, filename)
+            file_path = os.path.join(full_path, filename)
             try:
                 df_temp = pd.read_csv(file_path, on_bad_lines='warn')
                 data.append(df_temp)
@@ -345,24 +195,26 @@ def list_zones():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/list-intervals', methods=['GET'])
+@app.route('/api/list-intervals', methods=['POST'])
 def list_intervals():
     """
     Membaca file data utama, menemukan semua nilai unik di kolom 'MARKER',
     dan mengembalikannya sebagai daftar JSON.
     """
+    data = request.get_json()
+    full_path = data.get('full_path', '')
     try:
-        if not os.path.exists(WELLS_DIR):
-            return jsonify({"error": f"File data utama tidak ditemukan di {WELLS_DIR}"}), 404
+        if not os.path.exists(full_path):
+            return jsonify({"error": f"File data utama tidak ditemukan di {full_path}"}), 404
 
-        files = [f for f in os.listdir(WELLS_DIR) if f.endswith('.csv')]
+        files = [f for f in os.listdir(full_path) if f.endswith('.csv')]
         if not files:
             return jsonify({"error": "Tidak ada file CSV ditemukan di folder 'wells'."}), 404
 
         data = []
 
         for filename in files:
-            file_path = os.path.join(WELLS_DIR, filename)
+            file_path = os.path.join(full_path, filename)
             try:
                 df_temp = pd.read_csv(file_path, on_bad_lines='warn')
                 data.append(df_temp)
@@ -400,6 +252,7 @@ def get_well_columns():
     try:
         data = request.get_json()
         file_paths = data.get('file_paths', [])
+        full_path = data.get('full_path', '')
         wells = data.get('wells', [])
         result = {}
 
@@ -408,7 +261,7 @@ def get_well_columns():
             print("Received 'wells', constructing file paths...")
             # This assumes your "clean" data files are directly in WELLS_DIR
             file_paths = [os.path.join(
-                WELLS_DIR, f"{well}.csv") for well in wells]
+                full_path, f"{well}.csv") for well in wells]
 
         if not file_paths:
             return jsonify({"error": "No wells or file paths provided."}), 400
@@ -445,12 +298,6 @@ def get_log_percentiles():
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
         log_column = payload.get('log_column', 'GR')
-
-        # Fallback untuk Dashboard (tidak berubah, tapi sekarang menggunakan WELLS_DIR yang benar)
-        if not file_paths and selected_wells:
-            print("Menerima 'selected_wells', membuat file paths untuk Dashboard...")
-            file_paths = [os.path.join(
-                WELLS_DIR, f"{well_name}.csv") for well_name in selected_wells]
 
         if not file_paths or not log_column:
             return jsonify({"error": "Path file atau nama sumur dan kolom log harus dipilih."}), 400
@@ -509,6 +356,7 @@ def get_intersection_point():
     try:
         payload = request.get_json()
         selected_wells = payload.get('selected_wells', [])
+        full_path = payload.get('full_path', []) 
         selected_intervals = payload.get('selected_intervals', [])
         prcnt_qz = float(payload.get('prcnt_qz', 5))
         prcnt_wtr = float(payload.get('prcnt_wtr', 5))
@@ -517,7 +365,7 @@ def get_intersection_point():
             return jsonify({"error": "Well harus dipilih."}), 400
 
         df_list = [pd.read_csv(os.path.join(
-            WELLS_DIR, f"{w}.csv")) for w in selected_wells]
+            full_path, f"{w}.csv")) for w in selected_wells]
         df = pd.concat(df_list, ignore_index=True)
 
         if selected_intervals and 'MARKER' in df.columns:
@@ -543,6 +391,7 @@ def get_gr_ma_sh_defaults():
     """
     try:
         payload = request.get_json()
+        full_path = payload.get('full_path', [])
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
         selected_zones = payload.get('selected_zones', [])
@@ -553,7 +402,7 @@ def get_gr_ma_sh_defaults():
             return jsonify({"error": "Well harus dipilih."}), 400
 
         df_list = [pd.read_csv(os.path.join(
-            WELLS_DIR, f"{w}.csv")) for w in selected_wells]
+            full_path, f"{w}.csv")) for w in selected_wells]
         df = pd.concat(df_list, ignore_index=True)
 
         if selected_intervals and 'MARKER' in df.columns:
@@ -584,6 +433,7 @@ def get_plot():
     """
     try:
         request_data = request.get_json()
+        full_path = request_data.get('full_path')
         selected_wells = request_data.get('selected_wells')
         selected_intervals = request_data.get('selected_intervals')
 
@@ -594,7 +444,7 @@ def get_plot():
 
         df_list = []
         for well_name in selected_wells:
-            file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+            file_path = os.path.join(full_path, f"{well_name}.csv")
             if os.path.exists(file_path):
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
                 df_list.append(df_well)
@@ -635,9 +485,10 @@ def get_normalization_plot():
 
     if request.method == 'POST':
         try:
-            request_data = request.get_json()
-            selected_wells = request_data.get('selected_wells', [])
-            selected_intervals = request_data.get('selected_intervals', [])
+            data = request.get_json()
+            full_path = data.get('full_path', [])
+            selected_wells = data.get('selected_wells', [])
+            selected_intervals = data.get('selected_intervals', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih"}), 400
@@ -646,7 +497,7 @@ def get_normalization_plot():
             df_list = []
             for well_name in selected_wells:
                 file_path = os.path.join(
-                    WELLS_DIR, f"{well_name}.csv")
+                    full_path, f"{well_name}.csv")
                 if os.path.exists(file_path):
                     df_list.append(pd.read_csv(file_path, on_bad_lines='warn'))
 
@@ -684,15 +535,17 @@ def get_normalization_plot():
             return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/list-wells', methods=['GET'])
+@app.route('/api/list-wells', methods=['POST'])
 def list_wells():
+    data = request.get_json()
+    full_path = data.get('full_path', '')
     try:
-        if not os.path.exists(WELLS_DIR):
+        if not os.path.exists(full_path):
             # This might happen on the very first run before any files are there
             return jsonify({"error": 'no file found'}), 200
 
         well_files = [f.replace('.csv', '')
-                      for f in os.listdir(WELLS_DIR) if f.endswith('.csv')]
+                      for f in os.listdir(full_path) if f.endswith('.csv')]
         well_files.sort()
         return jsonify(well_files)
     except Exception as e:
@@ -707,6 +560,7 @@ def run_interval_normalization():
     try:
         payload = request.get_json()
         params = payload.get('params', {})
+        full_path = payload.get('full_path', [])  
         file_paths = payload.get('file_paths', [])
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
@@ -715,7 +569,7 @@ def run_interval_normalization():
         if not file_paths and selected_wells:
             print("Received 'selected_wells', constructing file paths...")
             file_paths = [os.path.join(
-                WELLS_DIR, f"{well_name}.csv") for well_name in selected_wells]
+                full_path, f"{well_name}.csv") for well_name in selected_wells]
 
         if not file_paths:
             return jsonify({"error": "No wells or file paths were provided to process."}), 400
@@ -832,7 +686,7 @@ def run_smoothing():
 
             # Buat path file dari selected_wells
             paths_to_process = [os.path.join(
-                WELLS_DIR, f"{well_name}.csv") for well_name in selected_wells]
+                full_path, f"{well_name}.csv") for well_name in selected_wells]
 
         # --- AKHIR PENAMBAHAN LOGIKA ---
 
@@ -930,6 +784,7 @@ def run_vsh_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -949,11 +804,11 @@ def run_vsh_calculation():
             # Loop melalui setiap sumur yang dipilih
             for well_name in selected_wells:
                 file_path = os.path.join(
-                    WELLS_DIR, f"{well_name}.csv")
+                    full_path, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
                     print(
-                        f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                        f"Peringatan: Melewatkan sumur {file_path}, file tidak ditemukan.")
                     continue
 
                 # Baca data sumur
@@ -1007,6 +862,7 @@ def run_porosity_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
+            full_path = payload.get('full_path', [])
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -1017,7 +873,7 @@ def run_porosity_calculation():
             # Loop melalui setiap sumur yang dipilih
             for well_name in selected_wells:
                 file_path = os.path.join(
-                    WELLS_DIR, f"{well_name}.csv")
+                    full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
                     continue
 
@@ -1070,6 +926,7 @@ def get_porosity_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -1078,7 +935,7 @@ def get_porosity_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validasi: Pastikan kolom hasil kalkulasi sebelumnya (VSH, PHIE) sudah ada
@@ -1118,6 +975,7 @@ def _run_gsa_process(payload, gsa_function_to_run):
         gsa_function_to_run (function): The specific processing function to execute.
     """
     params = payload.get('params', {})
+    full_path = payload.get('full_path', []) 
     selected_wells = payload.get('selected_wells', [])
     selected_intervals = payload.get('selected_intervals', [])
     selected_zones = payload.get('selected_zones', [])
@@ -1125,7 +983,7 @@ def _run_gsa_process(payload, gsa_function_to_run):
         return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
     for well_name in selected_wells:
-        file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+        file_path = os.path.join(full_path, f"{well_name}.csv")
         if not os.path.exists(file_path):
             print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
             continue
@@ -1199,6 +1057,7 @@ def get_gsa_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -1207,7 +1066,7 @@ def get_gsa_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             if selected_intervals:
@@ -1311,6 +1170,7 @@ def run_trim_well_log():
     try:
         data = request.get_json()
         params = data.get('params', {})
+        full_path = data.get('full_path', '')  
         file_paths = data.get('file_paths', [])
         well_names = data.get('selected_wells', [])
 
@@ -1318,7 +1178,7 @@ def run_trim_well_log():
         if not file_paths and well_names:
             print(f"Menerima 'selected_wells' dari Dashboard: {well_names}")
             file_paths = [os.path.join(
-                WELLS_DIR, f"{well}.csv") for well in well_names]
+                full_path, f"{well}.csv") for well in well_names]
 
         if not file_paths:
             return jsonify({'error': 'Tidak ada sumur atau file yang dipilih untuk diproses.'}), 400
@@ -1418,6 +1278,7 @@ def get_smoothing_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path')
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -1426,7 +1287,7 @@ def get_smoothing_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             if selected_intervals:
@@ -1468,6 +1329,7 @@ def run_rgbe_rpbe_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
+            full_path = payload.get('full_path', [])
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -1480,7 +1342,7 @@ def run_rgbe_rpbe_calculation():
                 f"[INFO] /api/run-rgbe-rpbe: Starting calculation for {len(selected_wells)} wells: {selected_wells}")
 
             for well_name in selected_wells:
-                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
                     print(
@@ -1531,6 +1393,7 @@ def get_rgbe_rpbe_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -1539,7 +1402,7 @@ def get_rgbe_rpbe_plot():
 
             df_list = []
             for well in selected_wells:
-                file_path = os.path.join(WELLS_DIR, f"{well}.csv")
+                file_path = os.path.join(full_path, f"{well}.csv")
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
                 df_list.append(df_well)
 
@@ -1582,6 +1445,7 @@ def run_rt_r0_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -1593,7 +1457,7 @@ def run_rt_r0_calculation():
                 f"Memulai kalkulasi RT-R0 untuk {len(selected_wells)} sumur...")
 
             for well_name in selected_wells:
-                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
                     print(
@@ -1645,6 +1509,7 @@ def run_swgrad_calculation():
     if request.method == 'POST':
         try:
             payload = request.get_json()
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -1652,7 +1517,7 @@ def run_swgrad_calculation():
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
             for well_name in selected_wells:
-                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
                     continue
 
@@ -1709,6 +1574,7 @@ def run_dns_dnsv_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
+            full_path = payload.get('full_path', [])
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -1723,7 +1589,7 @@ def run_dns_dnsv_calculation():
                 f"Memulai kalkulasi DNS-DNSV untuk {len(selected_wells)} sumur...")
 
             for well_name in selected_wells:
-                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
                     print(
@@ -1776,6 +1642,7 @@ def get_rt_r0_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -1784,7 +1651,7 @@ def get_rt_r0_plot():
 
             # Read and combine data from selected wells
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validate required columns
@@ -1823,6 +1690,7 @@ def get_swgrad_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -1831,7 +1699,7 @@ def get_swgrad_plot():
 
             df_list = []
             for well in selected_wells:
-                file_path = os.path.join(WELLS_DIR, f"{well}.csv")
+                file_path = os.path.join(full_path, f"{well}.csv")
                 # 1. Read data robustly
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
                 df_list.append(df_well)
@@ -1878,6 +1746,7 @@ def get_dns_dnsv_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', '')
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -1886,7 +1755,7 @@ def get_dns_dnsv_plot():
 
             # Read and combine data from selected wells
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validate required columns
@@ -1928,6 +1797,7 @@ def get_histogram_plot():
     if request.method == 'POST':
         try:
             payload = request.get_json()
+            full_path = payload.get('full_path', [])
             selected_wells = payload.get('selected_wells', [])
             log_to_plot = payload.get('log_column')
             num_bins = int(payload.get('bins', 50))
@@ -1939,7 +1809,7 @@ def get_histogram_plot():
                 return jsonify({"error": "Tidak ada log yang dipilih untuk dianalisis."}), 400
 
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             if selected_intervals:
@@ -1966,6 +1836,7 @@ def get_crossplot():
 
     try:
         payload = request.get_json()
+        full_path = payload.get('full_path', [])
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
         x_col = payload.get('x_col', 'NPHI')
@@ -1983,7 +1854,7 @@ def get_crossplot():
             return jsonify({'error': 'Well belum dipilih'}), 400
 
         df_list = [pd.read_csv(os.path.join(
-            WELLS_DIR, f"{w}.csv"), on_bad_lines='warn') for w in selected_wells]
+            full_path, f"{w}.csv"), on_bad_lines='warn') for w in selected_wells]
         df = pd.concat(df_list, ignore_index=True)
 
         fig = generate_crossplot(
@@ -2008,6 +1879,7 @@ def get_vsh_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', '')
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -2016,7 +1888,7 @@ def get_vsh_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validasi: Pastikan kolom VSH sudah ada
@@ -2057,6 +1929,7 @@ def run_sw_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -2065,7 +1938,7 @@ def run_sw_calculation():
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
             for well_name in selected_wells:
-                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
                     continue
 
@@ -2099,6 +1972,56 @@ def run_sw_calculation():
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 
+@app.route('/api/run-sw-simandoux-calculation', methods=['POST', 'OPTIONS'])
+def run_sw_simandoux_calculation():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            full_path = payload.get('full_path', '')
+            selected_wells = payload.get('selected_wells', [])
+            selected_intervals = payload.get('selected_intervals', [])
+            selected_zones = payload.get('selected_zones', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            for well_name in selected_wells:
+                file_path = os.path.join(full_path, f"{well_name}.csv")
+                if not os.path.exists(file_path):
+                    continue
+
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
+
+                if selected_intervals:
+                    if 'MARKER' in df_well.columns:
+                        df_well = df_well[df_well['MARKER'].isin(
+                            selected_intervals)]
+                    else:
+                        print(
+                            "Warning: 'MARKER' column not found, cannot filter by marker.")
+
+                if selected_zones:
+                    if 'ZONE' in df_well.columns:
+                        df_well = df_well[df_well['ZONE'].isin(
+                            selected_zones)]
+                    else:
+                        print(
+                            "Warning: 'ZONE' column not found, cannot filter by zone.")
+
+                df_updated = calculate_sw_simandoux(df_well, params)
+
+                df_updated.to_csv(file_path, index=False)
+                print(f"Hasil SW untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi Saturasi Air berhasil untuk {len(selected_wells)} sumur."})
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
 @app.route('/api/get-sw-plot', methods=['POST', 'OPTIONS'])
 def get_sw_plot():
@@ -2111,6 +2034,7 @@ def get_sw_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -2119,7 +2043,7 @@ def get_sw_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # Validasi: Pastikan kolom hasil kalkulasi sebelumnya sudah ada
@@ -2158,6 +2082,7 @@ def run_rwa_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -2166,7 +2091,7 @@ def run_rwa_calculation():
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
             for well_name in selected_wells:
-                file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
                     continue
 
@@ -2210,6 +2135,7 @@ def get_rwa_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -2218,7 +2144,7 @@ def get_rwa_plot():
 
             # Baca dan gabungkan data
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             required_cols = ['RWA_FULL', 'RWA_SIMPLE', 'RWA_TAR']
@@ -2256,6 +2182,7 @@ def run_vsh_dn_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
+            full_path = payload.get('full_path', [])
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -2265,7 +2192,7 @@ def run_vsh_dn_calculation():
 
             for well_name in selected_wells:
                 file_path = os.path.join(
-                    WELLS_DIR, f"{well_name}.csv")
+                    full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
                     continue
 
@@ -2304,6 +2231,7 @@ def get_module2_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -2312,7 +2240,7 @@ def get_module2_plot():
 
             # Baca dan gabungkan data
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             df = df.rename(columns={'VSH_GR': 'VSH_LINEAR', 'RWA_FULL': 'RWA'})
@@ -2381,6 +2309,7 @@ def get_iqual_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -2389,7 +2318,7 @@ def get_iqual_plot():
 
             # Baca dan gabungkan data dari sumur yang dipilih
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             df = df.rename(columns={'VSH_GR': 'VSH_LINEAR', 'RWA_FULL': 'RWA'})
@@ -2845,6 +2774,7 @@ def flag_missing_route():
     """
     try:
         payload = request.get_json()
+        full_path = payload.get('full_path', [])
         logs_to_check = payload.get('logs_to_check', [])
 
         # --- LOGIKA PATH FLEKSIBEL ---
@@ -2854,7 +2784,7 @@ def flag_missing_route():
         if not file_paths and selected_wells:
             # Fallback untuk Dashboard
             file_paths = [os.path.join(
-                WELLS_DIR, f"{well}.csv") for well in selected_wells]
+                full_path, f"{well}.csv") for well in selected_wells]
 
         if not file_paths or not logs_to_check:
             return jsonify({"error": "File/sumur dan log harus dipilih."}), 400
@@ -3001,7 +2931,6 @@ def get_well_folder_files_route(field_name: str, structure_name: str, well_folde
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-
 @app.route('/api/get-module1-plot', methods=['POST', 'OPTIONS'])
 def get_module1_plot():
     if request.method == 'OPTIONS':
@@ -3010,29 +2939,51 @@ def get_module1_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
-
-            # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)
-            file_path = request_data.get('file_path')
+            file_path = request_data.get('file_path') # Gunakan .get() tanpa default value agar bisa None
             selected_wells = request_data.get('selected_wells', [])
-            selected_intervals = request_data.get('selected_intervals', [])
+            # selected_intervals = request_data.get('selected_intervals', []) # Belum digunakan, tapi biarkan saja
 
+            # 1. Inisialisasi df sebagai None
+            df = None
+
+            # 2. Gunakan struktur if/elif/else yang jelas
             if file_path:
-                # DirectorySidebar mode - single file
+                print(f"Mode: File Path. Path: {file_path}")
                 if not os.path.exists(file_path):
                     return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
                 df = pd.read_csv(file_path, on_bad_lines='warn')
 
-            # Call plotting function with processed data
-            fig_result = plot_module1(df=df)
+            elif selected_wells:
+                print(f"Mode: Selected Wells. Wells: {selected_wells}")
+                # 3. Implementasikan logika untuk menangani multiple wells
+                # CONTOH: Baca semua file dan gabungkan menjadi satu DataFrame
+                list_of_dfs = []
+                for well_path in selected_wells:
+                    if os.path.exists(well_path):
+                        well_df = pd.read_csv(well_path, on_bad_lines='warn')
+                        list_of_dfs.append(well_df)
+                
+                if not list_of_dfs:
+                     return jsonify({"error": "Tidak ada file valid yang ditemukan dari selected_wells"}), 404
+                
+                # Gabungkan semua dataframe menjadi satu
+                df = pd.concat(list_of_dfs, ignore_index=True)
 
-            # Send finished plot as JSON
-            return jsonify(fig_result.to_json())
+            else:
+                # Kasus jika tidak ada file_path atau selected_wells yang diberikan
+                return jsonify({"error": "Request harus menyertakan 'file_path' atau 'selected_wells'"}), 400
+
+            # 4. Hanya panggil plot jika df berhasil dibuat
+            if df is not None and not df.empty:
+                fig_result = plot_module1(df=df)
+                return jsonify(fig_result.to_json())
+            else:
+                return jsonify({"error": "Gagal memproses data atau data kosong."}), 500
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
-
 
 @app.route('/api/get-normalization-prep-plot', methods=['POST', 'OPTIONS'])
 def get_normalization_prep_plot():
@@ -3155,6 +3106,7 @@ def fill_flagged_route():
     try:
         payload = request.get_json()
         file_paths = payload.get('file_paths', [])
+        full_path = payload.get('full_path', [])
         selected_wells = payload.get('selected_wells', [])
         logs_to_fill = payload.get('logs_to_fill', [])
         max_consecutive = payload.get('max_consecutive_nan', 3)
@@ -3164,7 +3116,7 @@ def fill_flagged_route():
             print(
                 f"Dashboard Request: Building paths from selected_wells: {selected_wells}")
             file_paths = [os.path.join(
-                WELLS_DIR, f"{well}.csv") for well in selected_wells]
+                full_path, f"{well}.csv") for well in selected_wells]
 
         if not file_paths or not logs_to_fill:
             return jsonify({"error": "Files (or wells) and logs must be selected."}), 400
@@ -3196,12 +3148,13 @@ def get_fill_missing_plot():
     try:
         payload = request.get_json()
         file_paths = payload.get('file_paths', [])
+        full_path = payload.get('full_path', [])
         selected_wells = payload.get('selected_wells', [])
 
         # Fallback untuk Dashboard
         if not file_paths and selected_wells:
             file_paths = [os.path.join(
-                WELLS_DIR, f"{w}.csv") for w in selected_wells]
+                full_path, f"{w}.csv") for w in selected_wells]
 
         if not file_paths:
             return jsonify({'error': 'No files or wells were selected to plot.'}), 400
@@ -3241,6 +3194,7 @@ def get_module3_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
+            full_path = request_data.get('full_path', '')
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
 
@@ -3249,7 +3203,7 @@ def get_module3_plot():
 
             # Baca dan gabungkan data
             df_list = [pd.read_csv(os.path.join(
-                WELLS_DIR, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
             # df = df.rename(columns={'VSH_GR': 'VSH_LINEAR', 'RWA_FULL': 'RWA'})

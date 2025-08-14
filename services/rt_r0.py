@@ -6,139 +6,175 @@ import pandas as pd
 # from scipy.stats import linregress
 
 
+import numpy as np
+import pandas as pd
+
+
 def calculate_iqual(df):
     """
-    Menghitung IQUAL berdasarkan kondisi:
-    IF (PHIE>0.1)&&(VSH<0.5): IQUAL =1
-    else: IQUAL =0
+    Menghitung IQUAL berdasarkan kondisi: PHIE > 0.1 AND VSH < 0.5.
     """
-    # Fungsi ini sudah benar dan tidak perlu diubah
-    df = df.copy()
-    df['IQUAL'] = np.where((df['PHIE'] > 0.1) & (df['VSH'] < 0.5), 1, 0)
-    return df
+    df_copy = df.copy()
+    # Pastikan kolom yang dibutuhkan ada
+    if 'PHIE' in df_copy.columns and 'VSH' in df_copy.columns:
+        df_copy['IQUAL'] = np.where(
+            (df_copy['PHIE'] > 0.1) & (df_copy['VSH'] < 0.5), 1, 0)
+    else:
+        # Jika kolom tidak ada, IQUAL diisi 0 agar tidak error
+        df_copy['IQUAL'] = 0
+        print("Peringatan: Kolom 'PHIE' atau 'VSH' tidak ditemukan, IQUAL diatur ke 0.")
+    return df_copy
 
 
 def calculate_R0(df):
     """
-    Menghitung R0 dan parameter terkait sesuai dengan Loglan ro.lls.
+    Menghitung R0 dan parameter terkait.
     """
-    # --- PERBAIKAN UTAMA DI SINI ---
+    df_copy = df.copy()
+    # Pastikan semua kolom yang dibutuhkan untuk kalkulasi ada
+    required_cols = ['PHIE', 'M', 'A', 'RWA_FULL', 'VSH', 'RTSH', 'RT']
+    if not all(col in df_copy.columns for col in required_cols):
+        print("Peringatan: Kolom yang dibutuhkan untuk kalkulasi R0 tidak lengkap. Melewatkan.")
+        # Kembalikan kolom kosong agar tidak error saat merge
+        df_copy['R0'] = np.nan
+        df_copy['RTR0'] = np.nan
+        return df_copy
 
-    # 1. Hitung Rwa sesuai Loglan
-    # df['RWA'] = df['RT'] * (df['PHIE']**df['M'])
+    aa = (df_copy['PHIE']**df_copy['M']) / (df_copy['A'] * df_copy['RWA_FULL'])
+    cc = 2 - df_copy['VSH']
+    bb = (df_copy['VSH']**cc) / df_copy['RTSH']
 
-    # 2. Perbaiki rumus 'aa' untuk menggunakan RW, bukan RWA_FULL
-    aa = (df['PHIE']**df['M']) / (df['A'] * df['RWA_FULL'])
+    # Hindari pembagian dengan nol atau nilai invalid
+    denominator = aa + 2 * (aa * bb)**0.5 + bb
+    R0 = np.where(denominator != 0, 1 / denominator, np.nan)
 
-    # Rumus bb dan cc sudah benar
-    cc = 2 - df['VSH']
-    bb = (df['VSH']**cc) / df['RTSH']
-
-    # Rumus R0 sudah benar (ini adalah bentuk sederhana dari (1/(sqrt(aa)+sqrt(bb)))**2)
-    R0 = 1 / (aa + 2 * (aa * bb)**0.5 + bb)
-
-    # Simpan hasil ke DataFrame
-    df['R0'] = R0
-    df['RTR0'] = df['RT'] - df['R0']
-
-    # --- AKHIR PERBAIKAN ---
-    return df
+    df_copy['R0'] = R0
+    df_copy['RTR0'] = df_copy['RT'] - df_copy['R0']
+    return df_copy
 
 
 def analyze_rtr0_groups(df):
     """
-    Analisis RTR0 untuk setiap group, dihitung menggunakan rumus gradien manual
-    sesuai dengan Loglan rt_ro.lls.
+    Menganalisis gradien untuk setiap grup data reservoir (IQUAL=1).
     """
     results_rtr0 = []
+    # Proses hanya pada data di mana IQUAL = 1
+    df_reservoir = df[df['IQUAL'] == 1].copy()
 
-    # Proses hanya pada data di mana IQUAL = 1, sesuai Loglan
-    df_reservoir = df[df['IQUAL'] == 1]
+    if df_reservoir.empty or 'GROUP_ID' not in df_reservoir.columns:
+        return pd.DataFrame()
 
     for group_id, group in df_reservoir.groupby('GROUP_ID'):
         n = len(group)
-
-        # Hanya proses grup jika memiliki lebih dari 1 titik data
         if n <= 1:
             continue
 
-        try:
-            # Perhitungan untuk gradien RT vs R0 (rttorogradient)
-            sxa = group['R0'].sum()
-            sya = group['RT'].sum()
-            sxya = (group['R0'] * group['RT']).sum()
-            sx2a = (group['R0']**2).sum()
+        # Perhitungan gradien RT vs R0
+        sxa = group['R0'].sum()
+        sya = group['RT'].sum()
+        sxya = (group['R0'] * group['RT']).sum()
+        sx2a = (group['R0']**2).sum()
+        denominator_a = (sxa * sxa - n * sx2a)
+        slope_rt2r0 = (sxa * sya - n * sxya) / \
+            denominator_a if denominator_a != 0 else np.nan
 
-            denominator_a = (sxa * sxa - n * sx2a)
-            slope_rt2r0 = (sxa * sya - n * sxya) / \
-                denominator_a if denominator_a != 0 else np.nan
+        # Perhitungan gradien PHIE vs RTR0
+        sxb = group['PHIE'].sum()
+        syb = group['RTR0'].sum()
+        sxyb = (group['PHIE'] * group['RTR0']).sum()
+        sx2b = (group['PHIE']**2).sum()
+        denominator_b = (sxb * sxb - n * sx2b)
+        slope_phie2rtr0 = (sxb * syb - n * sxyb) / \
+            denominator_b if denominator_b != 0 else np.nan
 
-            # Perhitungan untuk gradien PHIE vs RTR0 (rtrotophiegradient)
-            sxb = group['PHIE'].sum()
-            syb = group['RTR0'].sum()
-            sxyb = (group['PHIE'] * group['RTR0']).sum()
-            sx2b = (group['PHIE']**2).sum()
+        fluid_rtrophie = 'G' if slope_phie2rtr0 > 0 else 'W' if not pd.isna(
+            slope_phie2rtr0) else np.nan
 
-            denominator_b = (sxb * sxb - n * sx2b)
-            slope_phie2rtr0 = (sxb * syb - n * sxyb) / \
-                denominator_b if denominator_b != 0 else np.nan
+        results_rtr0.append({
+            'GROUP_ID': group_id,
+            'RT_R0_GRAD': slope_rt2r0,
+            'PHIE_RTR0_GRAD': slope_phie2rtr0,
+            'FLUID_RTROPHIE': fluid_rtrophie
+        })
 
-            if np.isnan(slope_phie2rtr0) or np.isinf(slope_phie2rtr0):
-                continue
-
-            fluid_rtrophie = 'G' if slope_phie2rtr0 > 0 else 'W'
-
-            results_rtr0.append({
-                'GROUP_ID': group_id,
-                'RT_R0_GRAD': slope_rt2r0,
-                'PHIE_RTR0_GRAD': slope_phie2rtr0,
-                'FLUID_RTROPHIE': fluid_rtrophie
-            })
-
-        except Exception as e:
-            print(f"Warning: Error processing group {group_id}: {str(e)}")
-            continue
-
-    if not results_rtr0:
-        return pd.DataFrame(columns=['GROUP_ID', 'RT_R0_GRAD', 'PHIE_RTR0_GRAD', 'FLUID_RTROPHIE'])
-
-    return pd.DataFrame(results_rtr0)
+    return pd.DataFrame(results_rtr0) if results_rtr0 else pd.DataFrame()
 
 
-def process_rt_r0(df, params=None):
+def process_rt_r0(df: pd.DataFrame, params: dict = None, target_intervals: list = None, target_zones: list = None) -> pd.DataFrame:
     """
-    Fungsi utama untuk memproses analisis RT-R0.
+    Fungsi utama untuk memproses analisis RT-R0, dengan penanganan filter internal.
     """
     if params is None:
         params = {}
 
     try:
-        # Tambahkan parameter default jika belum ada di DataFrame
-        # (Logika ini bisa disesuaikan sesuai kebutuhan)
-        default_params = {'A': 1.0, 'M': 2.0, 'N': 2.0, 'RTSH': 2.2}
+        df_final = df.copy()
+
+        # 1. Tentukan baris mana yang akan diproses berdasarkan filter
+        mask = pd.Series(True, index=df_final.index)
+        has_filters = False
+        if target_intervals and 'MARKER' in df_final.columns:
+            mask = df_final['MARKER'].isin(target_intervals)
+            has_filters = True
+        if target_zones and 'ZONE' in df_final.columns:
+            mask = (mask | df_final['ZONE'].isin(
+                target_zones)) if has_filters else df_final['ZONE'].isin(target_zones)
+
+        # Buat DataFrame kerja dari baris yang dipilih
+        df_to_process = df_final[mask].copy()
+        if df_to_process.empty:
+            print("Peringatan: Tidak ada data yang cocok dengan filter yang dipilih.")
+            return df_final
+
+        # 2. Lakukan semua perhitungan pada DataFrame kerja
+        default_params = {'A': 1.0, 'M': 2.0,
+                          'N': 2.0, 'RTSH': 2.2, 'RWA_FULL': 0.1}
         for p, val in default_params.items():
-            if p not in df.columns:
-                df[p] = params.get(f'{p}_PARAM', val)
+            if p not in df_to_process.columns:
+                df_to_process[p] = params.get(f'{p}_PARAM', val)
 
-        # Urutan proses sudah benar sesuai Loglan
-        df = calculate_iqual(df)
-        df = calculate_R0(df)
-        df['GROUP_ID'] = (df['IQUAL'].diff() != 0).cumsum()
-        df_results_rtr0 = analyze_rtr0_groups(df)
+        df_to_process = calculate_iqual(df_to_process)
+        df_to_process = calculate_R0(df_to_process)
+        df_to_process['GROUP_ID'] = (
+            df_to_process['IQUAL'].diff() != 0).cumsum()
 
-        # Hapus kolom lama sebelum merge untuk menghindari duplikasi
-        cols_to_drop = ['RT_R0_GRAD', 'PHIE_RTR0_GRAD', 'FLUID_RTROPHIE']
-        df.drop(
-            columns=[col for col in cols_to_drop if col in df.columns], inplace=True)
+        df_results_rtr0 = analyze_rtr0_groups(df_to_process)
 
         if not df_results_rtr0.empty:
-            df = df.merge(df_results_rtr0, on='GROUP_ID', how='left')
+            df_to_process = df_to_process.merge(
+                df_results_rtr0, on='GROUP_ID', how='left')
 
-        return df
+        # 3. Gabungkan hasilnya kembali ke DataFrame lengkap
+        # Kolom yang akan di-update atau ditambahkan
+        result_cols = [
+            'IQUAL', 'R0', 'RTR0', 'GROUP_ID',
+            'RT_R0_GRAD', 'PHIE_RTR0_GRAD', 'FLUID_RTROPHIE'
+        ]
+        # Pastikan hanya kolom yang ada di df_to_process yang akan di-merge
+        cols_to_merge = [
+            col for col in result_cols if col in df_to_process.columns]
+
+        # Hapus kolom lama dari df_final untuk menghindari konflik
+        df_final = df_final.drop(columns=cols_to_merge, errors='ignore')
+
+        # Gunakan 'DEPTH' sebagai kunci unik untuk merge
+        if 'DEPTH' in df_to_process.columns:
+            df_final = pd.merge(
+                df_final,
+                df_to_process[['DEPTH'] + cols_to_merge],
+                on='DEPTH',
+                how='left'
+            )
+        else:
+            print(
+                "Error: Kolom 'DEPTH' tidak ditemukan, tidak dapat menggabungkan hasil.")
+            return df
+
+        return df_final
+
     except Exception as e:
-        print(f"Error in process_rt_r0: {e}")
+        print(f"Error dalam process_rt_r0: {e}")
         raise e
-
 
 # # In your services/rt_r0.py file
 

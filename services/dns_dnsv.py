@@ -2,15 +2,7 @@
 
 import os
 import pandas as pd
-from flask import Flask, request, jsonify
 from services.autoplot import calculate_nphi_rhob_intersection
-# Assuming your plot function is here
-from services.dns_dnsv_plot import plot_dns_dnsv
-
-# --- Configuration ---
-app = Flask(__name__)
-
-# --- Calculation Functions (Your existing code) ---
 
 
 def dns(rhob_in, nphi_in):
@@ -25,132 +17,77 @@ def dnsv(rhob_in, nphi_in, rhob_sh, nphi_sh, vsh):
     return ((2.71 - rhob_corv) / 1.71) - nphi_corv
 
 
-def process_dns_dnsv(df, params=None):
-    """Main function to process DNS-DNSV analysis"""
+def process_dns_dnsv(df: pd.DataFrame, params: dict = None, target_intervals: list = None, target_zones: list = None) -> pd.DataFrame:
+    """
+    Main function to process DNS-DNSV analysis with internal filtering.
+    """
     if params is None:
         params = {}
 
     try:
-        # Safely get parameters with defaults
+        df_processed = df.copy()
+
+        # 1. Prepare data and parameters
+        # Make process idempotent by dropping old results
+        df_processed.drop(columns=['DNS', 'DNSV'],
+                          inplace=True, errors='ignore')
+
+        # Rename VSH_LINEAR if it exists and VSH does not
+        if 'VSH_LINEAR' in df_processed.columns and 'VSH' not in df_processed.columns:
+            df_processed['VSH'] = df_processed['VSH_LINEAR']
+
+        # Ensure required columns exist before proceeding
+        required_cols = ['RHOB', 'NPHI', 'VSH']
+        if not all(col in df_processed.columns for col in required_cols):
+            print(
+                "Warning: Required columns (RHOB, NPHI, VSH) not found. Skipping calculation.")
+            return df
+
+        # Coerce to numeric, turning errors into NaN
+        for col in required_cols:
+            df_processed[col] = pd.to_numeric(
+                df_processed[col], errors='coerce')
+
+        # Calculate shale point from the full dataset for consistency
         shale_point = calculate_nphi_rhob_intersection(
-            df, params.get('prcntz_qz', 5), params.get('prcntz_wtr', 5))
+            df_processed, params.get(
+                'prcntz_qz', 5), params.get('prcntz_wtr', 5)
+        )
         nphi_sh = shale_point['nphi_sh']
         rhob_sh = shale_point['rhob_sh']
 
-        # First rename VSH_LINEAR to VSH if it exists
-        if 'VSH_LINEAR' in df.columns and 'VSH' not in df.columns:
-            df['VSH'] = df['VSH_LINEAR']
+        # 2. Create a mask to select rows for calculation
+        mask = pd.Series(True, index=df_processed.index)
+        has_filters = False
+        if target_intervals and 'MARKER' in df_processed.columns:
+            mask = df_processed['MARKER'].isin(target_intervals)
+            has_filters = True
+        if target_zones and 'ZONE' in df_processed.columns:
+            zone_mask = df_processed['ZONE'].isin(target_zones)
+            mask = (mask | zone_mask) if has_filters else zone_mask
 
-        # Ensure required columns are numeric, coercing errors
-        for col in ['RHOB', 'NPHI', 'VSH']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+        # Also, ensure we only calculate on valid data points
+        valid_data_mask = df_processed[required_cols].notna().all(axis=1)
+        final_mask = mask & valid_data_mask
 
-        # Drop rows where essential data is missing after coercion
-        df.dropna(subset=['RHOB', 'NPHI', 'VSH'], inplace=True)
+        if not final_mask.any():
+            print(
+                "Warning: No data matched the filter criteria. No calculations performed.")
+            return df
 
-        # Calculate DNS and DNSV
-        df['DNS'] = dns(df['RHOB'], df['NPHI'])
-        df['DNSV'] = dnsv(df['RHOB'], df['NPHI'], rhob_sh, nphi_sh, df['VSH'])
+        # 3. Perform calculations only on the masked (selected) rows
+        print(f"Calculating DNS-DNSV for {final_mask.sum()} rows.")
 
-        return df
+        rhob_masked = df_processed.loc[final_mask, 'RHOB']
+        nphi_masked = df_processed.loc[final_mask, 'NPHI']
+        vsh_masked = df_processed.loc[final_mask, 'VSH']
+
+        df_processed.loc[final_mask, 'DNS'] = dns(rhob_masked, nphi_masked)
+        df_processed.loc[final_mask, 'DNSV'] = dnsv(
+            rhob_masked, nphi_masked, rhob_sh, nphi_sh, vsh_masked)
+
+        return df_processed
 
     except Exception as e:
         print(f"Error in process_dns_dnsv: {str(e)}")
         raise e
-
-# --- API Endpoints ---
-
-
-@app.route('/api/run-dns-dnsv', methods=['POST', 'OPTIONS'])
-def run_dns_dnsv_calculation():
-    """
-    Endpoint for running DNS-DNSV calculations on selected wells.
-    """
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-
-    if request.method == 'POST':
-        try:
-            payload = request.get_json()
-            params = payload.get('params', {})
-            full_path = payload.get('full_path', '')
-            selected_wells = payload.get('selected_wells', [])
-
-            if not selected_wells:
-                return jsonify({"error": "No wells selected."}), 400
-
-            print(
-                f"Starting DNS-DNSV calculation for {len(selected_wells)} wells...")
-
-            for well_name in selected_wells:
-                file_path = os.path.join(full_path, f"{well_name}.csv")
-
-                if not os.path.exists(file_path):
-                    print(
-                        f"Warning: Skipping well {well_name}, file not found.")
-                    continue
-
-                # --- FIX APPLIED HERE ---
-                # Read the CSV file while handling potential malformed lines.
-                # 'warn': Will print a warning for each bad line but continue processing.
-                # 'skip': Will silently skip bad lines. 'warn' is better for debugging.
-                try:
-                    df_well = pd.read_csv(file_path, on_bad_lines='warn')
-                except Exception as e:
-                    print(
-                        f"Could not process file for well {well_name}. Error: {e}")
-                    continue
-                # --- END OF FIX ---
-
-                columns_to_drop = ['DNS', 'DNSV']
-                df_well.drop(
-                    columns=[col for col in columns_to_drop if col in df_well.columns], inplace=True)
-
-                df_processed = process_dns_dnsv(df_well, params)
-
-                df_processed.to_csv(file_path, index=False)
-                print(
-                    f"DNS-DNSV results for well '{well_name}' have been saved.")
-
-            return jsonify({"message": f"DNS-DNSV calculation successful for {len(selected_wells)} wells."}), 200
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/get-dns-dnsv-plot', methods=['POST', 'OPTIONS'])
-def get_dns_dnsv_plot():
-    """
-    Endpoint for generating and returning the DNS-DNSV plot for selected wells.
-    """
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-
-    try:
-        request_data = request.get_json()
-        full_path = request_data.get('full_path', '')
-        selected_wells = request_data.get('selected_wells', [])
-
-        if not selected_wells:
-            return jsonify({"error": "No wells selected."}), 400
-
-        # Read and combine data from the selected wells
-        df_list = [pd.read_csv(os.path.join(
-            full_path, f"{well}.csv")) for well in selected_wells]
-        df_combined = pd.concat(df_list, ignore_index=True)
-
-        # Generate the plot using your existing function
-        fig = plot_dns_dnsv(df_combined)
-
-        # Return the plot as a JSON object
-        return jsonify(fig.to_json())
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-# Your plotting function (plot_dns_dnsv) and its helpers
-# from services.plotting_service would be defined here or imported.

@@ -250,7 +250,6 @@ def calculate_regression_coefficients(df_well: pd.DataFrame, df_gr_cap: pd.DataF
     # Apply lithology filter if the column exists
     if lith_col in df_well_sorted.columns:
         mask &= ~df_well_sorted[lith_col].str.upper().isin(excluded_lithologies)
-
     df_reg_data = df_well_sorted[mask].copy()
 
     npoints = int(params.get('SLIDING_WINDOW', 100)) * 2
@@ -270,7 +269,6 @@ def calculate_regression_coefficients(df_well: pd.DataFrame, df_gr_cap: pd.DataF
 
         X = np.vstack([gr_scaled, gr_scaled**2, gr_scaled**3]).T
         y = log_rt
-
         try:
             model = LinearRegression().fit(X, y)
             if hasattr(model, 'coef_') and len(model.coef_) == 3:
@@ -335,7 +333,7 @@ def calculate_and_merge_rgsa(df_well: pd.DataFrame, df_coeffs: pd.DataFrame, par
     # Handle missing values where input GR is missing
     df_merged.loc[df_merged[gr_col].isna(), 'RGSA'] = np.nan
 
-    # Calculate gas effect columns
+    # Hitung kolom efek gas
     if rt_col in df_merged and 'RGSA' in df_merged:
         df_merged['GAS_EFFECT_RT'] = (df_merged[rt_col] > df_merged['RGSA'])
         df_merged['RT_RATIO'] = df_merged[rt_col] / df_merged['RGSA']
@@ -343,7 +341,6 @@ def calculate_and_merge_rgsa(df_well: pd.DataFrame, df_coeffs: pd.DataFrame, par
 
     print("INFO: Pass 3 Complete.")
     return df_merged
-
 
 # --- ORCHESTRATOR FUNCTION ---
 def process_all_wells_rgsa(df_well: pd.DataFrame, params: Dict) -> pd.DataFrame:

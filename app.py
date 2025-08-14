@@ -148,6 +148,7 @@ GWD_DIR = 'data/gwd'
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(PROJECT_ROOT, 'data')
 
+
 @app.route('/api/list-zones', methods=['POST'])
 def list_zones():
     """
@@ -357,7 +358,7 @@ def get_intersection_point():
     try:
         payload = request.get_json()
         selected_wells = payload.get('selected_wells', [])
-        full_path = payload.get('full_path', []) 
+        full_path = payload.get('full_path', [])
         selected_intervals = payload.get('selected_intervals', [])
         prcnt_qz = float(payload.get('prcnt_qz', 5))
         prcnt_wtr = float(payload.get('prcnt_wtr', 5))
@@ -561,7 +562,7 @@ def run_interval_normalization():
     try:
         payload = request.get_json()
         params = payload.get('params', {})
-        full_path = payload.get('full_path', [])  
+        full_path = payload.get('full_path', [])
         file_paths = payload.get('file_paths', [])
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
@@ -805,42 +806,28 @@ def run_vsh_calculation():
 
             # Loop melalui setiap sumur yang dipilih
             for well_name in selected_wells:
-                file_path = os.path.join(
-                    full_path, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
                     print(
                         f"Peringatan: Melewatkan sumur {file_path}, file tidak ditemukan.")
                     continue
 
-                # Baca data sumur
+                # Baca data sumur secara lengkap, tanpa difilter di sini
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by interval.")
-
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(
-                            selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
-
-                # Panggil fungsi logika untuk menghitung VSH
+                # Panggil fungsi logika untuk menghitung VSH dan teruskan filter sebagai argumen
                 df_updated = calculate_vsh_from_gr(
-
-                    df_well, input_log, gr_ma, gr_sh, output_log,
-                    # marker_column='MARKER',  # atau sesuaikan jika kolom marker berbeda
-                    # target_markers=selected_intervals
+                    df=df_well,
+                    gr_log=input_log,
+                    gr_ma=gr_ma,
+                    gr_sh=gr_sh,
+                    output_col=output_log,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
                 )
 
-                # Simpan (overwrite) file CSV dengan data yang sudah diperbarui
+                # Simpan (overwrite) file CSV dengan DataFrame LENGKAP yang sudah diperbarui
                 df_updated.to_csv(file_path, index=False)
                 print(f"Hasil VSH untuk sumur '{well_name}' telah disimpan.")
 
@@ -864,7 +851,7 @@ def run_porosity_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
-            full_path = payload.get('full_path', [])
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -872,39 +859,22 @@ def run_porosity_calculation():
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
-            # Loop melalui setiap sumur yang dipilih
             for well_name in selected_wells:
-                file_path = os.path.join(
-                    full_path, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
+                    print(
+                        f"Peringatan: Melewatkan sumur {file_path}, file tidak ditemukan.")
                     continue
 
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(
-                            selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
-
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by interval.")
-
-                # Panggil fungsi logika untuk menghitung Porositas
                 df_updated = calculate_porosity(
-                    df_well, params,
-                    # marker_column='MARKER',
-                    # target_markers=selected_intervals
+                    df=df_well,
+                    params=params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
                 )
 
-                # Simpan (overwrite) file CSV dengan data yang sudah diperbarui
                 df_updated.to_csv(file_path, index=False)
                 print(
                     f"Hasil Porositas untuk sumur '{well_name}' telah disimpan.")
@@ -970,53 +940,48 @@ def get_porosity_plot():
 
 def _run_gsa_process(payload, gsa_function_to_run):
     """
-    A generic helper to run a specific GSA process (RGSA, NGSA, or DGSA).
-
-    Args:
-        payload (dict): The JSON payload from the frontend request.
-        gsa_function_to_run (function): The specific processing function to execute.
+    Helper generik untuk menjalankan proses GSA (RGSA, NGSA, atau DGSA).
     """
-    params = payload.get('params', {})
-    full_path = payload.get('full_path', '') 
-    selected_wells = payload.get('selected_wells', [])
-    selected_intervals = payload.get('selected_intervals', [])
-    selected_zones = payload.get('selected_zones', [])
+    try:
+        params = payload.get('params', {})
+        full_path = payload.get('full_path', '')
+        selected_wells = payload.get('selected_wells', [])
+        selected_intervals = payload.get('selected_intervals', [])
+        selected_zones = payload.get('selected_zones', [])
 
-    if not selected_wells:
-        return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+        if not selected_wells:
+            return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
-    for well_name in selected_wells:
-        file_path = os.path.join(full_path, f"{well_name}.csv")
-        if not os.path.exists(file_path):
-            print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
-            continue
+        for well_name in selected_wells:
+            file_path = os.path.join(full_path, f"{well_name}.csv")
+            if not os.path.exists(file_path):
+                print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
+                continue
 
-        df_well = pd.read_csv(file_path, on_bad_lines='warn')
+            # Baca seluruh data sumur tanpa filtering
+            df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-        if selected_zones:
-            if 'ZONE' in df_well.columns:
-                df_well = df_well[df_well['ZONE'].isin(selected_zones)]
-            else:
-                print("Warning: 'ZONE' column not found, cannot filter by zone.")
+            # --- PERUBAHAN KUNCI ---
+            # Hapus semua blok filtering dari sini.
+            # Panggil fungsi pemroses dan teruskan filter sebagai argumen.
+            df_processed = gsa_function_to_run(
+                df_well,
+                params,
+                target_intervals=selected_intervals,
+                target_zones=selected_zones
+            )
+            # --- AKHIR PERUBAHAN KUNCI ---
 
-        if selected_intervals:
-            if 'MARKER' in df_well.columns:
-                df_well = df_well[df_well['MARKER'].isin(selected_intervals)]
-            else:
-                print("Warning: 'MARKER' column not found, cannot filter by interval.")
+            # Simpan hasil kembali ke file, sekarang berisi data lengkap
+            df_processed.to_csv(file_path, index=False)
+            print(f"Hasil untuk sumur '{well_name}' telah disimpan.")
 
-        # Call the specific processing function passed as an argument
-        df_processed = gsa_function_to_run(
-            df_well, params
-        )
+        return jsonify({"message": f"Kalkulasi berhasil untuk {len(selected_wells)} sumur."}), 200
 
-        # Save the result back to the file
-        df_processed.to_csv(file_path, index=False)
-        print(f"Hasil untuk sumur '{well_name}' telah disimpan.")
-
-    return jsonify({"message": f"Kalkulasi berhasil untuk {len(selected_wells)} sumur."}), 200
-
-# --- 1. New Endpoint for RGSA ---
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/run-rgsa', methods=['POST', 'OPTIONS'])
 def run_rgsa():
@@ -1031,8 +996,6 @@ def run_rgsa():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# --- 2. New Endpoint for NGSA ---
-
 
 @app.route('/api/run-ngsa', methods=['POST', 'OPTIONS'])
 def run_ngsa():
@@ -1046,8 +1009,6 @@ def run_ngsa():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
-# --- 3. New Endpoint for DGSA ---
 
 
 @app.route('/api/run-dgsa', methods=['POST', 'OPTIONS'])
@@ -1184,7 +1145,7 @@ def run_trim_well_log():
     try:
         data = request.get_json()
         params = data.get('params', {})
-        full_path = data.get('full_path', '')  
+        full_path = data.get('full_path', '')
         file_paths = data.get('file_paths', [])
         well_names = data.get('selected_wells', [])
 
@@ -1334,7 +1295,7 @@ def get_smoothing_plot():
 @app.route('/api/run-rgbe-rpbe', methods=['POST', 'OPTIONS'])
 def run_rgbe_rpbe_calculation():
     """
-    Endpoint for running RGBE-RPBE calculations on selected wells
+    Endpoint untuk menjalankan kalkulasi RGBE-RPBE pada sumur yang dipilih.
     """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
@@ -1343,17 +1304,17 @@ def run_rgbe_rpbe_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
-            full_path = payload.get('full_path', [])
+            # Harusnya string, bukan list
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
+
             if not selected_wells:
-                print(
-                    "[ERROR] /api/run-rgbe-rpbe: No wells selected (selected_wells is empty)")
-                return jsonify({"error": "Tidak ada sumur yang dipilih.", "detail": "selected_wells array is empty"}), 400
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
             print(
-                f"[INFO] /api/run-rgbe-rpbe: Starting calculation for {len(selected_wells)} wells: {selected_wells}")
+                f"[INFO] Memulai kalkulasi RGBE-RPBE untuk {len(selected_wells)} sumur.")
 
             for well_name in selected_wells:
                 file_path = os.path.join(full_path, f"{well_name}.csv")
@@ -1363,27 +1324,20 @@ def run_rgbe_rpbe_calculation():
                         f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
                     continue
 
-                # Read well data
+                # Baca seluruh data sumur, jangan difilter di sini
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by interval.")
 
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(
-                            selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
-                # Process RGBE-RPBE calculations
-                df_processed = process_rgbe_rpbe(df_well, params)
+                # --- PERUBAHAN KUNCI ---
+                # Panggil fungsi pemroses dengan DataFrame lengkap dan filter sebagai argumen
+                df_processed = process_rgbe_rpbe(
+                    df_well,
+                    params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
+                )
+                # --- AKHIR PERUBAHAN KUNCI ---
 
-                # Save back to CSV
+                # Simpan kembali DataFrame yang sudah diproses dan lengkap
                 df_processed.to_csv(file_path, index=False)
                 print(
                     f"Hasil RGBE-RPBE untuk sumur '{well_name}' telah disimpan.")
@@ -1450,7 +1404,7 @@ def get_rgbe_rpbe_plot():
 @app.route('/api/run-rt-r0', methods=['POST', 'OPTIONS'])
 def run_rt_r0_calculation():
     """
-    Endpoint for running RT-R0 calculations on selected wells
+    Endpoint untuk menjalankan kalkulasi RT-R0 pada sumur yang dipilih.
     """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
@@ -1478,31 +1432,22 @@ def run_rt_r0_calculation():
                         f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
                     continue
 
-                # Read well data
+                # Baca seluruh data sumur, jangan difilter di sini
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by interval.")
+                # Panggil fungsi pemroses dengan DataFrame lengkap dan filter sebagai argumen
+                df_processed = process_rt_r0(
+                    df_well,
+                    params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
+                )
 
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(
-                            selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
-
-                # Process RT-R0 calculations
-                df_processed = process_rt_r0(df_well, params)
+                # Ganti nama kolom sesuai permintaan
                 df_processed = df_processed.rename(
                     columns={'R0': 'RO', 'RTR0': 'RT_RO'})
 
-                # Save back to CSV
+                # Simpan kembali DataFrame yang sudah diproses dan lengkap
                 df_processed.to_csv(file_path, index=False)
                 print(f"Hasil RT-R0 untuk sumur '{well_name}' telah disimpan.")
 
@@ -1516,54 +1461,44 @@ def run_rt_r0_calculation():
 
 @app.route('/api/run-swgrad', methods=['POST', 'OPTIONS'])
 def run_swgrad_calculation():
-    """Endpoint for running SWGRAD calculations on selected wells."""
+    """Endpoint untuk menjalankan kalkulasi SWGRAD pada sumur yang dipilih."""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
     if request.method == 'POST':
         try:
             payload = request.get_json()
+            # Ambil parameter dari payload
             full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
+            params = payload.get('params', {})  # Ambil params untuk diteruskan
+
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
             for well_name in selected_wells:
                 file_path = os.path.join(full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
+                    print(
+                        f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
                     continue
 
-                # 1. Read data robustly
+                # 1. Baca seluruh data sumur, jangan difilter di sini
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-                # 2. Make the process idempotent by dropping old results
-                cols_to_drop = ['SWGRAD'] + \
-                    [f'SWARRAY_{i}' for i in range(1, 26)]
-                df_well.drop(columns=df_well.columns.intersection(
-                    cols_to_drop), inplace=True)
+                # --- PERUBAHAN KUNCI ---
+                # 2. Panggil fungsi pemroses dengan DataFrame lengkap dan filter sebagai argumen
+                df_processed = process_swgrad(
+                    df_well,
+                    params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
+                )
+                # --- AKHIR PERUBAHAN KUNCI ---
 
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by interval.")
-
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(
-                            selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
-
-                # 3. Process SWGRAD calculations
-                df_processed = process_swgrad(df_well)
-
-                # 4. Save back to CSV
+                # 3. Simpan kembali DataFrame yang sudah diproses dan lengkap
                 df_processed.to_csv(file_path, index=False)
                 print(
                     f"Hasil SWGRAD untuk sumur '{well_name}' telah disimpan.")
@@ -1579,7 +1514,7 @@ def run_swgrad_calculation():
 @app.route('/api/run-dns-dnsv', methods=['POST', 'OPTIONS'])
 def run_dns_dnsv_calculation():
     """
-    Endpoint for running DNS-DNSV calculations on selected wells
+    Endpoint for running DNS-DNSV calculations on selected wells.
     """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
@@ -1588,56 +1523,42 @@ def run_dns_dnsv_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
-            full_path = payload.get('full_path', [])
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
-            # prcnt_qz = params.get('prcntz_qz', 5)
-            # prcnt_wtr = params.get('prcntz_wtr', 5)
-            print(payload)
 
             if not selected_wells:
-                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+                return jsonify({"error": "No wells selected."}), 400
 
             print(
-                f"Memulai kalkulasi DNS-DNSV untuk {len(selected_wells)} sumur...")
+                f"Starting DNS-DNSV calculation for {len(selected_wells)} wells...")
 
             for well_name in selected_wells:
                 file_path = os.path.join(full_path, f"{well_name}.csv")
 
                 if not os.path.exists(file_path):
                     print(
-                        f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                        f"Warning: Skipping well {well_name}, file not found.")
                     continue
 
-                # Read well data
+                # 1. Read the full well data without filtering
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by interval.")
+                # 2. Call the processing function with the full DataFrame and filters
+                df_processed = process_dns_dnsv(
+                    df_well,
+                    params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
+                )
 
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(
-                            selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
-
-                # Process DNS-DNSV calculations
-                df_processed = process_dns_dnsv(df_well, params)
-
-                # Save back to CSV
+                # 3. Save the processed, complete DataFrame back to the file
                 df_processed.to_csv(file_path, index=False)
                 print(
-                    f"Hasil DNS-DNSV untuk sumur '{well_name}' telah disimpan.")
+                    f"DNS-DNSV results for well '{well_name}' have been saved.")
 
-            return jsonify({"message": f"Kalkulasi DNS-DNSV berhasil untuk {len(selected_wells)} sumur."}), 200
+            return jsonify({"message": f"DNS-DNSV calculation successful for {len(selected_wells)} wells."}), 200
 
         except Exception as e:
             import traceback
@@ -1954,28 +1875,22 @@ def run_sw_calculation():
             for well_name in selected_wells:
                 file_path = os.path.join(full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
+                    print(
+                        f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
                     continue
 
+                # 1. Baca seluruh data sumur tanpa filtering
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by marker.")
+                # 2. Panggil fungsi kalkulasi dengan DataFrame lengkap dan filter
+                df_updated = calculate_sw(
+                    df_well,
+                    params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
+                )
 
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(
-                            selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
-
-                df_updated = calculate_sw(df_well, params)
-
+                # 3. Simpan kembali DataFrame yang sudah diproses
                 df_updated.to_csv(file_path, index=False)
                 print(f"Hasil SW untuk sumur '{well_name}' telah disimpan.")
 
@@ -1985,6 +1900,7 @@ def run_sw_calculation():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/run-sw-simandoux-calculation', methods=['POST', 'OPTIONS'])
 def run_sw_simandoux_calculation():
@@ -2005,37 +1921,35 @@ def run_sw_simandoux_calculation():
             for well_name in selected_wells:
                 file_path = os.path.join(full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
+                    print(
+                        f"Warning: Skipping well {well_name}, file not found.")
                     continue
 
+                # 1. Read the entire well data file without filtering
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by marker.")
+                # --- KEY CHANGE ---
+                # 2. Call the calculation function with the full DataFrame and filters
+                df_updated = calculate_sw_simandoux(
+                    df_well,
+                    params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
+                )
+                # --- END OF CHANGE ---
 
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(
-                            selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
-
-                df_updated = calculate_sw_simandoux(df_well, params)
-
+                # 3. Save the processed, complete DataFrame back to the file
                 df_updated.to_csv(file_path, index=False)
-                print(f"Hasil SW untuk sumur '{well_name}' telah disimpan.")
+                print(
+                    f"Hasil SW (Simandoux) untuk sumur '{well_name}' telah disimpan.")
 
-            return jsonify({"message": f"Kalkulasi Saturasi Air berhasil untuk {len(selected_wells)} sumur."})
+            return jsonify({"message": f"Kalkulasi Saturasi Air (Simandoux) berhasil untuk {len(selected_wells)} sumur."})
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/get-sw-plot', methods=['POST', 'OPTIONS'])
 def get_sw_plot():
@@ -2107,30 +2021,24 @@ def run_rwa_calculation():
             for well_name in selected_wells:
                 file_path = os.path.join(full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
+                    print(
+                        f"Warning: Skipping well {well_name}, file not found.")
                     continue
 
+                # 1. Read the entire well data file without filtering
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by interval.")
+                # --- KEY CHANGE ---
+                # 2. Call the calculation function with the full DataFrame and filters
+                df_updated = calculate_rwa(
+                    df_well,
+                    params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
+                )
+                # --- END OF CHANGE ---
 
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(
-                            selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
-
-                # Panggil fungsi logika untuk menghitung RWA
-                df_updated = calculate_rwa(df_well, params)
-
-                # Simpan kembali file CSV dengan kolom RWA baru
+                # 3. Save the processed, complete DataFrame back to the file
                 df_updated.to_csv(file_path, index=False)
                 print(f"Hasil RWA untuk sumur '{well_name}' telah disimpan.")
 
@@ -2196,7 +2104,7 @@ def run_vsh_dn_calculation():
         try:
             payload = request.get_json()
             params = payload.get('params', {})
-            full_path = payload.get('full_path', [])
+            full_path = payload.get('full_path', '')
             selected_wells = payload.get('selected_wells', [])
             selected_intervals = payload.get('selected_intervals', [])
             selected_zones = payload.get('selected_zones', [])
@@ -2205,27 +2113,26 @@ def run_vsh_dn_calculation():
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
 
             for well_name in selected_wells:
-                file_path = os.path.join(
-                    full_path, f"{well_name}.csv")
+                file_path = os.path.join(full_path, f"{well_name}.csv")
                 if not os.path.exists(file_path):
+                    print(
+                        f"Warning: Skipping well {well_name}, file not found.")
                     continue
 
+                # 1. Read the entire well data file without filtering
                 df_well = pd.read_csv(file_path, on_bad_lines='warn')
-                if selected_intervals:
-                    if 'MARKER' in df_well.columns:
-                        df_well = df_well[df_well['MARKER'].isin(
-                            selected_intervals)]
-                    else:
-                        print(
-                            "Warning: 'MARKER' column not found, cannot filter by interval.")
-                if selected_zones:
-                    if 'ZONE' in df_well.columns:
-                        df_well = df_well[df_well['ZONE'].isin(selected_zones)]
-                    else:
-                        print(
-                            "Warning: 'ZONE' column not found, cannot filter by zone.")
 
-                df_updated = calculate_vsh_dn(df_well, params)
+                # --- KEY CHANGE ---
+                # 2. Call the calculation function with the full DataFrame and filters
+                df_updated = calculate_vsh_dn(
+                    df_well,
+                    params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
+                )
+                # --- END OF CHANGE ---
+
+                # 3. Save the processed, complete DataFrame back to the file
                 df_updated.to_csv(file_path, index=False)
                 print(
                     f"Hasil VSH-DN untuk sumur '{well_name}' telah disimpan.")
@@ -2945,6 +2852,7 @@ def get_well_folder_files_route(field_name: str, structure_name: str, well_folde
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
 @app.route('/api/get-module1-plot', methods=['POST', 'OPTIONS'])
 def get_module1_plot():
     if request.method == 'OPTIONS':
@@ -2953,7 +2861,8 @@ def get_module1_plot():
     if request.method == 'POST':
         try:
             request_data = request.get_json()
-            file_path = request_data.get('file_path') # Gunakan .get() tanpa default value agar bisa None
+            # Gunakan .get() tanpa default value agar bisa None
+            file_path = request_data.get('file_path')
             selected_wells = request_data.get('selected_wells', [])
             # selected_intervals = request_data.get('selected_intervals', []) # Belum digunakan, tapi biarkan saja
 
@@ -2976,10 +2885,10 @@ def get_module1_plot():
                     if os.path.exists(well_path):
                         well_df = pd.read_csv(well_path, on_bad_lines='warn')
                         list_of_dfs.append(well_df)
-                
+
                 if not list_of_dfs:
-                     return jsonify({"error": "Tidak ada file valid yang ditemukan dari selected_wells"}), 404
-                
+                    return jsonify({"error": "Tidak ada file valid yang ditemukan dari selected_wells"}), 404
+
                 # Gabungkan semua dataframe menjadi satu
                 df = pd.concat(list_of_dfs, ignore_index=True)
 
@@ -2998,6 +2907,7 @@ def get_module1_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/get-normalization-prep-plot', methods=['POST', 'OPTIONS'])
 def get_normalization_prep_plot():

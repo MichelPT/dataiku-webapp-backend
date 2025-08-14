@@ -6,22 +6,35 @@ import pandas as pd
 # from scipy.stats import linregress
 
 
+import numpy as np
+import pandas as pd
+
+
 def indonesia_computation(rw_in, phie, ct, a, m, n, rtsh, vsh):
     """
     Fungsi untuk menghitung water saturation menggunakan metode Indonesia.
-    (Fungsi ini sudah benar dan tidak perlu diubah)
+    (Fungsi ini tidak perlu diubah)
     """
+    # Hindari nilai invalid pada input
+    if pd.isna(vsh) or pd.isna(phie) or pd.isna(ct) or pd.isna(rtsh):
+        return np.nan
+
     ddd = 2 - vsh
     aaa = vsh**ddd / rtsh
     bbb = phie**m / (a * rw_in)
-    ccc = 2 * np.sqrt((vsh**ddd * phie**m) / (a * rw_in * rtsh))
+
+    # Pastikan argumen untuk akar pangkat tidak negatif
+    sqrt_arg = (vsh**ddd * phie**m) / (a * rw_in * rtsh)
+    if sqrt_arg < 0:
+        ccc = 0  # Atau tangani sebagai error
+    else:
+        ccc = 2 * np.sqrt(sqrt_arg)
+
     denominator = aaa + bbb + ccc
 
-    # Hindari pembagian dengan nol
     if denominator == 0 or np.isclose(denominator, 0):
         return 1.0
 
-    # Hindari nilai negatif di dalam akar pangkat
     base = ct / denominator
     if base < 0:
         return 1.0
@@ -30,88 +43,99 @@ def indonesia_computation(rw_in, phie, ct, a, m, n, rtsh, vsh):
     return max(0.0, min(1.0, swe))
 
 
-def process_swgrad(df, params=None):
+def process_swgrad(df: pd.DataFrame, params: dict = None, target_intervals: list = None, target_zones: list = None) -> pd.DataFrame:
     """
-    Proses perhitungan SWGRAD untuk seluruh dataset sesuai dengan Loglan.
+    Memproses perhitungan SWGRAD, dengan filter internal untuk interval/zona.
     """
     if params is None:
         params = {}
 
     try:
-        # Inisialisasi kolom-kolom output
-        for i in range(1, 26):
-            df[f'SWARRAY_{i}'] = np.nan
-        df['SWGRAD'] = np.nan
+        df_processed = df.copy()
 
-        df['CT'] = 1 / df['RT']
+        # 1. Persiapan: Hapus kolom lama dan siapkan parameter
+        cols_to_drop = ['SWGRAD'] + [f'SWARRAY_{i}' for i in range(1, 26)]
+        df_processed.drop(columns=df_processed.columns.intersection(
+            cols_to_drop), inplace=True)
 
-        # Ambil parameter atau gunakan nilai default
+        # Inisialisasi kolom output dengan NaN
+        for col in cols_to_drop:
+            df_processed[col] = np.nan
+
+        # Pastikan kolom input ada
+        required_cols = ['RT', 'VSH', 'PHIE', 'DEPTH']
+        if not all(col in df_processed.columns for col in required_cols):
+            print(
+                "Peringatan: Kolom input (RT, VSH, PHIE, DEPTH) tidak lengkap. Melewatkan SWGRAD.")
+            return df
+
+        df_processed['CT'] = 1 / df_processed['RT']
+
         a = params.get('A', 1.0)
-        m = params.get('M', 2)
-        n = params.get('N', 2)
+        m = params.get('M', 2.0)
+        n = params.get('N', 2.0)
         rtsh = params.get('RTSH', 2.2)
         ftemp_const = params.get('FTEMP', 75.0)
 
-        # Siapkan data dari kolom DataFrame untuk pemrosesan berbasis vektor
-        vsh_vals = df['VSH'].values
-        phie_vals = df['PHIE'].values
-        ftemp_vals = ftemp_const + 0.05 * df['DEPTH'].values
-        ct_vals = df['CT'].values
+        # 2. Buat mask untuk memilih baris yang akan diproses
+        mask = pd.Series(True, index=df_processed.index)
+        has_filters = False
+        if target_intervals and 'MARKER' in df_processed.columns:
+            mask = df_processed['MARKER'].isin(target_intervals)
+            has_filters = True
+        if target_zones and 'ZONE' in df_processed.columns:
+            zone_mask = df_processed['ZONE'].isin(target_zones)
+            mask = (mask | zone_mask) if has_filters else zone_mask
 
-        # Proses perhitungan untuk setiap baris (setiap titik kedalaman)
-        for i in range(len(df)):
-            sw = np.zeros(26)  # Ukuran 26 untuk mengakomodasi indeks 1-25
+        # 3. Lakukan perhitungan HANYA pada baris yang cocok dengan mask
+        print(
+            f"Memproses SWGRAD untuk {mask.sum()} dari {len(df_processed)} baris.")
 
-            # Loop untuk menghitung SW pada 25 tingkat salinitas
+        # Loop hanya pada indeks yang dipilih oleh mask
+        for i in df_processed[mask].index:
+            sw = np.zeros(26)
+
+            # Ambil nilai sekali per baris untuk efisiensi
+            vsh_val = df_processed.at[i, 'VSH']
+            phie_val = df_processed.at[i, 'PHIE']
+            depth_val = df_processed.at[i, 'DEPTH']
+            ct_val = df_processed.at[i, 'CT']
+            ftemp_val = ftemp_const + 0.05 * depth_val
+
+            # Loop untuk 25 tingkat salinitas
             for j in range(1, 26):
                 sal_j = j * 1000.0
                 x_j = 0.0123 + 3647.5 / (sal_j**0.955)
-                rw_in = x_j * 81.77 / (ftemp_vals[i] + 6.77)
+                rw_in = x_j * 81.77 / (ftemp_val + 6.77)
 
                 sw[j] = indonesia_computation(
-                    rw_in, phie_vals[i], ct_vals[i], a, m, n, rtsh, vsh_vals[i]
-                )
-                df.at[i, f'SWARRAY_{j}'] = sw[j]
+                    rw_in, phie_val, ct_val, a, m, n, rtsh, vsh_val)
+                df_processed.at[i, f'SWARRAY_{j}'] = sw[j]
 
-            # Inisialisasi variabel sumasi seperti di Loglan
-            sx = 0
-            sx2 = 0
-            sy = 0
-            sxy = 0
-            n_grad = 0  # Jumlah titik untuk regresi
-
-            # Loop dari 1 hingga 25 untuk menghitung gradien
+            # Hitung gradien
+            sx, sx2, sy, sxy, n_grad = 0, 0, 0, 0, 0
             for j in range(1, 26):
-                # Loglan hanya menggunakan 3 titik, tapi kita bisa membuatnya dinamis
-                # Di sini kita akan mengikuti Loglan dan menggunakan semua 25 titik
-                # Anda bisa mengubah `range(1, 26)` jika ingin titik yang lebih spesifik
-
-                # Asumsikan sumbu x adalah salinitas (direpresentasikan oleh j)
-                x_val = j
-                # Sumbu y adalah nilai SW yang sesuai
-                y_val = sw[j]
-
-                # Lakukan sumasi hanya jika sw valid
-                if not np.isnan(y_val):
+                x_val, y_val = j, sw[j]
+                if not pd.isna(y_val):
                     sx += x_val
                     sx2 += x_val**2
                     sy += y_val
                     sxy += x_val * y_val
                     n_grad += 1
 
-            # Hitung gradien hanya jika ada cukup data
             if n_grad > 1:
                 denominator = (sx * sx - n_grad * sx2)
                 if denominator != 0:
-                    # Implementasi rumus gradien dari Loglan
                     swgrad = (sx * sy - n_grad * sxy) / denominator
-                    df.at[i, 'SWGRAD'] = swgrad
-            # --- AKHIR PERBAIKAN ---
+                    df_processed.at[i, 'SWGRAD'] = swgrad
 
-        return df
+        # Hapus kolom CT yang hanya sementara
+        df_processed.drop(columns=['CT'], inplace=True, errors='ignore')
+
+        return df_processed
 
     except Exception as e:
-        print(f"Error in process_swgrad: {str(e)}")
+        print(f"Error dalam process_swgrad: {str(e)}")
         raise e
 
 # import numpy as np

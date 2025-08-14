@@ -1018,7 +1018,6 @@ def _run_gsa_process(payload, gsa_function_to_run):
 
 # --- 1. New Endpoint for RGSA ---
 
-
 @app.route('/api/run-rgsa', methods=['POST', 'OPTIONS'])
 def run_rgsa():
     if request.method == 'OPTIONS':

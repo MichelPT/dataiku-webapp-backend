@@ -363,8 +363,7 @@ range_col = {
     'GR_SM': [[0, 250]],
     'GR_MovingAvg_5': [[0, 250]],
     'GR_MovingAvg_10': [[0, 250]],
-    'RT': [[0.02, 100]],
-    'RT': [[0.02, 100]],
+    'RT': [[0.2, 2000]],
     'RT_RO': [[0.02, 2000], [0.02, 2000]],
     'X_RT_RO': [[0, 4]],
     'NPHI_RHOB_NON_NORM': [[0.6, 0], [1.71, 2.71]],
@@ -2074,21 +2073,15 @@ def layout_range_all_axis(fig, axes, plot_sequence):
             elif key in ['RT_RO', 'PERM', 'RWAPP_RW', 'RT_F', 'RT_RHOB', 'RT_RGSA', 'RT', 'RT_GR', 'RT_PHIE', 'TGC', 'RWA']:
                 a = range_col[key][0][0]
                 b = range_col[key][0][1]
-                n = int(np.log10(b/a))
-                arr = list(np.arange(a, 0.1, 0.01))
-                for j in range(n-1):
-                    arr = arr + list(np.arange(10**(j-1), 10**j, 10**(j-1)))
-                arr = arr + list(np.arange(1000, b+1, 1000))
-
+                arr = log_tickvals(a, b)
                 fig.update_layout(
                     **{axis: dict(
-                        # gridcolor='rgba(0,0,0,0)',
+                        type="log",  # <--- THIS IS CRUCIAL
                         tickvals=arr,
                         gridcolor='gainsboro',
                         side="top",
                         fixedrange=True,
-                        showticklabels=False if axis.startswith(
-                            'xaxis') else True,
+                        showticklabels=False if axis.startswith('xaxis') else True,
                     )}
                 )
             elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE']:
@@ -2107,6 +2100,16 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                 )
     return fig
 
+def log_tickvals(a, b):
+    ticks = []
+    exp_min = int(np.floor(np.log10(a)))
+    exp_max = int(np.ceil(np.log10(b)))
+    for exp in range(exp_min, exp_max + 1):
+        for mult in range(1, 10):
+            val = mult * 10 ** exp
+            if a <= val <= b:
+                ticks.append(val)
+    return ticks
 
 def layout_draw_lines(fig, ratio_plots, df_well, xgrid_intv):
     # Menambahkan garis pembatas
@@ -3551,4 +3554,27 @@ def plot_module_3(df, title="Module 3 Plot"):
                 'NPHI_NGSA', 'RHOB_DGSA', 'RGBE', 'RPBE', 'SWGRAD', 'DNS', 'DNSV', 'RT_RO']
     fig = main_plot(df, sequence, title=title)
 
+    return fig
+
+def plot_custom(df, sequence):
+    """
+    Membuat plot kustom berdasarkan urutan yang diberikan.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame yang berisi data untuk plotting.
+    sequence : list
+        Daftar kolom yang akan digunakan dalam plot.
+    title : str
+        Judul plot.
+    height_plot : int
+        Tinggi plot.
+
+    Returns:
+    --------
+    plotly.graph_objects.Figure
+        Objek Figure yang berisi plot.
+    """
+    fig = main_plot(df, sequence)
     return fig

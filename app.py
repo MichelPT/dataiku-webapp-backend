@@ -17,6 +17,7 @@ from services.porosity import calculate_porosity
 from services.plotting_service import (
     extract_markers_with_mean_depth,
     normalize_xover,
+    plot_custom,
     plot_fill_missing,
     plot_gsa_main,
     plot_gwd,
@@ -981,7 +982,6 @@ def _run_gsa_process(payload, gsa_function_to_run):
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
 
 @app.route('/api/run-rgsa', methods=['POST', 'OPTIONS'])
 def run_rgsa():
@@ -3154,6 +3154,46 @@ def get_module3_plot():
             fig_result = plot_module_3(
                 df=df,
             )
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+        
+@app.route('/api/get-custom-plot', methods=['POST', 'OPTIONS'])
+def get_custom_plot():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+            full_path = request_data.get('full_path', [])
+            selected_wells = request_data.get('selected_wells', [])
+            selected_intervals = request_data.get('selected_intervals', [])
+            custom_columns = request_data.get('custom_columns', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            # Baca dan gabungkan data dari sumur yang dipilih
+            df_list = [pd.read_csv(os.path.join(
+                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+            df = pd.concat(df_list, ignore_index=True)
+
+            if selected_intervals:
+                if 'MARKER' in df.columns:
+                    df = df[df['MARKER'].isin(selected_intervals)]
+                else:
+                    print(
+                        "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if df.empty:
+                return jsonify({"error": "No data available for the selected wells and intervals."}), 404
+
+            # Panggil fungsi plotting GSA yang baru
+            fig_result = plot_custom(df, custom_columns)
 
             return jsonify(fig_result.to_json())
 

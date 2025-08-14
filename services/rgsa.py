@@ -343,7 +343,9 @@ def calculate_and_merge_rgsa(df_well: pd.DataFrame, df_coeffs: pd.DataFrame, par
     return df_merged
 
 # --- ORCHESTRATOR FUNCTION ---
-def process_all_wells_rgsa(df_well: pd.DataFrame, params: Dict) -> pd.DataFrame:
+def process_all_wells_rgsa(df_well: pd.DataFrame, params: Dict, 
+    target_intervals: list = None,
+    target_zones: list = None) -> pd.DataFrame:
     """
     Orchestrator function that runs the full, multi-pass RGSA process.
 
@@ -354,24 +356,42 @@ def process_all_wells_rgsa(df_well: pd.DataFrame, params: Dict) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Processed DataFrame with RGSA, or original if it fails.
     """
+    df_processed = df_well.copy()
+
+    # --- BAGIAN BARU: Membuat mask untuk memilih baris target ---
+    mask = pd.Series(False, index=df_processed.index)
+    has_filters = False
+    if target_intervals and 'MARKER' in df_processed.columns:
+        mask |= df_processed['MARKER'].isin(target_intervals)
+        has_filters = True
+    if target_zones and 'ZONE' in df_processed.columns:
+        mask |= df_processed['ZONE'].isin(target_zones)
+        has_filters = True
+    if not has_filters:
+        mask = pd.Series(True, index=df_processed.index)
+
+    if not mask.any():
+        print("Peringatan: Tidak ada baris yang cocok dengan filter interval/zona yang dipilih.")
+        return df_processed
+    # --- AKHIR BAGIAN BARU ---
 
     # --- PASS 1 ---
-    df_gr_cap = calculate_dynamic_gr_cap(df_well, params)
+    df_gr_cap = calculate_dynamic_gr_cap(df_processed, params)
     if df_gr_cap is None or df_gr_cap.empty:
         print("❌ RGSA calculation failed at Pass 1. Returning original DataFrame.")
-        return df_well
+        return df_processed
 
     # --- PASS 2 ---
-    df_coeffs = calculate_regression_coefficients(df_well, df_gr_cap, params)
+    df_coeffs = calculate_regression_coefficients(df_processed, df_gr_cap, params)
     if df_coeffs is None or df_coeffs.empty:
         print("❌ RGSA calculation failed at Pass 2. Returning original DataFrame.")
-        return df_well
+        return df_processed
 
     # --- PASS 3 ---
-    result_df = calculate_and_merge_rgsa(df_well, df_coeffs, params)
+    result_df = calculate_and_merge_rgsa(df_processed, df_coeffs, params)
     if result_df is None:
         print("❌ RGSA calculation failed at Pass 3. Returning original DataFrame.")
-        return df_well
+        return df_processed
 
     print("\n✅ RGSA process completed successfully.")
     return result_df

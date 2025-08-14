@@ -966,9 +966,7 @@ def _run_gsa_process(payload, gsa_function_to_run):
             # Panggil fungsi pemroses dan teruskan filter sebagai argumen.
             df_processed = gsa_function_to_run(
                 df_well,
-                params,
-                target_intervals=selected_intervals,
-                target_zones=selected_zones
+                params
             )
             # --- AKHIR PERUBAHAN KUNCI ---
 

@@ -267,9 +267,14 @@ def process_all_wells_rgsa(df_well: pd.DataFrame, params: Dict,
     if target_zones and 'ZONE' in df_original.columns:
         mask &= df_original['ZONE'].isin(target_zones)
 
-    if not mask.any():
-        print("Peringatan: Tidak ada baris yang cocok dengan filter. Tidak ada kalkulasi yang dilakukan.")
-        return df_original
+    if not mask.any() or not mask.all():
+        df_to_process = df_original[mask].copy()
+        print(
+            f"Memproses RGSA untuk {len(df_to_process)} dari {len(df_original)} baris data (difilter).")
+    else:  # Jika tidak ada filter, proses semua
+        df_to_process = df_original
+        print(
+            f"Memproses RGSA untuk seluruh {len(df_original)} baris data (tanpa filter).")
 
     # Buat DataFrame kerja yang HANYA berisi data yang dipilih
     df_to_process = df_original[mask].copy()

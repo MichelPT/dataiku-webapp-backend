@@ -6,26 +6,6 @@ import pandas as pd
 # from scipy.stats import linregress
 
 
-import numpy as np
-import pandas as pd
-
-
-def calculate_iqual(df):
-    """
-    Menghitung IQUAL berdasarkan kondisi: PHIE > 0.1 AND VSH < 0.5.
-    """
-    df_copy = df.copy()
-    # Pastikan kolom yang dibutuhkan ada
-    if 'PHIE' in df_copy.columns and 'VSH' in df_copy.columns:
-        df_copy['IQUAL'] = np.where(
-            (df_copy['PHIE'] > 0.1) & (df_copy['VSH'] < 0.5), 1, 0)
-    else:
-        # Jika kolom tidak ada, IQUAL diisi 0 agar tidak error
-        df_copy['IQUAL'] = 0
-        print("Peringatan: Kolom 'PHIE' atau 'VSH' tidak ditemukan, IQUAL diatur ke 0.")
-    return df_copy
-
-
 def calculate_R0(df):
     """
     Menghitung R0 dan parameter terkait.
@@ -133,7 +113,6 @@ def process_rt_r0(df: pd.DataFrame, params: dict = None, target_intervals: list 
             if p not in df_to_process.columns:
                 df_to_process[p] = params.get(f'{p}_PARAM', val)
 
-        df_to_process = calculate_iqual(df_to_process)
         df_to_process = calculate_R0(df_to_process)
         df_to_process['GROUP_ID'] = (
             df_to_process['IQUAL'].diff() != 0).cumsum()

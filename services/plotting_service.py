@@ -7,8 +7,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 
-from services.iqual import calculate_iqual
-
 colors = px.colors.qualitative.G10
 colors_dict = {
     'blue': 'royalblue',
@@ -2081,7 +2079,8 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                         gridcolor='gainsboro',
                         side="top",
                         fixedrange=True,
-                        showticklabels=False if axis.startswith('xaxis') else True,
+                        showticklabels=False if axis.startswith(
+                            'xaxis') else True,
                     )}
                 )
             elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE']:
@@ -2100,6 +2099,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                 )
     return fig
 
+
 def log_tickvals(a, b):
     ticks = []
     exp_min = int(np.floor(np.log10(a)))
@@ -2110,6 +2110,7 @@ def log_tickvals(a, b):
             if a <= val <= b:
                 ticks.append(val)
     return ticks
+
 
 def layout_draw_lines(fig, ratio_plots, df_well, xgrid_intv):
     # Menambahkan garis pembatas
@@ -3376,7 +3377,6 @@ def plot_iqual(df):
     """
     Membuat plot IQUAL.
     """
-    df = calculate_iqual(df)
     marker_zone_sequence = ['ZONE', 'MARKER']
     # Filter the sequence to include only columns that exist in the DataFrame
     filtered_sequence = [
@@ -3555,6 +3555,7 @@ def plot_module_3(df, title="Module 3 Plot"):
     fig = main_plot(df, sequence, title=title)
 
     return fig
+
 
 def plot_custom(df, sequence):
     """

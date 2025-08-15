@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 # Asumsi file-file ini ada dan berfungsi
 from services.plotting_service import main_plot
-from services.iqual import calculate_iqual
 
 
 def calculate_interval_statistics(df_input: pd.DataFrame) -> pd.DataFrame:
@@ -110,11 +109,8 @@ def process_rgbe_rpbe(df: pd.DataFrame, params: dict = None, target_intervals: l
     Sekarang menangani filter interval/zona secara internal untuk mencegah kehilangan data.
     """
     try:
-        # 1. Pastikan kolom IQUAL ada di DataFrame lengkap
-        df_with_iqual = calculate_iqual(df)
-
         # 2. Tentukan data mana yang akan diproses
-        df_to_process = df_with_iqual.copy()
+        df_to_process = df.copy()
         has_filters = (target_intervals and 'MARKER' in df.columns) or \
                       (target_zones and 'ZONE' in df.columns)
 
@@ -127,7 +123,7 @@ def process_rgbe_rpbe(df: pd.DataFrame, params: dict = None, target_intervals: l
                 interval_mask |= df['ZONE'].isin(target_zones)
 
             # Hanya proses baris yang cocok dengan filter
-            df_to_process = df_with_iqual[interval_mask].copy()
+            df_to_process = df[interval_mask].copy()
 
         # 3. Lakukan perhitungan statistik pada data yang telah dipilih (difilter atau lengkap)
         # Fungsi groupby akan menangani jika ada beberapa sumur dalam satu file

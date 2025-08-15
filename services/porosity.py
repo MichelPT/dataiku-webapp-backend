@@ -80,9 +80,9 @@ def calculate_porosity(
         raise ValueError(f"Kolom input {required_cols} tidak ditemukan.")
 
     if 'VSH' not in df_processed.columns:
-        df_processed['VSH'] = df_processed.get('VSH_GR', np.nan)
+        df_processed['VSH'] = df_processed.get('VSH_LINEAR', 'VSH_DN')
     if 'VSH' not in df_processed.columns:
-        raise ValueError("Kolom VSH atau VSH_GR tidak ditemukan.")
+        raise ValueError("Kolom VSH tidak ditemukan.")
 
     output_cols = ["RHOB_SR", "NPHI_SR", "PHIE_DEN",
                    "PHIT_DEN", "PHIE", "PHIT", "RHO_MAT"]

@@ -69,12 +69,12 @@ def calculate_vsh_dn(df: pd.DataFrame, params: dict, target_intervals: list = No
     else:
         df_processed.loc[final_mask, VSH_OUTPUT_LOG] = np.nan
 
-    # Optional: Calculate difference if VSH_GR exists
-    if 'VSH_GR' in df_processed.columns:
-        vsh_gr_masked = df_processed.loc[final_mask, 'VSH_GR']
+    # Optional: Calculate difference if VSH_LINEAR exists
+    if 'VSH_LINEAR' in df_processed.columns:
+        vsh_linear_masked = df_processed.loc[final_mask, 'VSH_LINEAR']
         vsh_dn_masked = df_processed.loc[final_mask, VSH_OUTPUT_LOG]
         df_processed.loc[final_mask,
-                         'VSH_DIFF'] = vsh_gr_masked - vsh_dn_masked
+                         'VSH_DIFF'] = vsh_linear_masked - vsh_dn_masked
 
     print(f"Added/updated VSH-DN columns: {VSH_OUTPUT_LOG}, VSH_DIFF")
     return df_processed

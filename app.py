@@ -438,6 +438,7 @@ def get_plot():
         full_path = request_data.get('full_path')
         selected_wells = request_data.get('selected_wells')
         selected_intervals = request_data.get('selected_intervals')
+        selected_zones = request_data.get('selected_zones')
 
         if not selected_wells:
             return jsonify({"error": "No wells were selected."}), 400
@@ -467,6 +468,13 @@ def get_plot():
             else:
                 print("Warning: 'MARKER' column not found, cannot filter by interval.")
 
+        if selected_zones:
+            if 'ZONE' in df.columns:
+                df = df[df['ZONE'].isin(selected_zones)]
+            else:
+                print(
+                    "Warning: 'ZONE' column not found, cannot filter by zone.")
+
         if df.empty:
             return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
@@ -491,6 +499,7 @@ def get_normalization_plot():
             full_path = data.get('full_path', [])
             selected_wells = data.get('selected_wells', [])
             selected_intervals = data.get('selected_intervals', [])
+            selected_zones = data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih"}), 400
@@ -521,6 +530,13 @@ def get_normalization_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -802,7 +818,7 @@ def run_vsh_calculation():
             gr_ma = float(params.get('GR_MA', 30))
             gr_sh = float(params.get('GR_SH', 120))
             input_log = params.get('input_log', 'GR')
-            output_log = params.get('output_log', 'VSH_GR')
+            output_log = params.get('output_log', 'VSH_LINEAR')
 
             # Loop melalui setiap sumur yang dipilih
             for well_name in selected_wells:
@@ -901,6 +917,7 @@ def get_porosity_plot():
             full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -921,6 +938,13 @@ def get_porosity_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -1034,6 +1058,7 @@ def get_gsa_plot():
             full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1049,6 +1074,13 @@ def get_gsa_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -1255,6 +1287,7 @@ def get_smoothing_plot():
             full_path = request_data.get('full_path')
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1270,6 +1303,13 @@ def get_smoothing_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -1363,6 +1403,7 @@ def get_rgbe_rpbe_plot():
             full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1387,6 +1428,13 @@ def get_rgbe_rpbe_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -1579,6 +1627,7 @@ def get_rt_r0_plot():
             full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1600,6 +1649,12 @@ def get_rt_r0_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -1627,6 +1682,7 @@ def get_swgrad_plot():
             full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1646,6 +1702,13 @@ def get_swgrad_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -1683,6 +1746,7 @@ def get_dns_dnsv_plot():
             full_path = request_data.get('full_path', '')
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1736,6 +1800,7 @@ def get_histogram_plot():
             log_to_plot = payload.get('log_column')
             num_bins = int(payload.get('bins', 50))
             selected_intervals = payload.get('selected_intervals', [])
+            selected_zones = payload.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1752,6 +1817,13 @@ def get_histogram_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             fig_result = plot_histogram(df, log_to_plot, num_bins)
 
@@ -1773,6 +1845,7 @@ def get_crossplot():
         full_path = payload.get('full_path', [])
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
+        selected_zones = payload.get('selected_zones', [])
         x_col = payload.get('x_col', 'NPHI')
         y_col = payload.get('y_col', 'RHOB')
         gr_ma = float(payload.get('gr_ma', 30))
@@ -1816,6 +1889,7 @@ def get_vsh_plot():
             full_path = request_data.get('full_path', '')
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1839,6 +1913,13 @@ def get_vsh_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -1964,6 +2045,7 @@ def get_sw_plot():
             full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -1984,6 +2066,13 @@ def get_sw_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -2059,6 +2148,7 @@ def get_rwa_plot():
             full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -2078,6 +2168,13 @@ def get_rwa_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -2154,6 +2251,7 @@ def get_module2_plot():
             full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -2163,7 +2261,8 @@ def get_module2_plot():
                 full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
-            df = df.rename(columns={'VSH_GR': 'VSH_LINEAR', 'RWA_FULL': 'RWA'})
+            df = df.rename(
+                columns={'VSH_GR': 'VSH_LINEAR', 'RWA_SIMPLE': 'RWA'})
 
             # required_cols = ['RWA', 'IQUAL', 'PHIE', 'VSH_LINEAR', 'SW']
             # if not all(col in df.columns for col in required_cols):
@@ -2176,10 +2275,15 @@ def get_module2_plot():
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
 
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
+
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
-
-            df = calculate_iqual(df)
 
             # Panggil fungsi plotting RWA
             fig_result = plot_module_2(
@@ -2187,6 +2291,54 @@ def get_module2_plot():
             )
 
             return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/run-iqual-calculation', methods=['POST', 'OPTIONS'])
+def run_iqual_calculation():
+    """
+    Endpoint untuk menjalankan kalkulasi IQUAL pada sumur yang dipilih.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            params = payload.get('params', {})
+            full_path = payload.get('full_path', '')
+            selected_wells = payload.get('selected_wells', [])
+            selected_intervals = payload.get('selected_intervals', [])
+            selected_zones = payload.get('selected_zones', [])
+
+            if not selected_wells:
+                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+
+            for well_name in selected_wells:
+                file_path = os.path.join(full_path, f"{well_name}.csv")
+                if not os.path.exists(file_path):
+                    print(
+                        f"Peringatan: Melewatkan sumur {well_name}, file tidak ditemukan.")
+                    continue
+
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
+
+                # Panggil fungsi kalkulasi dengan DataFrame lengkap dan semua parameter/filter
+                df_updated = calculate_iqual(
+                    df_well,
+                    params,
+                    target_intervals=selected_intervals,
+                    target_zones=selected_zones
+                )
+
+                df_updated.to_csv(file_path, index=False)
+                print(f"Hasil IQUAL untuk sumur '{well_name}' telah disimpan.")
+
+            return jsonify({"message": f"Kalkulasi IQUAL berhasil untuk {len(selected_wells)} sumur."})
 
         except Exception as e:
             import traceback
@@ -2232,6 +2384,7 @@ def get_iqual_plot():
             full_path = request_data.get('full_path', [])
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -2241,7 +2394,8 @@ def get_iqual_plot():
                 full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
             df = pd.concat(df_list, ignore_index=True)
 
-            df = df.rename(columns={'VSH_GR': 'VSH_LINEAR', 'RWA_FULL': 'RWA'})
+            df = df.rename(
+                columns={'RWA_SIMPLE': 'RWA'})
 
             if selected_intervals:
                 if 'MARKER' in df.columns:
@@ -2249,6 +2403,13 @@ def get_iqual_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
@@ -3173,6 +3334,7 @@ def get_custom_plot():
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
             custom_columns = request_data.get('custom_columns', [])
+            selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
                 return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
@@ -3188,6 +3350,13 @@ def get_custom_plot():
                 else:
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
+
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
 
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404

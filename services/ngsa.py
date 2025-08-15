@@ -36,13 +36,10 @@ def process_ngsa_for_well(df_well: pd.DataFrame, params: dict, target_intervals:
 
     # Filter awal berdasarkan interval/zona dari frontend
     mask = pd.Series(True, index=df_well.index)
-    has_filters = False
     if target_intervals and 'MARKER' in df_well.columns:
-        mask = df_well['MARKER'].isin(target_intervals)
-        has_filters = True
+        mask &= df_well['MARKER'].isin(target_intervals)
     if target_zones and 'ZONE' in df_well.columns:
-        mask = (mask | df_well['ZONE'].isin(
-            target_zones)) if has_filters else df_well['ZONE'].isin(target_zones)
+        mask &= df_well['ZONE'].isin(target_zones)
 
     df_ngsa = df_well.loc[mask, required_cols].dropna().copy()
     if len(df_ngsa) < 100:

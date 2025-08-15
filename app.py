@@ -940,9 +940,10 @@ def get_porosity_plot():
 
 def _run_gsa_process(payload, gsa_function_to_run):
     """
-    Helper generik untuk menjalankan proses GSA (RGSA, NGSA, atau DGSA).
+    Helper generik yang sudah diperbaiki untuk menjalankan proses GSA.
     """
     try:
+        # Ekstrak semua data yang dibutuhkan dari payload
         params = payload.get('params', {})
         full_path = payload.get('full_path', '')
         selected_wells = payload.get('selected_wells', [])
@@ -958,19 +959,18 @@ def _run_gsa_process(payload, gsa_function_to_run):
                 print(f"Peringatan: File untuk {well_name} tidak ditemukan.")
                 continue
 
-            # Baca seluruh data sumur tanpa filtering
             df_well = pd.read_csv(file_path, on_bad_lines='warn')
 
-            # --- PERUBAHAN KUNCI ---
-            # Hapus semua blok filtering dari sini.
-            # Panggil fungsi pemroses dan teruskan filter sebagai argumen.
+            # --- PERBAIKAN UTAMA ---
+            # Teruskan SEMUA parameter yang relevan, termasuk filter, ke fungsi pemroses
             df_processed = gsa_function_to_run(
                 df_well,
-                params
+                params,
+                target_intervals=selected_intervals,
+                target_zones=selected_zones
             )
-            # --- AKHIR PERUBAHAN KUNCI ---
+            # --- AKHIR PERBAIKAN ---
 
-            # Simpan hasil kembali ke file, sekarang berisi data lengkap
             df_processed.to_csv(file_path, index=False)
             print(f"Hasil untuk sumur '{well_name}' telah disimpan.")
 
@@ -980,6 +980,7 @@ def _run_gsa_process(payload, gsa_function_to_run):
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/run-rgsa', methods=['POST', 'OPTIONS'])
 def run_rgsa():
@@ -3159,7 +3160,8 @@ def get_module3_plot():
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
-        
+
+
 @app.route('/api/get-custom-plot', methods=['POST', 'OPTIONS'])
 def get_custom_plot():
     if request.method == 'OPTIONS':

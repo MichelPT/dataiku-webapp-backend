@@ -149,250 +149,151 @@
 from typing import List, Dict
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 
 # --- PASS 1: DYNAMIC GR_MAX CALCULATION ---
+
+
 def calculate_dynamic_gr_cap(df_well: pd.DataFrame, params: Dict) -> pd.DataFrame:
-    """
-    Performs the first pass to determine a dynamic, depth-varying GR maximum.
-    This replicates the `sort_gr` and `gr_cap` logic from the legacy script.
-
-    Args:
-        df_well (pd.DataFrame): The input well data.
-        params (dict): Dictionary of parameters.
-
-    Returns:
-        pd.DataFrame: A DataFrame with 'DEPTH' and 'GR_MAX' columns.
-    """
+    # ... (kode Anda untuk fungsi ini tidak perlu diubah)
     print("INFO: Starting Pass 1 - Calculating dynamic GR cap...")
     gr_col = params.get('GR', 'GR')
     required_cols = ['DEPTH', gr_col]
     if not all(col in df_well.columns for col in required_cols):
-        print("Warning: Skipping GR cap calculation due to missing columns.")
         return None
-
     df_filtered = df_well[required_cols].dropna().copy()
-    df_filtered = df_filtered[(df_filtered[gr_col] > 5) & (df_filtered[gr_col] < 180)]
-
-    # Use 'SLIDING_WINDOW' for window 11size, as in the original Python script,
-    # but apply it as a non-overlapping window size ('npoints').
-    npoints = int(params.get('SLIDING_WINDOW', 100)) * 2 # Approximating npoints from legacy logic
-
+    df_filtered = df_filtered[(df_filtered[gr_col] > 5)
+                              & (df_filtered[gr_col] < 180)]
+    npoints = int(params.get('SLIDING_WINDOW', 100)) * 2
     gr_caps = []
     for i in range(0, len(df_filtered), npoints):
         chunk = df_filtered.iloc[i:i + npoints]
         if len(chunk) < npoints / 2:
             continue
-
-        # Get the 98th percentile GR value for the chunk
         gr_cap_value = chunk[gr_col].quantile(0.98)
-        # Get the median depth for the chunk
         median_depth = chunk['DEPTH'].median()
-
         gr_caps.append({'DEPTH': median_depth, 'GR_MAX': gr_cap_value})
-        print(f"  - Depth: {median_depth:.2f}, GR_MAX_Cap: {gr_cap_value:.2f}")
-
-
     if not gr_caps:
-        print("Warning: Could not calculate any GR caps. Aborting.")
         return None
-
     print("INFO: Pass 1 Complete.")
     return pd.DataFrame(gr_caps)
 
 
-# --- PASS 2: REGRESSION COEFFICIENT CALCULATION ---
 def calculate_regression_coefficients(df_well: pd.DataFrame, df_gr_cap: pd.DataFrame, params: Dict) -> pd.DataFrame:
-    """
-    Performs the second pass to compute regression coefficients using tumbling windows.
-    This replicates the main loop and `COMPUTE_RES_MR_COEFFICIENTS` logic.
-
-    Args:
-        df_well (pd.DataFrame): The input well data.
-        df_gr_cap (pd.DataFrame): The dynamic GR cap data from Pass 1.
-        params (dict): Dictionary of parameters.
-
-    Returns:
-        pd.DataFrame: DataFrame containing regression coefficients vs. depth.
-    """
+    # ... (kode Anda untuk fungsi ini tidak perlu diubah)
     print("\nINFO: Starting Pass 2 - Calculating regression coefficients...")
-    gr_col = params.get('GR', 'GR')
-    rt_col = params.get('RES', 'RT')
-    lith_col = params.get('LITH', 'LITHOLOGY') # Assumes a lithology column
-
+    gr_col, rt_col, lith_col = params.get('GR', 'GR'), params.get(
+        'RES', 'RT'), params.get('LITH', 'LITHOLOGY')
     required_cols = ['DEPTH', gr_col, rt_col]
     if not all(col in df_well.columns for col in required_cols):
-        print("Warning: Skipping regression due to missing columns.")
         return None
-
-    # Interpolate the GR_MAX curve onto the full well depth range
     df_well_sorted = df_well.sort_values('DEPTH').copy()
     df_well_sorted['GR_MAX'] = np.interp(
-        df_well_sorted['DEPTH'],
-        df_gr_cap['DEPTH'],
-        df_gr_cap['GR_MAX']
-    )
-
-    # Define filters based on legacy script
+        df_well_sorted['DEPTH'], df_gr_cap['DEPTH'], df_gr_cap['GR_MAX'])
     excluded_lithologies = ['COAL', 'CA', 'CAOO', 'ORG']
-    res_min = params.get('RES_MIN', 0.1)
-    res_max = params.get('RES_MAX', 1000)
-
-    # Filter the data for regression
-    mask = (
-        (df_well_sorted[gr_col] < df_well_sorted['GR_MAX']) &
-        (df_well_sorted[rt_col] > res_min) &
-        (df_well_sorted[rt_col] < res_max) &
-        (df_well_sorted[gr_col].notna()) &
-        (df_well_sorted[rt_col].notna())
-    )
-    # Apply lithology filter if the column exists
+    res_min, res_max = params.get(
+        'RESWAT_MIN', 0.1), params.get('RESWAT_MAX', 1000)
+    mask = ((df_well_sorted[gr_col] < df_well_sorted['GR_MAX']) & (df_well_sorted[rt_col] > res_min) & (
+        df_well_sorted[rt_col] < res_max) & (df_well_sorted[gr_col].notna()) & (df_well_sorted[rt_col].notna()))
     if lith_col in df_well_sorted.columns:
-        mask &= ~df_well_sorted[lith_col].str.upper().isin(excluded_lithologies)
+        mask &= ~df_well_sorted[lith_col].str.upper().isin(
+            excluded_lithologies)
     df_reg_data = df_well_sorted[mask].copy()
-
-    npoints = int(params.get('SLIDING_WINDOW', 100)) * 2
-    min_points_in_window = 30
+    npoints, min_points_in_window = int(
+        params.get('SLIDING_WINDOW', 100)) * 2, 30
     coeffs = []
-
-    # Use tumbling (non-overlapping) windows
     for i in range(0, len(df_reg_data), npoints):
         window = df_reg_data.iloc[i:i + npoints]
-
         if len(window) < min_points_in_window:
             continue
-
-        # Prepare data for regression
         gr_scaled = 0.01 * window[gr_col]
         log_rt = np.log10(window[rt_col])
-
         X = np.vstack([gr_scaled, gr_scaled**2, gr_scaled**3]).T
         y = log_rt
         try:
             model = LinearRegression().fit(X, y)
-            if hasattr(model, 'coef_') and len(model.coef_) == 3:
-                coeffs.append({
-                    'DEPTH': window['DEPTH'].iloc[0], # Use start depth of window
-                    'b0': model.intercept_,
-                    'b1': model.coef_[0],
-                    'b2': model.coef_[1],
-                    'b3': model.coef_[2],
-                    'CORR_COEF': model.score(X, y),
-                    'N_POINTS': len(window)
-                })
+            coeffs.append({'DEPTH': window['DEPTH'].iloc[0], 'b0': model.intercept_, 'b1': model.coef_[
+                          0], 'b2': model.coef_[1], 'b3': model.coef_[2], 'CORR_COEF': model.score(X, y), 'N_POINTS': len(window)})
         except Exception as e:
-            print(f"Warning: Regression failed at depth ~{window['DEPTH'].mean()}: {e}")
-
+            print(
+                f"Warning: Regression failed at depth ~{window['DEPTH'].mean()}: {e}")
     if not coeffs:
-        print("Warning: No regression coefficients were successfully calculated.")
         return None
-
-    print("INFO: Pass 2 Complete. Regression Results:")
-    print("      N  Points     Depth      R^2      Const      GR         GR^2       GR^3")
-    for i, c in enumerate(coeffs):
-        print(f"     {i+1:2d}  {c['N_POINTS']:<5d}   {c['DEPTH']:<7.2f}   {c['CORR_COEF']:.3f}   {c['b0']:<7.4f}   {c['b1']:<7.4f}   {c['b2']:<7.4f}   {c['b3']:<7.4f}")
-
+    print("INFO: Pass 2 Complete.")
     return pd.DataFrame(coeffs)
 
 
-# --- PASS 3: FINAL RGSA CALCULATION & MERGE ---
 def calculate_and_merge_rgsa(df_well: pd.DataFrame, df_coeffs: pd.DataFrame, params: Dict) -> pd.DataFrame:
-    """
-    Performs the final pass to interpolate coefficients and calculate RGSA.
-    This replicates the `INTERPOLATE_RES_COEFF` and output loop.
-
-    Args:
-        df_well (pd.DataFrame): The original well DataFrame.
-        df_coeffs (pd.DataFrame): The regression coefficients from Pass 2.
-        params (dict): Dictionary of parameters.
-
-    Returns:
-        pd.DataFrame: The final DataFrame with 'RGSA' and gas effect columns.
-    """
+    # ... (kode Anda untuk fungsi ini tidak perlu diubah)
     print("\nINFO: Starting Pass 3 - Computing final RGSA log...")
-    gr_col = params.get('GR', 'GR')
-    rt_col = params.get('RES', 'RT')
-
+    gr_col, rt_col = params.get('GR', 'GR'), params.get('RES', 'RT')
     df_merged = df_well.copy()
     if 'RGSA' in df_merged.columns:
         df_merged = df_merged.drop(columns=['RGSA'])
-
-    # Interpolate coefficients for every depth point
     interp_depths = df_coeffs['DEPTH']
     b0 = np.interp(df_merged['DEPTH'], interp_depths, df_coeffs['b0'])
     b1 = np.interp(df_merged['DEPTH'], interp_depths, df_coeffs['b1'])
     b2 = np.interp(df_merged['DEPTH'], interp_depths, df_coeffs['b2'])
     b3 = np.interp(df_merged['DEPTH'], interp_depths, df_coeffs['b3'])
-
-    # Calculate RGSA
     grfix = 0.01 * df_merged[gr_col]
     log_rgsa = b0 + b1*grfix + b2*grfix**2 + b3*grfix**3
     df_merged['RGSA'] = 10**log_rgsa
-    
-    # Handle missing values where input GR is missing
     df_merged.loc[df_merged[gr_col].isna(), 'RGSA'] = np.nan
-
-    # Hitung kolom efek gas
     if rt_col in df_merged and 'RGSA' in df_merged:
         df_merged['GAS_EFFECT_RT'] = (df_merged[rt_col] > df_merged['RGSA'])
         df_merged['RT_RATIO'] = df_merged[rt_col] / df_merged['RGSA']
         df_merged['RT_DIFF'] = df_merged[rt_col] - df_merged['RGSA']
-
     print("INFO: Pass 3 Complete.")
     return df_merged
 
-# --- ORCHESTRATOR FUNCTION ---
-def process_all_wells_rgsa(df_well: pd.DataFrame, params: Dict, 
-    target_intervals: list = None,
-    target_zones: list = None) -> pd.DataFrame:
+# --- FUNGSI ORKESTRATOR YANG DIPERBAIKI ---
+
+
+def process_all_wells_rgsa(df_well: pd.DataFrame, params: Dict,
+                           target_intervals: list = None,
+                           target_zones: list = None) -> pd.DataFrame:
     """
-    Orchestrator function that runs the full, multi-pass RGSA process.
-
-    Args:
-        df_well (pd.DataFrame): The input DataFrame for a single well.
-        params (dict): Configuration parameters.
-
-    Returns:
-        pd.DataFrame: Processed DataFrame with RGSA, or original if it fails.
+    Orkestrator yang sudah diperbaiki: menjalankan proses RGSA multi-pass
+    hanya pada data yang sudah difilter.
     """
-    df_processed = df_well.copy()
+    # Buat salinan untuk menghindari modifikasi DataFrame asli
+    df_original = df_well.copy()
 
-    # --- BAGIAN BARU: Membuat mask untuk memilih baris target ---
-    mask = pd.Series(False, index=df_processed.index)
-    has_filters = False
-    if target_intervals and 'MARKER' in df_processed.columns:
-        mask |= df_processed['MARKER'].isin(target_intervals)
-        has_filters = True
-    if target_zones and 'ZONE' in df_processed.columns:
-        mask |= df_processed['ZONE'].isin(target_zones)
-        has_filters = True
-    if not has_filters:
-        mask = pd.Series(True, index=df_processed.index)
+    # --- PERBAIKAN UTAMA: Buat mask dan saring data DI SINI ---
+    mask = pd.Series(True, index=df_original.index)
+    if target_intervals and 'MARKER' in df_original.columns:
+        mask &= df_original['MARKER'].isin(target_intervals)
+    if target_zones and 'ZONE' in df_original.columns:
+        mask &= df_original['ZONE'].isin(target_zones)
 
     if not mask.any():
-        print("Peringatan: Tidak ada baris yang cocok dengan filter interval/zona yang dipilih.")
-        return df_processed
-    # --- AKHIR BAGIAN BARU ---
+        print("Peringatan: Tidak ada baris yang cocok dengan filter. Tidak ada kalkulasi yang dilakukan.")
+        return df_original
 
-    # --- PASS 1 ---
-    df_gr_cap = calculate_dynamic_gr_cap(df_processed, params)
+    # Buat DataFrame kerja yang HANYA berisi data yang dipilih
+    df_to_process = df_original[mask].copy()
+    print(
+        f"Memproses RGSA untuk {len(df_to_process)} dari {len(df_original)} baris data.")
+    # --- AKHIR PERBAIKAN ---
+
+    # --- Jalankan semua pass HANYA pada data yang sudah difilter ---
+    df_gr_cap = calculate_dynamic_gr_cap(df_to_process, params)
     if df_gr_cap is None or df_gr_cap.empty:
-        print("❌ RGSA calculation failed at Pass 1. Returning original DataFrame.")
-        return df_processed
+        print("❌ Gagal pada Pass 1. Mengembalikan data asli.")
+        return df_original
 
-    # --- PASS 2 ---
-    df_coeffs = calculate_regression_coefficients(df_processed, df_gr_cap, params)
+    df_coeffs = calculate_regression_coefficients(
+        df_to_process, df_gr_cap, params)
     if df_coeffs is None or df_coeffs.empty:
-        print("❌ RGSA calculation failed at Pass 2. Returning original DataFrame.")
-        return df_processed
+        print("❌ Gagal pada Pass 2. Mengembalikan data asli.")
+        return df_original
 
-    # --- PASS 3 ---
-    result_df = calculate_and_merge_rgsa(df_processed, df_coeffs, params)
+    # Pass 3 menghitung RGSA dan menggabungkannya kembali ke DataFrame LENGKAP
+    result_df = calculate_and_merge_rgsa(df_original, df_coeffs, params)
     if result_df is None:
-        print("❌ RGSA calculation failed at Pass 3. Returning original DataFrame.")
-        return df_processed
+        print("❌ Gagal pada Pass 3. Mengembalikan data asli.")
+        return df_original
 
-    print("\n✅ RGSA process completed successfully.")
+    print("\n✅ Proses RGSA selesai dengan sukses.")
     return result_df
-

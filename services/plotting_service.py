@@ -347,7 +347,6 @@ flag_color = {
     },
     "IQUAL": {
         1: 'orange',
-        1: 'orange',
     }
 
 }
@@ -1051,7 +1050,7 @@ def plot_gsa_crossover(df_well, fig, axes, key, n_seq, counter, n_plots, fill_co
             )}
         )
 
-    # Update axis layout untuk axis keempat (crossover fill BLUE) - INVISIBLE
+    # Update axis layout untuk axis keempat (crossfover fill BLUE) - INVISIBLE
     xaxis4 = "xaxis"+str(n_plots+counter)
 
     if log_scale:
@@ -2170,126 +2169,124 @@ def layout_draw_lines(fig, ratio_plots, df_well, xgrid_intv):
 
 # ---panggil layout axis
 
+# def layout_axis(fig, axes, ratio_plots, plot_sequence):
+#     fig.add_annotation(
+#         dict(font=dict(color='black', size=12),
+#              x=-0.001,
+#              y=0.97,
+#              xanchor="right",
+#              yanchor="top",
+#              showarrow=False,
+#              text=depth+' (m)',
+#              textangle=-90,
+#              xref='paper',
+#              yref="paper"
+#              )
+#     )
+#     pos_x_c = 0
+#     ratio_plots = np.array(ratio_plots)
+#     line_pos = []
+#     for i in ratio_plots:
+#         line_pos.append(
+#             i*(1/(ratio_plots/len(ratio_plots)).sum())/len(ratio_plots))
 
-def layout_axis(fig, axes, ratio_plots, plot_sequence):
-    fig.add_annotation(
-        dict(font=dict(color='black', size=12),
-             x=-0.001,
-             y=0.97,
-             xanchor="right",
-             yanchor="top",
-             showarrow=False,
-             text=depth+' (m)',
-             textangle=-90,
-             xref='paper',
-             yref="paper"
-             )
-    )
-    pos_x_c = 0
-    ratio_plots = np.array(ratio_plots)
-    line_pos = []
-    for i in ratio_plots:
-        line_pos.append(
-            i*(1/(ratio_plots/len(ratio_plots)).sum())/len(ratio_plots))
+#     pos_x_t = 0
+#     for i, key in enumerate(axes.keys()):
+#         # key = plot_sequence[i]
+#         pos_x = line_pos[i]
+#         # pos_y = 0.85
+#         pos_y = 0.92
+#         pos_x_c += 0.5*pos_x
 
-    pos_x_t = 0
-    for i, key in enumerate(axes.keys()):
-        # key = plot_sequence[i]
-        pos_x = line_pos[i]
-        # pos_y = 0.85
-        pos_y = 0.92
-        pos_x_c += 0.5*pos_x
+#         # Ganti dengan key yang butuh semua axis (feature di datacol)
+#         if key in ['SWARRAY', 'TGC']:
+#             axis_range = axes[key][1:]  # Semua axis
+#         else:
+#             axis_range = axes[key][1:3]  # Hanya 2 axis pertama
 
-        # Ganti dengan key yang butuh semua axis (feature di datacol)
-        if key in ['SWARRAY', 'TGC']:
-            axis_range = axes[key][1:]  # Semua axis
-        else:
-            axis_range = axes[key][1:3]  # Hanya 2 axis pertama
+#         for j, axis in enumerate(axis_range):
+#             # print(f'{i}:{j}')
+#             fig.update_layout(
+#                 **{axis: dict(
+#                     tickfont=dict(color=color_col[key][j], size=9),
+#                     anchor="free",
+#                     showline=True,
+#                     position=pos_y,
+#                     showticklabels=False,
+#                     linewidth=1.5,
+#                     linecolor=color_col[key][j],
+#                 )}
+#             )
 
-        for j, axis in enumerate(axis_range):
-            # print(f'{i}:{j}')
-            fig.update_layout(
-                **{axis: dict(
-                    tickfont=dict(color=color_col[key][j], size=9),
-                    anchor="free",
-                    showline=True,
-                    position=pos_y,
-                    showticklabels=False,
-                    linewidth=1.5,
-                    linecolor=color_col[key][j],
-                )}
-            )
+#             # Add Text Parameter
+#             fig.add_annotation(
+#                 dict(font=dict(color=color_col[key][j], size=12),
+#                      # x=x_loc,
+#                      x=pos_x_c,
+#                      y=pos_y,
+#                      xanchor="center",
+#                      yanchor="bottom",
+#                      showarrow=False,
+#                      text=data_col[key][j],
+#                      textangle=0,
+#                      xref='paper',
+#                      yref="paper"
+#                      )
+#             )
 
-            # Add Text Parameter
-            fig.add_annotation(
-                dict(font=dict(color=color_col[key][j], size=12),
-                     # x=x_loc,
-                     x=pos_x_c,
-                     y=pos_y,
-                     xanchor="center",
-                     yanchor="bottom",
-                     showarrow=False,
-                     text=data_col[key][j],
-                     textangle=0,
-                     xref='paper',
-                     yref="paper"
-                     )
-            )
+#             # Add Text Unit
+#             fig.add_annotation(
+#                 dict(font=dict(color=color_col[key][j], size=10),
+#                      x=pos_x_c,
+#                      y=pos_y,
+#                      xanchor="center",
+#                      yanchor="top",
+#                      showarrow=False,
+#                      text=unit_col[key][j],
+#                      textangle=0,
+#                      xref='paper',
+#                      yref="paper"
+#                      )
+#             )
 
-            # Add Text Unit
-            fig.add_annotation(
-                dict(font=dict(color=color_col[key][j], size=10),
-                     x=pos_x_c,
-                     y=pos_y,
-                     xanchor="center",
-                     yanchor="top",
-                     showarrow=False,
-                     text=unit_col[key][j],
-                     textangle=0,
-                     xref='paper',
-                     yref="paper"
-                     )
-            )
+#             # Add Text Min Max Range
+#             if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
+#                 fig.add_annotation(
+#                     dict(font=dict(color=color_col[key][j], size=10),
+#                          x=pos_x_t,
+#                          y=pos_y,
+#                          xanchor="left",
+#                          yanchor="top",
+#                          showarrow=False,
+#                          text=range_col[key][j][0],
+#                          textangle=0,
+#                          xref='paper',
+#                          yref="paper"
+#                          )
+#                 )
 
-            # Add Text Min Max Range
-            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
-                fig.add_annotation(
-                    dict(font=dict(color=color_col[key][j], size=10),
-                         x=pos_x_t,
-                         y=pos_y,
-                         xanchor="left",
-                         yanchor="top",
-                         showarrow=False,
-                         text=range_col[key][j][0],
-                         textangle=0,
-                         xref='paper',
-                         yref="paper"
-                         )
-                )
+#                 fig.add_annotation(
+#                     dict(font=dict(color=color_col[key][j], size=10),
+#                          # x=x_loc,
+#                          x=pos_x_t+pos_x,
+#                          y=pos_y,
+#                          xanchor="right",
+#                          yanchor="top",
+#                          showarrow=False,
+#                          text=range_col[key][j][1],
+#                          textangle=0,
+#                          xref='paper',
+#                          yref="paper"
+#                          )
+#                 )
 
-                fig.add_annotation(
-                    dict(font=dict(color=color_col[key][j], size=10),
-                         # x=x_loc,
-                         x=pos_x_t+pos_x,
-                         y=pos_y,
-                         xanchor="right",
-                         yanchor="top",
-                         showarrow=False,
-                         text=range_col[key][j][1],
-                         textangle=0,
-                         xref='paper',
-                         yref="paper"
-                         )
-                )
+#             pos_y += 0.03
+#             pos_y = min(pos_y, 1.0)
 
-            pos_y += 0.03
-            pos_y = min(pos_y, 1.0)
+#         pos_x_t += pos_x
+#         pos_x_c += 0.5*pos_x
 
-        pos_x_t += pos_x
-        pos_x_c += 0.5*pos_x
-
-    return fig
-
+#     return fig
 
 def layout_draw_header_lines(fig, ratio_plots):
     """
@@ -2667,7 +2664,6 @@ def rgb_to_hex(rgb):
 # ------------------------------- Main Plot --------------------------------
 # @title
 
-
 def main_plot(df, sequence=[], title="", height_plot=1600):
     # Zona RGSA-NGSA-DGSA
     zona_mapping = {
@@ -2719,7 +2715,16 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
 
     ratio_plots_seq = []
     for key in plot_sequence.values():
-        ratio_plots_seq.append(ratio_plots[key])
+        if 'VSH' in key:
+            ratio_plots_seq.append(ratio_plots['VSH'])
+        elif 'SW' in key:
+            ratio_plots_seq.append(ratio_plots['SW'])
+        elif 'PHIE' in key:
+            ratio_plots_seq.append(ratio_plots['PHIE'])
+        elif 'PHIT' in key:
+            ratio_plots_seq.append(ratio_plots['PHIT'])
+        else:
+            ratio_plots_seq.append(ratio_plots[key])
 
     subplot_col = len(plot_sequence.keys())
 
@@ -2756,7 +2761,7 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
                 df, fig, axes, col, n_seq, counter=counter)
 
         # VSHALE
-        elif col == 'VSH_LINEAR':
+        elif 'VSH_LINEAR' in col:
             # fig, axes = plot_line(df, fig, axes, base_key='VSH_LINEAR', n_seq=n_seq, col=col, label=col)
             fig, axes, counter = plot_xover_thres_dual(
                 df, fig, axes, col, n_seq, counter)
@@ -2764,10 +2769,11 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
         elif col == 'VSH_GR_DN':
             fig, axes, counter = plot_two_features_simple(df, fig, axes, 'VSH_GR_DN', n_seq,
                                                           counter, n_plots=subplot_col, log_scale=False)
-        elif col == 'VSH':
-            # fig, axes = plot_line(df, fig, axes, base_key='VSH', n_seq=n_seq, col=col, label=col)
+        elif col.startswith('VSH_'):
+            # Handle all VSH variations including VSH_Z4
             fig, axes, counter = plot_xover_thres_dual(
-                df, fig, axes, col, n_seq, counter)
+                df, fig, axes, key='VSH_LINEAR', n_seq=n_seq, counter=counter
+            )
 
         # POROSITY
         elif col == 'PHIE':
@@ -2941,6 +2947,136 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
     fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=0)
 
     fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+
+    return fig
+
+def layout_axis(fig, axes, ratio_plots, plot_sequence):
+    # Define base sequences for mapping custom log names
+    base_sequences = sorted([
+        "C3_C1_BASELINE", "NPHI_RHOB_NON_NORM", "PHIE_PHIT", "NPHI_RHOB",
+        "RT_RHOB", "RT_RGSA", "NPHI_NGSA", "RHOB_DGSA", "RGBE_TEXT",
+        "RPBE_TEXT", "RT_RO", "VSH_LINEAR", "VSH_GR_DN", "RT_PHIE",
+        "SWARRAY", "TG_SUMC", "GR_CAL_NO", "DGRCC_NO", "GR_CAL_TR",
+        "DGRCC_TR", "GR_CAL_SM", "DGRCC_SM", "GR_CAL_FM", "DGRCC_FM",
+        "ARM48PC", "GR_CAL", "DGRCC", "MARKER", "ZONE", "SWGRAD",
+        "IQUAL", "C3_C1", "PHIE", "ZONA", "RGBE", "RPBE", "DNSV",
+        "ALCDLC", "VSH", "RWA", "TGC", "DNS", "SW", "GR", "RT", "SP",
+    ], key=len, reverse=True)
+    
+    fig.add_annotation(
+        dict(font=dict(color='black', size=12),
+             x=-0.001,
+             y=0.97,
+             xanchor="right",
+             yanchor="top",
+             showarrow=False,
+             text=depth+' (m)',
+             textangle=-90,
+             xref='paper',
+             yref="paper"
+             )
+    )
+    pos_x_c = 0
+    ratio_plots = np.array(ratio_plots)
+    line_pos = []
+    for i in ratio_plots:
+        line_pos.append(
+            i*(1/(ratio_plots/len(ratio_plots)).sum())/len(ratio_plots))
+
+    pos_x_t = 0
+    for i, key in enumerate(axes.keys()):
+        # Map custom keys to base sequences
+        base_key = next((base for base in base_sequences if base in key), 'GR')
+        
+        pos_x = line_pos[i]
+        pos_y = 0.92
+        pos_x_c += 0.5*pos_x
+
+        # Ganti dengan key yang butuh semua axis (feature di datacol)
+        if base_key in ['SWARRAY', 'TGC']:
+            axis_range = axes[key][1:]  # Semua axis
+        else:
+            axis_range = axes[key][1:3]  # Hanya 2 axis pertama
+
+        for j, axis in enumerate(axis_range):
+            # Use base_key for color, data, unit, and range
+            fig.update_layout(
+                **{axis: dict(
+                    tickfont=dict(color=color_col[base_key][j], size=9),
+                    anchor="free",
+                    showline=True,
+                    position=pos_y,
+                    showticklabels=False,
+                    linewidth=1.5,
+                    linecolor=color_col[base_key][j],
+                )}
+            )
+
+            # Add Text Parameter
+            fig.add_annotation(
+                dict(font=dict(color=color_col[base_key][j], size=12),
+                     x=pos_x_c,
+                     y=pos_y,
+                     xanchor="center",
+                     yanchor="bottom",
+                     showarrow=False,
+                     text=data_col[base_key][j],
+                     textangle=0,
+                     xref='paper',
+                     yref="paper"
+                     )
+            )
+
+            # Add Text Unit
+            fig.add_annotation(
+                dict(font=dict(color=color_col[base_key][j], size=10),
+                     x=pos_x_c,
+                     y=pos_y,
+                     xanchor="center",
+                     yanchor="top",
+                     showarrow=False,
+                     text=unit_col[base_key][j],
+                     textangle=0,
+                     xref='paper',
+                     yref="paper"
+                     )
+            )
+
+            # Add Text Min Max Range
+            if base_key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
+                fig.add_annotation(
+                    dict(font=dict(color=color_col[base_key][j], size=10),
+                         x=pos_x_t,
+                         y=pos_y,
+                         xanchor="left",
+                         yanchor="top",
+                         showarrow=False,
+                         text=range_col[base_key][j][0],
+                         textangle=0,
+                         xref='paper',
+                         yref="paper"
+                         )
+                )
+
+                fig.add_annotation(
+                    dict(font=dict(color=color_col[base_key][j], size=10),
+                         x=pos_x_t+pos_x,
+                         y=pos_y,
+                         xanchor="right",
+                         yanchor="top",
+                         showarrow=False,
+                         text=range_col[base_key][j][1],
+                         textangle=0,
+                         xref='paper',
+                         yref="paper"
+                         )
+                )
+
+            pos_y += 0.03
+            pos_y = min(pos_y, 1.0)
+
+        pos_x_t += pos_x
+        pos_x_c += 0.5*pos_x
 
     return fig
 

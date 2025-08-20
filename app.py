@@ -3229,46 +3229,34 @@ def get_fill_missing_plot():
     """
     Endpoint untuk membuat dan mengambil plot hasil proses Fill Missing.
     """
-    try:
-        payload = request.get_json()
-        file_paths = payload.get('file_paths', [])
-        full_path = payload.get('full_path', [])
-        selected_wells = payload.get('selected_wells', [])
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
 
-        # Fallback untuk Dashboard
-        if not file_paths and selected_wells:
-            file_paths = [os.path.join(
-                full_path, f"{w}.csv") for w in selected_wells]
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
 
-        if not file_paths:
-            return jsonify({'error': 'No files or wells were selected to plot.'}), 400
+            # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)
+            file_path = request_data.get('file_path')
+            # selected_wells = request_data.get('selected_wells', [])
+            # selected_intervals = request_data.get('selected_intervals', [])
 
-        # Muat data dari file yang ditentukan
-        df_list = []
-        for path in file_paths:
-            full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
-            if not full_path.startswith(DATA_ROOT):
-                continue
-            if os.path.exists(full_path):
-                df_list.append(pd.read_csv(full_path))
+            if file_path:
+                # DirectorySidebar mode - single file
+                if not os.path.exists(file_path):
+                    return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
+                df = pd.read_csv(file_path, on_bad_lines='warn')
 
-        if not df_list:
-            return jsonify({'error': 'Data for the selected files could not be found.'}), 404
+            # Call plotting function with processed data
+            fig_result = plot_fill_missing(df, title="Fill Missing Plot")
 
-        df_combined = pd.concat(df_list, ignore_index=True)
+            # Send finished plot as JSON
+            return jsonify(fig_result.to_json())
 
-        # --- PERUBAHAN: Menggunakan fungsi plot_fill_missing ---
-        # Plot placeholder diganti dengan pemanggilan fungsi Anda yang sebenarnya.
-        title = f"Fill Missing Result for {', '.join(selected_wells) if selected_wells else os.path.basename(file_paths[0])}"
-        fig_result = plot_fill_missing(df_combined, title=title)
-
-        # Konversi figure Plotly ke format JSON
-        return jsonify(fig_result.to_json())
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/get-module3-plot', methods=['POST', 'OPTIONS'])

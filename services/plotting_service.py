@@ -128,6 +128,7 @@ data_col = {
     'R39PC_FM': ['R39PC_FM'], 'A40H_FM': ['A40H_FM'], 'ARM48PC_FM': ['ARM48PC_FM'],
     'RHOZ_FM': ['RHOZ_FM'], 'ALCDLC_FM': ['ALCDLC_FM'], 'ROBB_FM': ['ROBB_FM'],
     'TNPH_FM': ['TNPH_FM'], 'TNPL_FM': ['TNPL_FM'],
+    'MISSING_FLAG': ['MISSING_FLAG']
 }
 
 
@@ -222,6 +223,7 @@ unit_col = {
     'GR_CAL_FM': ['GAPI'], 'DGRCC_FM': ['GAPI'], 'RLA5_FM': ['OHMM'], 'R39PC_FM': ['OHMM'],
     'A40H_FM': ['OHMM'], 'ARM48PC_FM': ['OHMM'], 'RHOZ_FM': ['G/C3'], 'ALCDLC_FM': ['G/C3'],
     'ROBB_FM': ['G/C3'], 'TNPH_FM': ['V/V'], 'TNPL_FM': ['V/V'],
+    'MISSING_FLAG': ['']
 }
 
 
@@ -315,6 +317,7 @@ color_col = {
     'GR_CAL_FM': ['magenta'], 'DGRCC_FM': ['magenta'], 'RLA5_FM': ['magenta'], 'R39PC_FM': ['magenta'],
     'A40H_FM': ['magenta'], 'ARM48PC_FM': ['magenta'], 'RHOZ_FM': ['magenta'], 'ALCDLC_FM': ['magenta'],
     'ROBB_FM': ['magenta'], 'TNPH_FM': ['magenta'], 'TNPL_FM': ['magenta'],
+    'MISSING_FLAG': [colors_dict['black']]
 }
 
 flag_color = {
@@ -348,6 +351,10 @@ flag_color = {
     "IQUAL": {
         1: 'orange',
         1: 'orange',
+    },
+    "MISSING_FLAG": {
+        1: 'green',
+        2: 'yellow',
     }
 
 }
@@ -431,6 +438,7 @@ range_col = {
     'R39PC_FM': [[0.2, 2000]], 'A40H_FM': [[0.2, 2000]], 'ARM48PC_FM': [[0.2, 2000]],
     'RHOZ_FM': [[1.65, 2.65]], 'ALCDLC_FM': [[1.65, 2.65]], 'ROBB_FM': [[1.65, 2.65]],
     'TNPH_FM': [[0.6, -0.1]], 'TNPL_FM': [[0.6, -0.1]],
+    'MISSING_FLAG': [[0, 2]]
 }
 
 ratio_plots = {
@@ -515,6 +523,7 @@ ratio_plots = {
     'ARM48PC_SM': 1, 'RHOZ_SM': 1, 'ALCDLC_SM': 1, 'ROBB_SM': 1, 'TNPH_SM': 1, 'TNPL_SM': 1,
     'GR_CAL_FM': 1, 'DGRCC_FM': 1, 'RLA5_FM': 1, 'R39PC_FM': 1, 'A40H_FM': 1,
     'ARM48PC_FM': 1, 'RHOZ_FM': 1, 'ALCDLC_FM': 1, 'ROBB_FM': 1, 'TNPH_FM': 1, 'TNPL_FM': 1,
+    'MISSING_FLAG': 1
 }
 
 flags_name = {
@@ -547,6 +556,10 @@ flags_name = {
     },
     'IQUAL': {
         1: '1'
+    },
+    'MISSING_FLAG': {
+        1: '1',
+        2: '2'
     }
 }
 
@@ -1844,6 +1857,10 @@ def plot_flag(df_well, fig, axes, key, n_seq):
         flag_colors = flag_color[key]
         flags_names = flags_name[key]
         max_val = 1
+    elif key == 'MISSING_FLAG':
+        flag_colors = flag_color[key]
+        flags_names = flags_name[key]
+        max_val = 2
     elif key == 'CTC':
         flag_colors = flag_color[key]
         flags_names = flags_name[key]
@@ -2252,7 +2269,7 @@ def layout_axis(fig, axes, ratio_plots, plot_sequence):
             )
 
             # Add Text Min Max Range
-            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
+            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'MISSING_FLAG', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
                 fig.add_annotation(
                     dict(font=dict(color=color_col[key][j], size=10),
                          x=pos_x_t,
@@ -2507,7 +2524,7 @@ def layout_axis_header(fig_main, axes, ratio_plots, plot_sequence):
             )
 
             # Add Text Min Max Range
-            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'RGBE', 'RPBE', 'IQUAL', 'RGBE_TEXT', 'RPBE_TEXT']:
+            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'RGBE', 'RPBE', 'IQUAL', 'RGBE_TEXT', 'RPBE_TEXT', 'MISSING_FLAG']:
                 fig_header.add_annotation(
                     dict(font=dict(color=color_col[key][j], size=10),
                          x=pos_x_t,
@@ -2709,6 +2726,11 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             df['IQUAL'] = df['IQUAL'].replace(0, np.nan)
             df_well_marker_iqual = df.copy()
             df_marker_iqual = extract_markers_customize(df, 'IQUAL')
+        elif seq == 'MISSING_FLAG':
+            df['MISSING_FLAG'] = df['MISSING_FLAG'].replace(0, np.nan)
+            df_well_marker_missing_flag = df.copy()
+            df_marker_missing_flag = extract_markers_customize(
+                df, 'MISSING_FLAG')
         elif seq == 'SWGRAD':
             df['SWGRAD'] = df['SWGRAD'].abs()
         elif seq == 'RT_RO':
@@ -2867,6 +2889,11 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
                                   fig, axes, 'IQUAL', n_seq)
             fig, axes = plot_texts_marker(
                 df_marker_iqual, df_well_marker_iqual['DEPTH'].max(), fig, axes, col, n_seq)
+        elif col == 'MISSING_FLAG':
+            fig, axes = plot_flag(df_well_marker_missing_flag,
+                                  fig, axes, 'MISSING_FLAG', n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker_missing_flag, df_well_marker_missing_flag['DEPTH'].max(), fig, axes, col, n_seq)
         elif col == 'MARKER':
             fig, axes = plot_flag(df_well_marker, fig, axes, col, n_seq)
             fig, axes = plot_texts_marker(
@@ -3534,10 +3561,51 @@ def plot_smoothing_prep(df):
 
 def plot_fill_missing(df, title="Fill Missing Plot"):
     """Membuat plot Fill Missing dengan sequence yang sudah ditentukan."""
-    # Definisikan urutan track yang ingin ditampilkan
-    sequence = ['GR', 'NPHI_RHOB', 'RT', 'MISSING_FLAG']
+    # Reset index seperti di colab code
+    df = df.reset_index()
 
-    # Panggil fungsi plotting utama
+    # Ensure DEPTH column exists (rename DEPT to DEPTH if needed)
+    if 'DEPT' in df.columns and 'DEPTH' not in df.columns:
+        df = df.rename(columns={'DEPT': 'DEPTH'})
+
+    # Auto-detect LWD vs WL berdasarkan kolom yang tersedia
+    lwd_sequence = [
+        'DGRCC', 'DGRCC_FM',
+        'ALCDLC', 'ALCDLC_FM',
+        'TNPL', 'TNPL_FM',
+        'R39PC', 'R39PC_FM',
+        'MISSING_FLAG'
+    ]
+
+    wl_sequence = [
+        'GR_CAL', 'GR_CAL_FM',
+        'RHOZ', 'RHOZ_FM',
+        'RLA5', 'RLA5_FM',
+        'TNPH', 'TNPH_FM',
+        'MISSING_FLAG'
+    ]
+
+    # Check which type of data we have
+    lwd_available = sum(1 for col in lwd_sequence if col in df.columns)
+    wl_available = sum(1 for col in wl_sequence if col in df.columns)
+
+    if lwd_available >= wl_available:
+        # Use LWD sequence
+        sequence = lwd_sequence
+        title = 'LWD'
+    else:
+        # Use WL sequence and scale RHOZ if available
+        if 'RHOZ' in df.columns:
+            df['RHOZ'] = df['RHOZ'] / 1000
+        sequence = wl_sequence
+        title = 'WL'
+
+    # Filter sequence to only include available columns
+    sequence = [col for col in sequence if col in df.columns]
+
+    if not sequence:
+        raise ValueError("No valid columns found for fill missing plot")
+
     fig = main_plot(df, sequence, title=title)
 
     return fig

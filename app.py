@@ -3359,6 +3359,111 @@ def get_custom_plot():
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 
+# --- NEW: Define a constant for the base directory where LAS files are stored ---
+LAS_FILES_BASE_DIR = 'data/las'
+
+@app.route('/api/get-las-logs', methods=['POST'])
+def get_las_curves():
+    """
+    Gets the list of curve mnemonics (logs) from a specified LAS file.
+    Expects a JSON payload with a 'las_path' key containing only the filename.
+    Example: {"las_path": "BNG-07_Property&Minsol.las"}
+    """
+    try:
+        # 1. Get the filename from the incoming JSON request
+        data = request.get_json()
+        if not data or 'las_path' not in data:
+            return jsonify({"error": "Missing 'las_path' in request body."}), 400
+        
+        filename = data['las_path']
+        
+        # --- MODIFIED: Construct the full, safe path on the server ---
+        # This joins the base directory with the filename from the request.
+        full_path = os.path.join(LAS_FILES_BASE_DIR, filename)
+        
+        # Security check: ensure the path is still within the intended directory
+        safe_path = os.path.abspath(full_path)
+        if not safe_path.startswith(os.path.abspath(LAS_FILES_BASE_DIR)):
+            return jsonify({"error": "Invalid file path."}), 400
+
+        # 3. File Existence Check
+        if not os.path.exists(safe_path):
+            return jsonify({"error": f"LAS file not found at path: {full_path}"}), 404
+
+        # 4. Read the LAS file using lasio
+        print(f"Reading LAS file: {safe_path}")
+        las = lasio.read(safe_path)
+        
+        # 5. Extract the curve mnemonics into a list
+        curves = [curve.mnemonic for curve in las.curves]
+        
+        # 6. Return the list of curves as a JSON response
+        return jsonify(curves)    
+
+    except lasio.las.LASHeaderError as e:
+        return jsonify({'error': f"Failed to parse LAS file header: {str(e)}"}), 500
+    except Exception as e:
+        # General error handler for any other unexpected issues
+        return jsonify({'error': f"An unexpected error occurred: {str(e)}"}), 500
+
+
+# --- NEW API ENDPOINT FOR SAVING THE CURVE ---
+@app.route('/api/save-las-curve', methods=['POST'])
+def save_las_curve():
+    """
+    Reads a selected curve from a LAS file and merges it into a target CSV well file
+    based on the 'DEPTH' column.
+    """
+    try:
+        data = request.get_json()
+        required_keys = ['las_filename', 'full_path', 'source_log', 'output_log_name']
+        if not all(key in data for key in required_keys):
+            return jsonify({"error": "Missing required data in request."}), 400
+
+        las_filename = data['las_filename']
+        target_well_csv = data['full_path']
+        source_log = data['source_log']
+        output_log_name = data['output_log_name']
+
+        # 1. Construct full paths for both files
+        las_full_path = os.path.join(LAS_FILES_BASE_DIR, las_filename)
+        csv_full_path = target_well_csv
+
+        # 2. Read the LAS file and convert to a DataFrame
+        if not os.path.exists(las_full_path):
+            return jsonify({"error": f"Source LAS file not found: {las_filename}"}), 404
+        las = lasio.read(las_full_path)
+        las_df = las.df().reset_index()
+        
+        # Ensure DEPTH and the source log exist
+        if 'DEPTH' not in las_df.columns or source_log not in las_df.columns:
+            return jsonify({"error": f"Required columns ('DEPTH', '{source_log}') not in LAS file."}), 400
+        las_df_subset = las_df[['DEPTH', source_log]].copy()
+
+        # 3. Read the target CSV file
+        if not os.path.exists(csv_full_path):
+            return jsonify({"error": f"Target CSV file not found: {target_well_csv}"}), 404
+        csv_df = pd.read_csv(csv_full_path)
+
+        if 'DEPTH' not in csv_df.columns:
+            return jsonify({"error": "'DEPTH' column not found in target CSV file."}), 400
+
+        # 4. Merge the two DataFrames on the 'DEPTH' column
+        # Using a left merge to keep all original rows from the CSV
+        merged_df = pd.merge(csv_df, las_df_subset, on='DEPTH', how='left')
+
+        # 5. Rename the new column to the desired output name
+        merged_df.rename(columns={source_log: output_log_name}, inplace=True)
+
+        # 6. Save the updated DataFrame back to the CSV file
+        merged_df.to_csv(csv_full_path, index=False)
+
+        return jsonify({"message": f"Successfully saved '{output_log_name}' to '{target_well_csv}'."})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"An unexpected error occurred during save: {str(e)}"}), 500
 
 # This is for local development testing, Vercel will use its own server
 if __name__ == '__main__':

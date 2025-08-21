@@ -271,6 +271,7 @@ def get_well_columns():
         for path in file_paths:
             # IMPORTANT: Security check to prevent accessing files outside the 'data' directory
             safe_path = os.path.abspath(path)
+            print(f"Backend is trying to access file at: {safe_path}")
             if not safe_path.startswith(os.path.abspath('data')):
                 print(f"Warning: Access denied for path '{path}'")
                 continue
@@ -291,40 +292,72 @@ def get_well_columns():
 @app.route('/api/get-log-percentiles', methods=['POST'])
 def get_log_percentiles():
     """
-    Menghitung dan mengembalikan nilai persentil P5 dan P95.
-    Fleksibel untuk menerima 'file_paths' (Data Prep) atau 'selected_wells' (Dashboard).
+    Menghitung persentil P5 dan P95.
+    Fleksibel untuk alur Data Prep (menggunakan file_paths) 
+    dan Dashboard (menggunakan selected_wells).
     """
     try:
         payload = request.get_json()
-        file_paths = payload.get('file_paths', [])
-        selected_wells = payload.get('selected_wells', [])
-        selected_intervals = payload.get('selected_intervals', [])
-        log_column = payload.get('log_column', 'GR')
+        log_column = payload.get('log_column')
+        print(f"Received request for log percentiles on column: {log_column}")
 
-        if not file_paths or not log_column:
-            return jsonify({"error": "Path file atau nama sumur dan kolom log harus dipilih."}), 400
+        if not log_column:
+            return jsonify({"error": "Kolom log harus disediakan."}), 400
+
+        paths_to_process = []
+
+        # ALUR 1: DATA PREP -> mengirim 'file_paths' yang berisi path relatif lengkap
+        if 'file_paths' in payload and payload.get('file_paths'):
+            print("Percentile Flow: Data Prep (menggunakan file_paths)")
+            file_paths = payload['file_paths']
+            for path in file_paths:
+                # Buat path absolut yang aman dari DATA_ROOT
+                safe_path = os.path.abspath(
+                    os.path.join(PROJECT_ROOT, path))
+                if safe_path.startswith(DATA_ROOT):
+                    paths_to_process.append(safe_path)
+                else:
+                    print(
+                        f"Peringatan Keamanan: Akses ke path '{path}' ditolak.")
+
+        # ALUR 2: DASHBOARD -> mengirim 'selected_wells' (nama) dan 'full_path' (direktori)
+        elif 'selected_wells' in payload and 'full_path' in payload:
+            print("Percentile Flow: Dashboard (menggunakan selected_wells)")
+            selected_wells = payload['selected_wells']
+            # Ini adalah path relatif ke folder data bersih, misal: 'data/wells'
+            full_path = payload['full_path']
+
+            # Buat base_dir yang aman dari DATA_ROOT
+            base_dir = os.path.abspath(
+                os.path.join(PROJECT_ROOT, '..', full_path))
+            if not base_dir.startswith(DATA_ROOT):
+                return jsonify({"error": f"Akses ke direktori '{full_path}' ditolak."}), 403
+
+            paths_to_process = [os.path.join(
+                base_dir, f"{well}.csv") for well in selected_wells]
+
+        else:
+            return jsonify({"error": "Payload tidak valid. Harus berisi 'file_paths' atau 'selected_wells' dan 'full_path'."}), 400
+
+        if not paths_to_process:
+            return jsonify({"error": "Tidak ada file valid yang ditemukan untuk diproses."}), 404
 
         all_data_frames = []
-        for path in file_paths:
-            full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
-            print(f"Backend mencoba mencari file di: {full_path}")
-
-            data_root = os.path.abspath(os.path.join(PROJECT_ROOT, 'data'))
-            if not full_path.startswith(data_root):
-                print(f"Peringatan: Akses ke path '{path}' tidak diizinkan.")
-                continue
-            # -------------------------------------------------------------
-
-            if os.path.exists(full_path):
-                all_data_frames.append(pd.read_csv(full_path))
+        for file_path in paths_to_process:
+            if os.path.exists(file_path):
+                df_temp = pd.read_csv(file_path)
+                all_data_frames.append(df_temp)
             else:
-                print(f"Peringatan: File tidak ditemukan di path: {full_path}")
+                print(f"Peringatan: File tidak ditemukan di path: {file_path}")
+                # Jangan hentikan proses jika satu file tidak ada, lewati saja
+                continue
 
         if not all_data_frames:
             return jsonify({"error": "Data untuk file yang dipilih tidak ditemukan."}), 404
 
         df = pd.concat(all_data_frames, ignore_index=True)
 
+        selected_intervals = payload.get('selected_intervals', [])
         if selected_intervals and 'MARKER' in df.columns:
             df = df[df['MARKER'].isin(selected_intervals)]
 
@@ -334,7 +367,7 @@ def get_log_percentiles():
         log_data = df[log_column].dropna()
 
         if log_data.empty:
-            return jsonify({"error": "Tidak ada nilai log yang valid untuk perhitungan persentil."}), 404
+            return jsonify({"error": f"Tidak ada nilai log yang valid di kolom '{log_column}'."}), 404
 
         p5_value = np.nanpercentile(log_data, 5)
         p95_value = np.nanpercentile(log_data, 95)
@@ -3359,8 +3392,10 @@ def get_custom_plot():
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 
+
 # --- NEW: Define a constant for the base directory where LAS files are stored ---
 LAS_FILES_BASE_DIR = 'data/las'
+
 
 @app.route('/api/get-las-logs', methods=['POST'])
 def get_las_curves():
@@ -3374,13 +3409,13 @@ def get_las_curves():
         data = request.get_json()
         if not data or 'las_path' not in data:
             return jsonify({"error": "Missing 'las_path' in request body."}), 400
-        
+
         filename = data['las_path']
-        
+
         # --- MODIFIED: Construct the full, safe path on the server ---
         # This joins the base directory with the filename from the request.
         full_path = os.path.join(LAS_FILES_BASE_DIR, filename)
-        
+
         # Security check: ensure the path is still within the intended directory
         safe_path = os.path.abspath(full_path)
         if not safe_path.startswith(os.path.abspath(LAS_FILES_BASE_DIR)):
@@ -3393,12 +3428,12 @@ def get_las_curves():
         # 4. Read the LAS file using lasio
         print(f"Reading LAS file: {safe_path}")
         las = lasio.read(safe_path)
-        
+
         # 5. Extract the curve mnemonics into a list
         curves = [curve.mnemonic for curve in las.curves]
-        
+
         # 6. Return the list of curves as a JSON response
-        return jsonify(curves)    
+        return jsonify(curves)
 
     except lasio.las.LASHeaderError as e:
         return jsonify({'error': f"Failed to parse LAS file header: {str(e)}"}), 500
@@ -3416,7 +3451,8 @@ def save_las_curve():
     """
     try:
         data = request.get_json()
-        required_keys = ['las_filename', 'full_path', 'source_log', 'output_log_name']
+        required_keys = ['las_filename', 'full_path',
+                         'source_log', 'output_log_name']
         if not all(key in data for key in required_keys):
             return jsonify({"error": "Missing required data in request."}), 400
 
@@ -3434,7 +3470,7 @@ def save_las_curve():
             return jsonify({"error": f"Source LAS file not found: {las_filename}"}), 404
         las = lasio.read(las_full_path)
         las_df = las.df().reset_index()
-        
+
         # Ensure DEPTH and the source log exist
         if 'DEPTH' not in las_df.columns or source_log not in las_df.columns:
             return jsonify({"error": f"Required columns ('DEPTH', '{source_log}') not in LAS file."}), 400
@@ -3471,6 +3507,7 @@ def save_las_curve():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"An unexpected error occurred during save: {str(e)}"}), 500
+
 
 # This is for local development testing, Vercel will use its own server
 if __name__ == '__main__':

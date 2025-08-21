@@ -2210,126 +2210,6 @@ def layout_draw_lines(fig, ratio_plots, df_well, xgrid_intv):
 
 # ---panggil layout axis
 
-# def layout_axis(fig, axes, ratio_plots, plot_sequence):
-#     fig.add_annotation(
-#         dict(font=dict(color='black', size=12),
-#              x=-0.001,
-#              y=0.97,
-#              xanchor="right",
-#              yanchor="top",
-#              showarrow=False,
-#              text=depth+' (m)',
-#              textangle=-90,
-#              xref='paper',
-#              yref="paper"
-#              )
-#     )
-#     pos_x_c = 0
-#     ratio_plots = np.array(ratio_plots)
-#     line_pos = []
-#     for i in ratio_plots:
-#         line_pos.append(
-#             i*(1/(ratio_plots/len(ratio_plots)).sum())/len(ratio_plots))
-
-#     pos_x_t = 0
-#     for i, key in enumerate(axes.keys()):
-#         # key = plot_sequence[i]
-#         pos_x = line_pos[i]
-#         # pos_y = 0.85
-#         pos_y = 0.92
-#         pos_x_c += 0.5*pos_x
-
-#         # Ganti dengan key yang butuh semua axis (feature di datacol)
-#         if key in ['SWARRAY', 'TGC']:
-#             axis_range = axes[key][1:]  # Semua axis
-#         else:
-#             axis_range = axes[key][1:3]  # Hanya 2 axis pertama
-
-#         for j, axis in enumerate(axis_range):
-#             # print(f'{i}:{j}')
-#             fig.update_layout(
-#                 **{axis: dict(
-#                     tickfont=dict(color=color_col[key][j], size=9),
-#                     anchor="free",
-#                     showline=True,
-#                     position=pos_y,
-#                     showticklabels=False,
-#                     linewidth=1.5,
-#                     linecolor=color_col[key][j],
-#                 )}
-#             )
-
-#             # Add Text Parameter
-#             fig.add_annotation(
-#                 dict(font=dict(color=color_col[key][j], size=12),
-#                      # x=x_loc,
-#                      x=pos_x_c,
-#                      y=pos_y,
-#                      xanchor="center",
-#                      yanchor="bottom",
-#                      showarrow=False,
-#                      text=data_col[key][j],
-#                      textangle=0,
-#                      xref='paper',
-#                      yref="paper"
-#                      )
-#             )
-
-#             # Add Text Unit
-#             fig.add_annotation(
-#                 dict(font=dict(color=color_col[key][j], size=10),
-#                      x=pos_x_c,
-#                      y=pos_y,
-#                      xanchor="center",
-#                      yanchor="top",
-#                      showarrow=False,
-#                      text=unit_col[key][j],
-#                      textangle=0,
-#                      xref='paper',
-#                      yref="paper"
-#                      )
-#             )
-
-    # # Add Text Min Max Range
-    # if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'MISSING_FLAG', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
-    #     fig.add_annotation(
-    #         dict(font=dict(color=color_col[key][j], size=10),
-    #              x=pos_x_t,
-    #              y=pos_y,
-    #              xanchor="left",
-    #              yanchor="top",
-    #              showarrow=False,
-    #              text=range_col[key][j][0],
-    #              textangle=0,
-    #              xref='paper',
-    #              yref="paper"
-    #              )
-    #     )
-
-#                 fig.add_annotation(
-#                     dict(font=dict(color=color_col[key][j], size=10),
-#                          # x=x_loc,
-#                          x=pos_x_t+pos_x,
-#                          y=pos_y,
-#                          xanchor="right",
-#                          yanchor="top",
-#                          showarrow=False,
-#                          text=range_col[key][j][1],
-#                          textangle=0,
-#                          xref='paper',
-#                          yref="paper"
-#                          )
-#                 )
-
-#             pos_y += 0.03
-#             pos_y = min(pos_y, 1.0)
-
-#         pos_x_t += pos_x
-#         pos_x_c += 0.5*pos_x
-
-#     return fig
-
-
 def layout_draw_header_lines(fig, ratio_plots):
     """
     Fungsi untuk menggambar garis-garis pada area header saja
@@ -2984,7 +2864,6 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
 
     return fig
 
-
 def layout_axis(fig, axes, ratio_plots, plot_sequence):
     fig.add_annotation(
         dict(font=dict(color='black', size=12),
@@ -3095,14 +2974,6 @@ def layout_axis(fig, axes, ratio_plots, plot_sequence):
                          yref="paper"
                          )
                 )
-
-            pos_y += 0.03
-            pos_y = min(pos_y, 1.0)
-
-        pos_x_t += pos_x
-        pos_x_c += 0.5*pos_x
-
-    return fig
 
 
 def extract_markers_with_mean_depth(df):
@@ -3728,8 +3599,14 @@ def plot_fill_missing(df, title="Fill Missing Plot"):
         title = 'LWD'
     else:
         # Use WL sequence and scale RHOZ if available
-        if 'RHOZ' in df.columns:
-            df['RHOZ'] = df['RHOZ'] / 1000
+        for col in df.columns:
+            # Periksa apakah nama kolom (string) mengandung substring 'RHOZ'
+            if 'RHOZ' in col:
+                # Pesan log untuk verifikasi
+                print(f"Melakukan scaling pada kolom: {col}")
+                # Bagi nilai di kolom tersebut dengan 1000
+                df[col] = df[col] / 1000
+
         sequence = wl_sequence
         title = 'WL'
 

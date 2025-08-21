@@ -2678,8 +2678,8 @@ def run_splicing():
             return jsonify({"error": "run1_well and run2_well are required"}), 400
 
         # 2. Use file paths from frontend directly
-        path_run1 = run1_file_path + '.csv'  # Data ATAS
-        path_run2 = run2_file_path + '.csv'  # Data BAWAH
+        path_run1 = run1_file_path
+        path_run2 = run2_file_path
 
         print(f"Run 1 (data atas) dari file: {path_run1}")
         print(f"Run 2 (data bawah) dari file: {path_run2}")

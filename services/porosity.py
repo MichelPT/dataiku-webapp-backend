@@ -42,7 +42,6 @@ def _klasifikasi_reservoir_numeric(phie):
     else:
         return 1  # Non Prospek
 
-
 def calculate_porosity(
     df: pd.DataFrame,
     params: dict,
@@ -53,6 +52,12 @@ def calculate_porosity(
     Menghitung porositas dengan penanganan kondisi khusus (VSH >= 0.95) sesuai Loglan.
     """
     df_processed = df.copy()
+
+    # --- Ensure numeric types ---
+    for col in ["VSH", "RHOB", "NPHI"]:
+        if col in df_processed.columns:
+            df_processed[col] = pd.to_numeric(df_processed[col], errors="coerce")
+
 
     # --- Masking untuk filter interval/zona (tidak berubah) ---
     mask = pd.Series(True, index=df_processed.index)

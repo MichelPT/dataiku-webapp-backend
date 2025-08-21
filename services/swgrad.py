@@ -6,10 +6,6 @@ import pandas as pd
 # from scipy.stats import linregress
 
 
-import numpy as np
-import pandas as pd
-
-
 def indonesia_computation(rw_in, phie, ct, a, m, n, rtsh, vsh):
     """
     Fungsi untuk menghitung water saturation menggunakan metode Indonesia.
@@ -71,11 +67,11 @@ def process_swgrad(df: pd.DataFrame, params: dict = None, target_intervals: list
 
         df_processed['CT'] = 1 / df_processed['RT']
 
-        a = params.get('A', 1.0)
-        m = params.get('M', 2.0)
-        n = params.get('N', 2.0)
-        rtsh = params.get('RTSH', 2.2)
-        ftemp_const = params.get('FTEMP', 75.0)
+        a = float(params.get('A', 1.0))
+        m = float(params.get('M', 2.0))
+        n = float(params.get('N', 2.0))
+        rtsh = float(params.get('RTSH', 2.2))
+        ftemp_const = float(params.get('FTEMP', 75.0))
 
         # 2. Buat mask untuk memilih baris yang akan diproses
         mask = pd.Series(True, index=df_processed.index)

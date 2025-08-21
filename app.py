@@ -513,6 +513,11 @@ def get_plot():
 
         fig = plot_log_default(df=df)
 
+        if fig is None:
+            # Jika tidak, kembalikan pesan error yang jelas
+            print("Error: Fungsi plot_log_default() mengembalikan None.")
+            return jsonify({"error": "Gagal membuat gambar plot. Fungsi internal plotting tidak mengembalikan hasil."}), 500
+
         return jsonify(fig.to_json())
 
     except Exception as e:
@@ -3494,7 +3499,7 @@ def save_las_curve():
             on="DEPTH",
             direction="nearest"
         )
-        
+
         # 5. Rename the new column to the desired output name
         merged_df.rename(columns={source_log: output_log_name}, inplace=True)
 

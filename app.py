@@ -3092,6 +3092,7 @@ def get_module1_plot():
             # 4. Hanya panggil plot jika df berhasil dibuat
             if df is not None and not df.empty:
                 fig_result = plot_module1(df=df)
+                print(fig_result)
                 return jsonify(fig_result.to_json())
             else:
                 return jsonify({"error": "Gagal memproses data atau data kosong."}), 500

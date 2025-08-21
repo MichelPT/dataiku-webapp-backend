@@ -3484,10 +3484,17 @@ def save_las_curve():
         if 'DEPTH' not in csv_df.columns:
             return jsonify({"error": "'DEPTH' column not found in target CSV file."}), 400
 
-        # 4. Merge the two DataFrames on the 'DEPTH' column
-        # Using a left merge to keep all original rows from the CSV
-        merged_df = pd.merge(csv_df, las_df_subset, on='DEPTH', how='left')
+        if output_log_name in csv_df.columns:
+            csv_df = csv_df.drop(columns=[output_log_name])
 
+        # Merge the two DataFrames
+        merged_df = pd.merge_asof(
+            csv_df.sort_values("DEPTH"),
+            las_df_subset.sort_values("DEPTH"),
+            on="DEPTH",
+            direction="nearest"
+        )
+        
         # 5. Rename the new column to the desired output name
         merged_df.rename(columns={source_log: output_log_name}, inplace=True)
 

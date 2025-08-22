@@ -32,6 +32,7 @@ from services.plotting_service import (
     plot_gsa_main,
     plot_smoothing_prep,
     plot_splicing,
+    plot_trimming,
     plot_vsh_linear,
     plot_sw_indo,
     plot_rwa_indo,
@@ -3390,6 +3391,41 @@ def get_custom_plot():
             # Panggil fungsi plotting GSA yang baru
             fig_result = plot_custom(df, custom_columns)
 
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-trimming-plot', methods=['POST'])
+def get_trimming_plot():
+    """
+    Endpoint untuk membuat dan mengambil plot hasil proses Fill Missing.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+
+            # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)
+            file_path = request_data.get('file_path')
+            # selected_wells = request_data.get('selected_wells', [])
+            # selected_intervals = request_data.get('selected_intervals', [])
+
+            if file_path:
+                # DirectorySidebar mode - single file
+                if not os.path.exists(file_path):
+                    return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
+                df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            # Call plotting function with processed data
+            fig_result = plot_trimming(df)
+
+            # Send finished plot as JSON
             return jsonify(fig_result.to_json())
 
         except Exception as e:

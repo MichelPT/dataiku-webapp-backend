@@ -2210,6 +2210,7 @@ def layout_draw_lines(fig, ratio_plots, df_well, xgrid_intv):
 
 # ---panggil layout axis
 
+
 def layout_draw_header_lines(fig, ratio_plots):
     """
     Fungsi untuk menggambar garis-garis pada area header saja
@@ -2587,7 +2588,6 @@ def rgb_to_hex(rgb):
 # @title
 
 
-
 def main_plot(df, sequence=[], title="", height_plot=1600):
     # Zona RGSA-NGSA-DGSA
     zona_mapping = {
@@ -2629,6 +2629,10 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             df['IQUAL'] = df['IQUAL'].replace(0, np.nan)
             df_well_marker_iqual = df.copy()
             df_marker_iqual = extract_markers_customize(df, 'IQUAL')
+        elif seq == 'MISSING_FLAG':
+            df['MISSING_FLAG'] = df['MISSING_FLAG'].replace(0, np.nan)
+            df_well_marker_missing = df.copy()
+            df_marker_missing = extract_markers_customize(df, 'MISSING_FLAG')
         elif seq == 'SWGRAD':
             df['SWGRAD'] = df['SWGRAD'].abs()
         elif seq == 'RT_RO':
@@ -2787,6 +2791,11 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
                                   fig, axes, 'IQUAL', n_seq)
             fig, axes = plot_texts_marker(
                 df_marker_iqual, df_well_marker_iqual['DEPTH'].max(), fig, axes, col, n_seq)
+        elif col == 'MISSING_FLAG':
+            fig, axes = plot_flag(df_well_marker_missing,
+                                  fig, axes, 'MISSING_FLAG', n_seq)
+            fig, axes = plot_texts_marker(
+                df_marker_missing, df_well_marker_missing['DEPTH'].max(), fig, axes, col, n_seq)
         elif col == 'MARKER':
             fig, axes = plot_flag(df_well_marker, fig, axes, col, n_seq)
             fig, axes = plot_texts_marker(
@@ -2863,6 +2872,7 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
     fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
 
     return fig
+
 
 def layout_axis(fig, axes, ratio_plots, plot_sequence):
     fig.add_annotation(
@@ -2944,36 +2954,44 @@ def layout_axis(fig, axes, ratio_plots, plot_sequence):
                      )
             )
 
-            # Add Text Min Max Range
-            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE', 'MISSING_FLAG']:
-                fig.add_annotation(
-                    dict(font=dict(color=color_col[key][j], size=10),
-                         x=pos_x_t,
-                         y=pos_y,
-                         xanchor="left",
-                         yanchor="top",
-                         showarrow=False,
-                         text=range_col[key][j][0],
-                         textangle=0,
-                         xref='paper',
-                         yref="paper"
-                         )
-                )
+        # Add Text Min Max Range
+        if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'MISSING_FLAG', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
+            fig.add_annotation(
+                dict(font=dict(color=color_col[key][j], size=10),
+                     x=pos_x_t,
+                     y=pos_y,
+                     xanchor="left",
+                     yanchor="top",
+                     showarrow=False,
+                     text=range_col[key][j][0],
+                     textangle=0,
+                     xref='paper',
+                     yref="paper"
+                     )
+            )
 
-                fig.add_annotation(
-                    dict(font=dict(color=color_col[key][j], size=10),
-                         # x=x_loc,
-                         x=pos_x_t+pos_x,
-                         y=pos_y,
-                         xanchor="right",
-                         yanchor="top",
-                         showarrow=False,
-                         text=range_col[key][j][1],
-                         textangle=0,
-                         xref='paper',
-                         yref="paper"
-                         )
-                )
+            fig.add_annotation(
+                dict(font=dict(color=color_col[key][j], size=10),
+                     # x=x_loc,
+                     x=pos_x_t+pos_x,
+                     y=pos_y,
+                     xanchor="right",
+                     yanchor="top",
+                     showarrow=False,
+                     text=range_col[key][j][1],
+                     textangle=0,
+                     xref='paper',
+                     yref="paper"
+                     )
+            )
+
+            pos_y += 0.03
+            pos_y = min(pos_y, 1.0)
+
+        pos_x_t += pos_x
+        pos_x_c += 0.5*pos_x
+
+    return fig
 
 
 def extract_markers_with_mean_depth(df):

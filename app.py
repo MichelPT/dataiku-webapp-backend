@@ -513,6 +513,11 @@ def get_plot():
 
         fig = plot_log_default(df=df)
 
+        if fig is None:
+            # Jika tidak, kembalikan pesan error yang jelas
+            print("Error: Fungsi plot_log_default() mengembalikan None.")
+            return jsonify({"error": "Gagal membuat gambar plot. Fungsi internal plotting tidak mengembalikan hasil."}), 500
+
         return jsonify(fig.to_json())
 
     except Exception as e:
@@ -2678,8 +2683,8 @@ def run_splicing():
             return jsonify({"error": "run1_well and run2_well are required"}), 400
 
         # 2. Use file paths from frontend directly
-        path_run1 = run1_file_path + '.csv'  # Data ATAS
-        path_run2 = run2_file_path + '.csv'  # Data BAWAH
+        path_run1 = run1_file_path
+        path_run2 = run2_file_path
 
         print(f"Run 1 (data atas) dari file: {path_run1}")
         print(f"Run 2 (data bawah) dari file: {path_run2}")
@@ -3495,7 +3500,7 @@ def save_las_curve():
             on="DEPTH",
             direction="nearest"
         )
-        
+
         # 5. Rename the new column to the desired output name
         merged_df.rename(columns={source_log: output_log_name}, inplace=True)
 

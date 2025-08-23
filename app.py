@@ -90,20 +90,24 @@ def home():
 @app.route('/api/run-qc', methods=['POST'])
 def qc_route():
     """
-    Receives a list of files, runs the QC process, and returns the results.
+    Receives a structured payload with well logs, marker data, and zone data,
+    runs the QC process, and returns the results.
     """
     app.logger.info("Received request for /api/run-qc")
     try:
-        # The frontend will send a JSON object with a 'files' key
-        # files is a list of {'name': '...', 'content': '...'}
         data = request.get_json()
-        files_data = data.get('files')
 
-        if not files_data or not isinstance(files_data, list):
-            return jsonify({"error": "Invalid input: 'files' key with a list of file objects is required."}), 400
+        # Ekstrak data dari payload yang terstruktur
+        well_logs_data = data.get('well_logs')
+        marker_data = data.get('marker_data')
+        zone_data = data.get('zone_data')
 
-        # Call the refactored logic, passing the app's logger
-        results = run_full_qc_pipeline(files_data, app.logger)
+        if not well_logs_data or not isinstance(well_logs_data, list):
+            return jsonify({"error": "Invalid input: 'well_logs' key with a list of file objects is required."}), 400
+
+        # Panggil pipeline QC dengan data yang sudah dipisahkan
+        results = run_full_qc_pipeline(
+            well_logs_data, marker_data, zone_data, app.logger)
 
         return jsonify(results)
 
@@ -148,6 +152,103 @@ LAS_DIR = 'data/depth-matching'
 GWD_DIR = 'data/gwd'
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(PROJECT_ROOT, 'data')
+BASE_STRUCTURE_PATH = os.path.join(
+    os.path.dirname(__file__), 'data', 'structures')
+
+# --- Endpoint 1: Mengambil Struktur Folder ---
+
+
+@app.route('/api/get-folder-structure', methods=['GET'])
+def get_folder_structure():
+    """
+    Memindai direktori 'data/structures' dan mengembalikan hierarki folder
+    dalam format JSON.
+    Contoh: { "Adera": ["Abab", "Benuang"], "Limau": [...] }
+    """
+    app.logger.info("Menerima permintaan untuk /api/get-folder-structure")
+
+    # Pastikan path dasar ada
+    if not os.path.isdir(BASE_STRUCTURE_PATH):
+        app.logger.error(
+            f"Direktori dasar tidak ditemukan di: {BASE_STRUCTURE_PATH}")
+        return jsonify({"error": f"Direktori dasar tidak ditemukan di server: {BASE_STRUCTURE_PATH}"}), 500
+
+    structure_dict = {}
+    try:
+        # Dapatkan daftar semua 'Fields' (direktori level pertama)
+        fields = [f for f in os.listdir(BASE_STRUCTURE_PATH) if os.path.isdir(
+            os.path.join(BASE_STRUCTURE_PATH, f))]
+
+        for field in fields:
+            field_path = os.path.join(BASE_STRUCTURE_PATH, field)
+            # Dapatkan daftar semua 'Structures' di dalam setiap 'Field'
+            structures = [s for s in os.listdir(
+                field_path) if os.path.isdir(os.path.join(field_path, s))]
+            structure_dict[field] = sorted(structures)
+
+        app.logger.info(
+            f"Struktur folder berhasil dibaca: {len(structure_dict)} fields ditemukan.")
+        return jsonify(structure_dict)
+
+    except Exception as e:
+        app.logger.error(
+            f"Gagal saat memindai struktur folder: {e}", exc_info=True)
+        return jsonify({"error": "Gagal membaca struktur folder di server."}), 500
+
+
+# --- Endpoint 2: Menyimpan Hasil QC ---
+@app.route('/api/save-qc-results', methods=['POST'])
+def save_qc_results():
+    """
+    Menerima field, structure, dan daftar sumur yang telah diproses (well) 
+    lalu menyimpannya ke dalam file CSV di lokasi yang sesuai.
+    """
+    app.logger.info("Menerima permintaan untuk /api/save-qc-results")
+    try:
+        data = request.get_json()
+        field = data.get('field')
+        structure = data.get('structure')
+        wells = data.get('wells')
+
+        if not all([field, structure, wells]):
+            return jsonify({"error": "Payload tidak lengkap. Membutuhkan 'field', 'structure', dan 'wells'."}), 400
+
+        # Buat path target berdasarkan input dari frontend
+        target_directory = os.path.join(BASE_STRUCTURE_PATH, field, structure)
+
+        # Buat direktori jika belum ada (aman untuk dijalankan meskipun sudah ada)
+        os.makedirs(target_directory, exist_ok=True)
+
+        saved_files = []
+        for well in wells:
+            well_name = well.get('wellName')
+            csv_content = well.get('csvContent')
+
+            if not all([well_name, csv_content]):
+                app.logger.warning(
+                    f"Data sumur tidak lengkap, dilewati: {well}")
+                continue
+
+            # Tentukan nama file dan path lengkapnya
+            file_name = f"{well_name}.csv"
+            file_path = os.path.join(target_directory, file_name)
+
+            # Tulis konten CSV ke dalam file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(csv_content)
+
+            saved_files.append(file_path)
+            app.logger.info(f"Berhasil menyimpan file ke: {file_path}")
+
+        return jsonify({
+            "message": f"Berhasil menyimpan {len(saved_files)} file.",
+            "location": target_directory,
+            "files": saved_files
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Gagal saat menyimpan hasil QC: {e}", exc_info=True)
+        return jsonify({"error": "Gagal menyimpan file di server."}), 500
 
 
 @app.route('/api/list-zones', methods=['POST'])

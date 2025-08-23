@@ -8,6 +8,126 @@ import io
 import logging
 
 
+def validate_and_convert_rhob_units(las, df, logger):
+    """
+    Validasi unit RHOB dari header LAS dan konversi dari K/M3 ke G/C3 jika diperlukan.
+
+    Args:
+        las: objek lasio LAS file
+        df: DataFrame hasil dari las.df()
+        logger: logger object
+
+    Returns:
+        tuple: (df_modified, conversion_info)
+    """
+    conversion_info = {
+        'rhob_columns_found': [],
+        'conversions_performed': [],
+        'warnings': []
+    }
+
+    # Cari kolom RHOB dengan berbagai variasi nama
+    rhob_variants = ['RHOB', 'RHOZ', 'DENS', 'DENSITY']
+    rhob_columns_in_df = []
+
+    for col in df.columns:
+        col_upper = str(col).upper().strip()
+        if any(variant in col_upper for variant in rhob_variants):
+            rhob_columns_in_df.append(col)
+
+    conversion_info['rhob_columns_found'] = rhob_columns_in_df
+
+    if not rhob_columns_in_df:
+        logger.info("Tidak ditemukan kolom RHOB untuk validasi unit.")
+        return df, conversion_info
+
+    # Periksa unit untuk setiap kolom RHOB yang ditemukan
+    for rhob_col in rhob_columns_in_df:
+        try:
+            # Cari informasi curve di header LAS
+            curve_info = None
+            original_col_name = rhob_col
+
+            # Cari di curves section
+            for curve in las.curves:
+                if curve.mnemonic.upper().strip() == rhob_col.upper().strip():
+                    curve_info = curve
+                    break
+
+            if curve_info is None:
+                # Coba cari dengan nama yang sudah di-rename
+                for curve in las.curves:
+                    curve_upper = curve.mnemonic.upper().strip()
+                    if any(variant in curve_upper for variant in rhob_variants):
+                        curve_info = curve
+                        original_col_name = curve.mnemonic
+                        break
+
+            if curve_info is None:
+                warning_msg = f"Informasi curve untuk {rhob_col} tidak ditemukan di header LAS"
+                logger.warning(warning_msg)
+                conversion_info['warnings'].append(warning_msg)
+                continue
+
+            # Ambil unit dari curve info
+            unit = curve_info.unit.strip().upper() if curve_info.unit else ''
+
+            logger.info(
+                f"Kolom {rhob_col} (original: {original_col_name}) memiliki unit: '{unit}'")
+
+            # Cek apakah unit adalah K/M3 (dengan berbagai variasi penulisan)
+            km3_variants = ['K/M3', 'KG/M3', 'K/M³', 'KG/M³', 'KGM3', 'KM3']
+
+            if any(variant == unit for variant in km3_variants):
+                logger.info(
+                    f"🔄 Mengkonversi {rhob_col} dari {unit} ke G/C3...")
+
+                # Konversi dari kg/m³ ke g/cm³ (dibagi 1000)
+                # 1 kg/m³ = 0.001 g/cm³
+                original_values = df[rhob_col].copy()
+                df[rhob_col] = df[rhob_col] / 1000.0
+
+                # Hitung statistik konversi
+                valid_original = original_values.dropna()
+                valid_converted = df[rhob_col].dropna()
+
+                conversion_summary = {
+                    'column': rhob_col,
+                    'original_unit': unit,
+                    'new_unit': 'G/C3',
+                    'conversion_factor': 0.001,
+                    'rows_converted': len(valid_converted),
+                    'original_range': f"{valid_original.min():.2f} - {valid_original.max():.2f}" if len(valid_original) > 0 else "No valid data",
+                    'converted_range': f"{valid_converted.min():.4f} - {valid_converted.max():.4f}" if len(valid_converted) > 0 else "No valid data"
+                }
+
+                conversion_info['conversions_performed'].append(
+                    conversion_summary)
+
+                logger.info(f"✅ Konversi selesai untuk {rhob_col}:")
+                logger.info(f"   - {len(valid_converted)} baris dikonversi")
+                logger.info(
+                    f"   - Range original ({unit}): {conversion_summary['original_range']}")
+                logger.info(
+                    f"   - Range hasil (G/C3): {conversion_summary['converted_range']}")
+
+            elif unit in ['G/C3', 'G/CM3', 'G/CM³', 'GCC', 'GRCM3']:
+                logger.info(
+                    f"✅ {rhob_col} sudah dalam unit yang benar: {unit}")
+
+            else:
+                warning_msg = f"⚠️ Unit {rhob_col} tidak dikenali: '{unit}'. Tidak ada konversi yang dilakukan."
+                logger.warning(warning_msg)
+                conversion_info['warnings'].append(warning_msg)
+
+        except Exception as e:
+            error_msg = f"Error saat memproses unit untuk {rhob_col}: {str(e)}"
+            logger.error(error_msg)
+            conversion_info['warnings'].append(error_msg)
+
+    return df, conversion_info
+
+
 def add_formation_data_to_df(df, formation_df, well_name, column_name, logger):
     """
     Fungsi generik yang disempurnakan untuk menambahkan data formasi (Marker atau Zone).
@@ -116,6 +236,7 @@ def process_formation_data(formation_data, name, logger):
 def run_full_qc_pipeline(well_logs_data: list, marker_data: dict, zone_data: dict, logger: logging.Logger):
     """Fungsi utama pipeline QC."""
     qc_results = []
+    conversion_log = []
     output_files = {}
     required_logs = ['GR', 'NPHI', 'RT', 'RHOB']
 
@@ -130,6 +251,20 @@ def run_full_qc_pipeline(well_logs_data: list, marker_data: dict, zone_data: dic
             logger.info(f"--- [Memproses] MULAI: {filename} ---")
             las = lasio.read(io.StringIO(file_info['content']))
             df = las.df().reset_index()
+
+            # Validasi dan konversi unit RHOB SEBELUM rename kolom
+            logger.info(f"🔍 Melakukan validasi unit untuk {filename}...")
+            df, conversion_info = validate_and_convert_rhob_units(
+                las, df, logger)
+
+            # Simpan info konversi untuk log
+            if conversion_info['conversions_performed']:
+                conversion_log.append({
+                    'well_name': well_name,
+                    'conversions': conversion_info['conversions_performed'],
+                    'warnings': conversion_info['warnings']
+                })
+
             df.rename(columns=lambda c: c.upper(), inplace=True)
 
             column_mapping = {'DEPT': 'DEPTH', 'ILD': 'RT', 'LLD': 'RT', 'RESD': 'RT',

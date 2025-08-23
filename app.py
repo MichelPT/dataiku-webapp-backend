@@ -1236,76 +1236,97 @@ def get_gsa_plot():
             return jsonify({"error": str(e)}), 500
 
 
-# @app.route('/api/trim-data', methods=['POST'])
-# def run_trim_well_log():
-#     try:
-#         data = request.get_json()
+@app.route('/api/trim-data-dash', methods=['POST'])
+def run_trim_dashboard():
+    """
+    Endpoint untuk melakukan trim pada data log sumur berdasarkan parameter dari frontend.
+    """
+    try:
+        data = request.get_json()
 
-#         well_names = data.get('selected_wells', [])
-#         params = data.get('params', {})
-#         trim_mode = params.get('TRIM_MODE')
-#         depth_above = params.get('DEPTH_ABOVE')
-#         depth_below = params.get('DEPTH_BELOW')
-#         required_columns = data.get(
-#             'required_columns', ['GR', 'RT', 'NPHI', 'RHOB'])
+        # 1. Ekstrak data dari payload
+        full_path = data.get('full_path')
+        well_names = data.get('selected_wells', [])
+        params = data.get('params', {})
 
-#         if not well_names:
-#             return jsonify({'error': 'Daftar well_name wajib diisi'}), 400
+        if not full_path:
+            return jsonify({'error': 'Parameter "full_path" wajib diisi.'}), 400
+        if not well_names:
+            return jsonify({'error': 'Tidak ada sumur yang dipilih (selected_wells).'}), 400
 
-#         responses = []
+        responses = []
 
-#         for well_name in well_names:
-#             file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-#             if not os.path.exists(file_path):
-#                 return jsonify({'error': f"File {well_name}.csv tidak ditemukan."}), 404
+        # 2. Lakukan iterasi untuk setiap sumur yang dipilih
+        for well_name in well_names:
+            file_path = os.path.join(full_path, f"{well_name}.csv")
 
-#             df = pd.read_csv(file_path, on_bad_lines='warn')
+            if not os.path.exists(file_path):
+                print(
+                    f"Peringatan: File {file_path} tidak ditemukan, melewati.")
+                continue
 
-#             if 'DEPTH' not in df.columns:
-#                 return jsonify({'error': f"Kolom DEPTH tidak ditemukan di {well_name}"}), 400
+            df = pd.read_csv(file_path, on_bad_lines='warn')
 
-#             df.set_index('DEPTH', inplace=True)
+            if 'DEPTH' not in df.columns:
+                print(
+                    f"Peringatan: Kolom 'DEPTH' tidak ditemukan di {well_name}, melewati.")
+                continue
 
-#             above_flag = 1 if depth_above else 0
-#             below_flag = 1 if depth_below else 0
+            original_rows = len(df)
 
-#             if above_flag and depth_above is None:
-#                 return jsonify({'error': 'depth_above harus diisi'}), 400
-#             if below_flag and depth_below is None:
-#                 return jsonify({'error': 'depth_below harus diisi'}), 400
+            # 3. Ambil parameter trim dan konversi ke float dengan aman
+            trim_mode = params.get('TRIM_MODE')
 
-#             trimmed_df = trim_data_depth(
-#                 df.copy(),
-#                 depth_above=depth_above or 0,
-#                 depth_below=depth_below or 0,
-#                 above=above_flag,
-#                 below=below_flag,
-#                 mode=trim_mode
-#             )
+            try:
+                # Konversi depth_above, anggap None jika string kosong
+                depth_above_str = params.get('DEPTH_ABOVE')
+                depth_above = float(depth_above_str) if depth_above_str not in [
+                    None, ''] else None
 
-#             # Reset index agar DEPTH kembali sebagai kolom
-#             trimmed_df.reset_index(inplace=True)
+                # Konversi depth_below, anggap None jika string kosong
+                depth_below_str = params.get('DEPTH_BELOW')
+                depth_below = float(depth_below_str) if depth_below_str not in [
+                    None, ''] else None
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Nilai DEPTH_ABOVE atau DEPTH_BELOW harus berupa angka.'}), 400
 
-#             # Simpan hasil
-#             trimmed_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-#             trimmed_df.to_csv(trimmed_path, index=False)
+            # 4. Terapkan logika trimming berdasarkan mode
+            if trim_mode == 'DEPTH_ABOVE':
+                if depth_above is not None:
+                    df = df[df['DEPTH'] >= depth_above].copy()
+                else:
+                    return jsonify({'error': 'DEPTH_ABOVE harus diisi untuk mode ini.'}), 400
 
-#             responses.append({
-#                 'well': well_name,
-#                 'rows': len(trimmed_df),
-#                 'file_saved': f'{well_name}.csv'
-#             })
+            elif trim_mode == 'DEPTH_BELOW':
+                if depth_below is not None:
+                    df = df[df['DEPTH'] <= depth_below].copy()
+                else:
+                    return jsonify({'error': 'DEPTH_BELOW harus diisi untuk mode ini.'}), 400
 
-#         return jsonify({'message': 'Trimming berhasil', 'results': responses}), 200
+            elif trim_mode == 'CUSTOM_TRIM':
+                if depth_above is not None:
+                    df = df[df['DEPTH'] >= depth_above].copy()
+                if depth_below is not None:
+                    df = df[df['DEPTH'] <= depth_below].copy()
+                if depth_above is None and depth_below is None:
+                    return jsonify({'error': 'Setidaknya satu nilai (DEPTH_ABOVE atau DEPTH_BELOW) harus diisi untuk CUSTOM_TRIM.'}), 400
 
-#     except Exception as e:
-#         import traceback
-#         traceback.print_exc()
-#         return jsonify({'error': str(e)}), 500
+            # 5. Simpan file yang sudah di-trim (menimpa file asli)
+            df.to_csv(file_path, index=False)
 
+            responses.append({
+                'well': well_name,
+                'original_rows': original_rows,
+                'trimmed_rows': len(df),
+                'file_saved': file_path
+            })
 
-# Asumsikan path dasar (PROJECT_ROOT, DATA_ROOT, WELLS_DIR) dan
-# fungsi 'trim_log_by_masking' sudah diimpor/didefinisikan di atas.
+        return jsonify({'message': 'Proses trimming berhasil diselesaikan.', 'results': responses}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/trim-data', methods=['POST'])

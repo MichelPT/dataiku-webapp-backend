@@ -2954,36 +2954,36 @@ def layout_axis(fig, axes, ratio_plots, plot_sequence):
                      )
             )
 
-        # Add Text Min Max Range
-        if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'MISSING_FLAG', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
-            fig.add_annotation(
-                dict(font=dict(color=color_col[key][j], size=10),
-                     x=pos_x_t,
-                     y=pos_y,
-                     xanchor="left",
-                     yanchor="top",
-                     showarrow=False,
-                     text=range_col[key][j][0],
-                     textangle=0,
-                     xref='paper',
-                     yref="paper"
-                     )
-            )
+            # Add Text Min Max Range
+            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'MISSING_FLAG', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
+                fig.add_annotation(
+                    dict(font=dict(color=color_col[key][j], size=10),
+                         x=pos_x_t,
+                         y=pos_y,
+                         xanchor="left",
+                         yanchor="top",
+                         showarrow=False,
+                         text=range_col[key][j][0],
+                         textangle=0,
+                         xref='paper',
+                         yref="paper"
+                         )
+                )
 
-            fig.add_annotation(
-                dict(font=dict(color=color_col[key][j], size=10),
-                     # x=x_loc,
-                     x=pos_x_t+pos_x,
-                     y=pos_y,
-                     xanchor="right",
-                     yanchor="top",
-                     showarrow=False,
-                     text=range_col[key][j][1],
-                     textangle=0,
-                     xref='paper',
-                     yref="paper"
-                     )
-            )
+                fig.add_annotation(
+                    dict(font=dict(color=color_col[key][j], size=10),
+                         # x=x_loc,
+                         x=pos_x_t+pos_x,
+                         y=pos_y,
+                         xanchor="right",
+                         yanchor="top",
+                         showarrow=False,
+                         text=range_col[key][j][1],
+                         textangle=0,
+                         xref='paper',
+                         yref="paper"
+                         )
+                )
 
             pos_y += 0.03
             pos_y = min(pos_y, 1.0)

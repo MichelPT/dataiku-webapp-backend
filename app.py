@@ -32,6 +32,7 @@ from services.plotting_service import (
     plot_gsa_main,
     plot_smoothing_prep,
     plot_splicing,
+    plot_trimming,
     plot_vsh_linear,
     plot_sw_indo,
     plot_rwa_indo,
@@ -89,20 +90,24 @@ def home():
 @app.route('/api/run-qc', methods=['POST'])
 def qc_route():
     """
-    Receives a list of files, runs the QC process, and returns the results.
+    Receives a structured payload with well logs, marker data, and zone data,
+    runs the QC process, and returns the results.
     """
     app.logger.info("Received request for /api/run-qc")
     try:
-        # The frontend will send a JSON object with a 'files' key
-        # files is a list of {'name': '...', 'content': '...'}
         data = request.get_json()
-        files_data = data.get('files')
 
-        if not files_data or not isinstance(files_data, list):
-            return jsonify({"error": "Invalid input: 'files' key with a list of file objects is required."}), 400
+        # Ekstrak data dari payload yang terstruktur
+        well_logs_data = data.get('well_logs')
+        marker_data = data.get('marker_data')
+        zone_data = data.get('zone_data')
 
-        # Call the refactored logic, passing the app's logger
-        results = run_full_qc_pipeline(files_data, app.logger)
+        if not well_logs_data or not isinstance(well_logs_data, list):
+            return jsonify({"error": "Invalid input: 'well_logs' key with a list of file objects is required."}), 400
+
+        # Panggil pipeline QC dengan data yang sudah dipisahkan
+        results = run_full_qc_pipeline(
+            well_logs_data, marker_data, zone_data, app.logger)
 
         return jsonify(results)
 
@@ -147,6 +152,103 @@ LAS_DIR = 'data/depth-matching'
 GWD_DIR = 'data/gwd'
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(PROJECT_ROOT, 'data')
+BASE_STRUCTURE_PATH = os.path.join(
+    os.path.dirname(__file__), 'data', 'structures')
+
+# --- Endpoint 1: Mengambil Struktur Folder ---
+
+
+@app.route('/api/get-folder-structure', methods=['GET'])
+def get_folder_structure():
+    """
+    Memindai direktori 'data/structures' dan mengembalikan hierarki folder
+    dalam format JSON.
+    Contoh: { "Adera": ["Abab", "Benuang"], "Limau": [...] }
+    """
+    app.logger.info("Menerima permintaan untuk /api/get-folder-structure")
+
+    # Pastikan path dasar ada
+    if not os.path.isdir(BASE_STRUCTURE_PATH):
+        app.logger.error(
+            f"Direktori dasar tidak ditemukan di: {BASE_STRUCTURE_PATH}")
+        return jsonify({"error": f"Direktori dasar tidak ditemukan di server: {BASE_STRUCTURE_PATH}"}), 500
+
+    structure_dict = {}
+    try:
+        # Dapatkan daftar semua 'Fields' (direktori level pertama)
+        fields = [f for f in os.listdir(BASE_STRUCTURE_PATH) if os.path.isdir(
+            os.path.join(BASE_STRUCTURE_PATH, f))]
+
+        for field in fields:
+            field_path = os.path.join(BASE_STRUCTURE_PATH, field)
+            # Dapatkan daftar semua 'Structures' di dalam setiap 'Field'
+            structures = [s for s in os.listdir(
+                field_path) if os.path.isdir(os.path.join(field_path, s))]
+            structure_dict[field] = sorted(structures)
+
+        app.logger.info(
+            f"Struktur folder berhasil dibaca: {len(structure_dict)} fields ditemukan.")
+        return jsonify(structure_dict)
+
+    except Exception as e:
+        app.logger.error(
+            f"Gagal saat memindai struktur folder: {e}", exc_info=True)
+        return jsonify({"error": "Gagal membaca struktur folder di server."}), 500
+
+
+# --- Endpoint 2: Menyimpan Hasil QC ---
+@app.route('/api/save-qc-results', methods=['POST'])
+def save_qc_results():
+    """
+    Menerima field, structure, dan daftar sumur yang telah diproses (well) 
+    lalu menyimpannya ke dalam file CSV di lokasi yang sesuai.
+    """
+    app.logger.info("Menerima permintaan untuk /api/save-qc-results")
+    try:
+        data = request.get_json()
+        field = data.get('field')
+        structure = data.get('structure')
+        wells = data.get('wells')
+
+        if not all([field, structure, wells]):
+            return jsonify({"error": "Payload tidak lengkap. Membutuhkan 'field', 'structure', dan 'wells'."}), 400
+
+        # Buat path target berdasarkan input dari frontend
+        target_directory = os.path.join(BASE_STRUCTURE_PATH, field, structure)
+
+        # Buat direktori jika belum ada (aman untuk dijalankan meskipun sudah ada)
+        os.makedirs(target_directory, exist_ok=True)
+
+        saved_files = []
+        for well in wells:
+            well_name = well.get('wellName')
+            csv_content = well.get('csvContent')
+
+            if not all([well_name, csv_content]):
+                app.logger.warning(
+                    f"Data sumur tidak lengkap, dilewati: {well}")
+                continue
+
+            # Tentukan nama file dan path lengkapnya
+            file_name = f"{well_name}.csv"
+            file_path = os.path.join(target_directory, file_name)
+
+            # Tulis konten CSV ke dalam file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(csv_content)
+
+            saved_files.append(file_path)
+            app.logger.info(f"Berhasil menyimpan file ke: {file_path}")
+
+        return jsonify({
+            "message": f"Berhasil menyimpan {len(saved_files)} file.",
+            "location": target_directory,
+            "files": saved_files
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Gagal saat menyimpan hasil QC: {e}", exc_info=True)
+        return jsonify({"error": "Gagal menyimpan file di server."}), 500
 
 
 @app.route('/api/list-zones', methods=['POST'])
@@ -1134,76 +1236,97 @@ def get_gsa_plot():
             return jsonify({"error": str(e)}), 500
 
 
-# @app.route('/api/trim-data', methods=['POST'])
-# def run_trim_well_log():
-#     try:
-#         data = request.get_json()
+@app.route('/api/trim-data-dash', methods=['POST'])
+def run_trim_dashboard():
+    """
+    Endpoint untuk melakukan trim pada data log sumur berdasarkan parameter dari frontend.
+    """
+    try:
+        data = request.get_json()
 
-#         well_names = data.get('selected_wells', [])
-#         params = data.get('params', {})
-#         trim_mode = params.get('TRIM_MODE')
-#         depth_above = params.get('DEPTH_ABOVE')
-#         depth_below = params.get('DEPTH_BELOW')
-#         required_columns = data.get(
-#             'required_columns', ['GR', 'RT', 'NPHI', 'RHOB'])
+        # 1. Ekstrak data dari payload
+        full_path = data.get('full_path')
+        well_names = data.get('selected_wells', [])
+        params = data.get('params', {})
 
-#         if not well_names:
-#             return jsonify({'error': 'Daftar well_name wajib diisi'}), 400
+        if not full_path:
+            return jsonify({'error': 'Parameter "full_path" wajib diisi.'}), 400
+        if not well_names:
+            return jsonify({'error': 'Tidak ada sumur yang dipilih (selected_wells).'}), 400
 
-#         responses = []
+        responses = []
 
-#         for well_name in well_names:
-#             file_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-#             if not os.path.exists(file_path):
-#                 return jsonify({'error': f"File {well_name}.csv tidak ditemukan."}), 404
+        # 2. Lakukan iterasi untuk setiap sumur yang dipilih
+        for well_name in well_names:
+            file_path = os.path.join(full_path, f"{well_name}.csv")
 
-#             df = pd.read_csv(file_path, on_bad_lines='warn')
+            if not os.path.exists(file_path):
+                print(
+                    f"Peringatan: File {file_path} tidak ditemukan, melewati.")
+                continue
 
-#             if 'DEPTH' not in df.columns:
-#                 return jsonify({'error': f"Kolom DEPTH tidak ditemukan di {well_name}"}), 400
+            df = pd.read_csv(file_path, on_bad_lines='warn')
 
-#             df.set_index('DEPTH', inplace=True)
+            if 'DEPTH' not in df.columns:
+                print(
+                    f"Peringatan: Kolom 'DEPTH' tidak ditemukan di {well_name}, melewati.")
+                continue
 
-#             above_flag = 1 if depth_above else 0
-#             below_flag = 1 if depth_below else 0
+            original_rows = len(df)
 
-#             if above_flag and depth_above is None:
-#                 return jsonify({'error': 'depth_above harus diisi'}), 400
-#             if below_flag and depth_below is None:
-#                 return jsonify({'error': 'depth_below harus diisi'}), 400
+            # 3. Ambil parameter trim dan konversi ke float dengan aman
+            trim_mode = params.get('TRIM_MODE')
 
-#             trimmed_df = trim_data_depth(
-#                 df.copy(),
-#                 depth_above=depth_above or 0,
-#                 depth_below=depth_below or 0,
-#                 above=above_flag,
-#                 below=below_flag,
-#                 mode=trim_mode
-#             )
+            try:
+                # Konversi depth_above, anggap None jika string kosong
+                depth_above_str = params.get('DEPTH_ABOVE')
+                depth_above = float(depth_above_str) if depth_above_str not in [
+                    None, ''] else None
 
-#             # Reset index agar DEPTH kembali sebagai kolom
-#             trimmed_df.reset_index(inplace=True)
+                # Konversi depth_below, anggap None jika string kosong
+                depth_below_str = params.get('DEPTH_BELOW')
+                depth_below = float(depth_below_str) if depth_below_str not in [
+                    None, ''] else None
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Nilai DEPTH_ABOVE atau DEPTH_BELOW harus berupa angka.'}), 400
 
-#             # Simpan hasil
-#             trimmed_path = os.path.join(WELLS_DIR, f"{well_name}.csv")
-#             trimmed_df.to_csv(trimmed_path, index=False)
+            # 4. Terapkan logika trimming berdasarkan mode
+            if trim_mode == 'DEPTH_ABOVE':
+                if depth_above is not None:
+                    df = df[df['DEPTH'] >= depth_above].copy()
+                else:
+                    return jsonify({'error': 'DEPTH_ABOVE harus diisi untuk mode ini.'}), 400
 
-#             responses.append({
-#                 'well': well_name,
-#                 'rows': len(trimmed_df),
-#                 'file_saved': f'{well_name}.csv'
-#             })
+            elif trim_mode == 'DEPTH_BELOW':
+                if depth_below is not None:
+                    df = df[df['DEPTH'] <= depth_below].copy()
+                else:
+                    return jsonify({'error': 'DEPTH_BELOW harus diisi untuk mode ini.'}), 400
 
-#         return jsonify({'message': 'Trimming berhasil', 'results': responses}), 200
+            elif trim_mode == 'CUSTOM_TRIM':
+                if depth_above is not None:
+                    df = df[df['DEPTH'] >= depth_above].copy()
+                if depth_below is not None:
+                    df = df[df['DEPTH'] <= depth_below].copy()
+                if depth_above is None and depth_below is None:
+                    return jsonify({'error': 'Setidaknya satu nilai (DEPTH_ABOVE atau DEPTH_BELOW) harus diisi untuk CUSTOM_TRIM.'}), 400
 
-#     except Exception as e:
-#         import traceback
-#         traceback.print_exc()
-#         return jsonify({'error': str(e)}), 500
+            # 5. Simpan file yang sudah di-trim (menimpa file asli)
+            df.to_csv(file_path, index=False)
 
+            responses.append({
+                'well': well_name,
+                'original_rows': original_rows,
+                'trimmed_rows': len(df),
+                'file_saved': file_path
+            })
 
-# Asumsikan path dasar (PROJECT_ROOT, DATA_ROOT, WELLS_DIR) dan
-# fungsi 'trim_log_by_masking' sudah diimpor/didefinisikan di atas.
+        return jsonify({'message': 'Proses trimming berhasil diselesaikan.', 'results': responses}), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/trim-data', methods=['POST'])
@@ -3391,6 +3514,41 @@ def get_custom_plot():
             # Panggil fungsi plotting GSA yang baru
             fig_result = plot_custom(df, custom_columns)
 
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-trimming-plot', methods=['POST'])
+def get_trimming_plot():
+    """
+    Endpoint untuk membuat dan mengambil plot hasil proses Fill Missing.
+    """
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+
+            # Support both file_path (for DirectorySidebar) and selected_wells (for Dashboard)
+            file_path = request_data.get('file_path')
+            # selected_wells = request_data.get('selected_wells', [])
+            # selected_intervals = request_data.get('selected_intervals', [])
+
+            if file_path:
+                # DirectorySidebar mode - single file
+                if not os.path.exists(file_path):
+                    return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
+                df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            # Call plotting function with processed data
+            fig_result = plot_trimming(df)
+
+            # Send finished plot as JSON
             return jsonify(fig_result.to_json())
 
         except Exception as e:

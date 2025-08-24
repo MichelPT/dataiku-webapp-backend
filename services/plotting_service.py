@@ -432,10 +432,10 @@ range_col = {
     'IQUAL': [[0, 1]],
     'GR_CAL': [[0, 250]],         # Sama seperti GR
     'DGRCC': [[0, 250]],          # Sama seperti GR
-    'RLA5': [[0.02, 100]],        # Sama seperti RT
-    'R39PC': [[0.02, 100]],        # Sama seperti RT
-    'A40H': [[0.02, 100]],        # Sama seperti RT
-    'ARM48PC': [[0.02, 100]],    # Sama seperti RT
+    'RLA5': [[0.2, 2000]],        # Sama seperti RT
+    'R39PC': [[0.2, 2000]],        # Sama seperti RT
+    'A40H': [[0.2, 2000]],        # Sama seperti RT
+    'ARM48PC': [[0.2, 2000]],    # Sama seperti RT
     'RHOZ': [[1.71, 2.71]],      # Sama seperti RHOB
     'ALCDLC': [[1.71, 2.71]],     # Sama seperti RHOB
     'ROBB': [[1.71, 2.71]],       # Sama seperti RHOB
@@ -444,16 +444,16 @@ range_col = {
     'GR_CAL_NO': [[0, 250]], 'DGRCC_NO': [[0, 250]],
     'GR_CAL_TR': [[0, 250]], 'DGRCC_TR': [[0, 250]], 'RLA5_TR': [[0.2, 2000]],
     'R39PC_TR': [[0.2, 2000]], 'A40H_TR': [[0.2, 2000]], 'ARM48PC_TR': [[0.2, 2000]],
-    'RHOZ_TR': [[1.65, 2.65]], 'ALCDLC_TR': [[1.65, 2.65]], 'ROBB_TR': [[1.65, 2.65]],
-    'TNPH_TR': [[0.6, -0.1]], 'TNPL_TR': [[0.6, -0.1]],
+    'RHOZ_TR': [[1.71, 2.71]], 'ALCDLC_TR': [[1.71, 2.71]], 'ROBB_TR': [[1.71, 2.71]],
+    'TNPH_TR': [[0.6, 0]], 'TNPL_TR': [[0.6, 0]],
     'GR_CAL_SM': [[0, 250]], 'DGRCC_SM': [[0, 250]], 'RLA5_SM': [[0.2, 2000]],
     'R39PC_SM': [[0.2, 2000]], 'A40H_SM': [[0.2, 2000]], 'ARM48PC_SM': [[0.2, 2000]],
-    'RHOZ_SM': [[1.65, 2.65]], 'ALCDLC_SM': [[1.65, 2.65]], 'ROBB_SM': [[1.65, 2.65]],
-    'TNPH_SM': [[0.6, -0.1]], 'TNPL_SM': [[0.6, -0.1]],
+    'RHOZ_SM': [[1.71, 2.71]], 'ALCDLC_SM': [[1.71, 2.71]], 'ROBB_SM': [[1.71, 2.71]],
+    'TNPH_SM': [[0.6, 0]], 'TNPL_SM': [[0.6, 0]],
     'GR_CAL_FM': [[0, 250]], 'DGRCC_FM': [[0, 250]], 'RLA5_FM': [[0.2, 2000]],
     'R39PC_FM': [[0.2, 2000]], 'A40H_FM': [[0.2, 2000]], 'ARM48PC_FM': [[0.2, 2000]],
-    'RHOZ_FM': [[1.65, 2.65]], 'ALCDLC_FM': [[1.65, 2.65]], 'ROBB_FM': [[1.65, 2.65]],
-    'TNPH_FM': [[0.6, -0.1]], 'TNPL_FM': [[0.6, -0.1]],
+    'RHOZ_FM': [[1.71, 2.71]], 'ALCDLC_FM': [[1.71, 2.71]], 'ROBB_FM': [[1.71, 2.71]],
+    'TNPH_FM': [[0.6, 0]], 'TNPL_FM': [[0.6, 0]],
     'MISSING_FLAG': [[0, 2]]
 }
 
@@ -2108,7 +2108,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['RT_RO', 'PERM', 'RWAPP_RW', 'RT_F', 'RT_RHOB', 'RT_RGSA', 'RT', 'RT_GR', 'RT_PHIE', 'TGC', 'RWA']:
+            elif key in ['RT_RO', 'PERM', 'RWAPP_RW', 'RT_F', 'RT_RHOB', 'RT_RGSA', 'RT', 'RT_GR', 'RT_PHIE', 'TGC', 'RWA', 'RLA5', 'R39PC']:
                 a = range_col[key][0][0]
                 b = range_col[key][0][1]
                 arr = log_tickvals(a, b)
@@ -2123,7 +2123,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'SW_Z4', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT_Z4', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE']:
+            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'SW_Z4', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT_Z4', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE', 'DGRCC', 'GR_CAL', 'RHOZ', 'ALCDLC', 'TNPL', 'TNPH']:
                 fig.update_layout(
                     **{axis: dict(
                         # gridcolor='rgba(0,0,0,0)',
@@ -2954,36 +2954,36 @@ def layout_axis(fig, axes, ratio_plots, plot_sequence):
                      )
             )
 
-        # Add Text Min Max Range
-        if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'MISSING_FLAG', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
-            fig.add_annotation(
-                dict(font=dict(color=color_col[key][j], size=10),
-                     x=pos_x_t,
-                     y=pos_y,
-                     xanchor="left",
-                     yanchor="top",
-                     showarrow=False,
-                     text=range_col[key][j][0],
-                     textangle=0,
-                     xref='paper',
-                     yref="paper"
-                     )
-            )
+            # Add Text Min Max Range
+            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'IQUAL', 'MISSING_FLAG', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
+                fig.add_annotation(
+                    dict(font=dict(color=color_col[key][j], size=10),
+                         x=pos_x_t,
+                         y=pos_y,
+                         xanchor="left",
+                         yanchor="top",
+                         showarrow=False,
+                         text=range_col[key][j][0],
+                         textangle=0,
+                         xref='paper',
+                         yref="paper"
+                         )
+                )
 
-            fig.add_annotation(
-                dict(font=dict(color=color_col[key][j], size=10),
-                     # x=x_loc,
-                     x=pos_x_t+pos_x,
-                     y=pos_y,
-                     xanchor="right",
-                     yanchor="top",
-                     showarrow=False,
-                     text=range_col[key][j][1],
-                     textangle=0,
-                     xref='paper',
-                     yref="paper"
-                     )
-            )
+                fig.add_annotation(
+                    dict(font=dict(color=color_col[key][j], size=10),
+                         # x=x_loc,
+                         x=pos_x_t+pos_x,
+                         y=pos_y,
+                         xanchor="right",
+                         yanchor="top",
+                         showarrow=False,
+                         text=range_col[key][j][1],
+                         textangle=0,
+                         xref='paper',
+                         yref="paper"
+                         )
+                )
 
             pos_y += 0.03
             pos_y = min(pos_y, 1.0)
@@ -3467,14 +3467,14 @@ def plot_module1(df):
         # Use LWD sequence
         sequence = lwd_sequence
         print(f"Available sequence LWD for Module1: {sequence}")
-        title = 'LWD'
+        title = 'LWD BNG-057 8.5 In'
     else:
         # Use WL sequence and scale RHOZ if available
         if 'RHOZ' in df.columns:
             df['RHOZ'] = df['RHOZ'] / 1000
         sequence = wl_sequence
         print(f"Available sequence WL for Module1: {sequence}")
-        title = 'WL'
+        title = 'Wire Line BNG-057 12.25 In'
 
     # Filter sequence to only include available columns
     available_sequence = [col for col in sequence if col in df.columns]
@@ -3510,13 +3510,13 @@ def plot_norm_prep(df):
     if lwd_available >= wl_available:
         # Use LWD sequence
         sequence = lwd_sequence
-        title = 'LWD'
+        title = 'LWD BNG-057 8.5 In Normalization Layout'
     else:
         # Use WL sequence and scale RHOZ if available
         if 'RHOZ' in df.columns:
             df['RHOZ'] = df['RHOZ'] / 1000
         sequence = wl_sequence
-        title = 'WL'
+        title = 'Wire Line BNG-057 12.25 In Normalization Layout'
 
     # Filter sequence to only include available columns
     sequence = [col for col in sequence if col in df.columns]
@@ -3562,13 +3562,13 @@ def plot_smoothing_prep(df):
     if lwd_available >= wl_available:
         # Use LWD sequence
         sequence = lwd_sequence
-        title = 'LWD'
+        title = 'LWD BNG-057 8.5 In Smoothing Layout'
     else:
         # Use WL sequence and scale RHOZ if available
         if 'RHOZ' in df.columns:
             df['RHOZ'] = df['RHOZ'] / 1000
         sequence = wl_sequence
-        title = 'WL'
+        title = 'Wire Line BNG-057 12.25 In Smoothing Layout'
 
     # Filter sequence to only include available columns
     sequence = [col for col in sequence if col in df.columns]
@@ -3614,7 +3614,7 @@ def plot_fill_missing(df, title="Fill Missing Plot"):
     if lwd_available >= wl_available:
         # Use LWD sequence
         sequence = lwd_sequence
-        title = 'LWD'
+        title = 'LWD BNG-057 8.5 In Fill Missing Layout'
     else:
         # Use WL sequence and scale RHOZ if available
         for col in df.columns:
@@ -3626,13 +3626,65 @@ def plot_fill_missing(df, title="Fill Missing Plot"):
                 df[col] = df[col] / 1000
 
         sequence = wl_sequence
-        title = 'WL'
+        title = 'Wire Line BNG-057 12.25 In Fill Missing Layout'
 
     # Filter sequence to only include available columns
     sequence = [col for col in sequence if col in df.columns]
 
     if not sequence:
         raise ValueError("No valid columns found for fill missing plot")
+
+    fig = main_plot(df, sequence, title=title)
+
+    return fig
+
+
+def plot_trimming(df):
+    """
+    Membuat plot Normalization Preparation.
+    """
+    # Reset index seperti di colab code
+    df = df.reset_index()
+
+    # Ensure DEPTH column exists (rename DEPT to DEPTH if needed)
+    if 'DEPT' in df.columns and 'DEPTH' not in df.columns:
+        df = df.rename(columns={'DEPT': 'DEPTH'})
+
+    # Auto-detect LWD vs WL berdasarkan kolom yang tersedia
+    lwd_sequence = [
+        'DGRCC', 'DGRCC_TR',
+        'ALCDLC', 'ALCDLC_TR',
+        'TNPL', 'TNPL_TR',
+        'R39PC', 'R39PC_TR'
+    ]
+
+    wl_sequence = [
+        'GR_CAL', 'GR_CAL_TR',
+        'RHOZ', 'RHOZ_TR',
+        'RLA5', 'RLA5_TR',
+        'TNPH', 'TNPH_TR'
+    ]
+
+    # Check which type of data we have
+    lwd_available = sum(1 for col in lwd_sequence if col in df.columns)
+    wl_available = sum(1 for col in wl_sequence if col in df.columns)
+
+    if lwd_available >= wl_available:
+        # Use LWD sequence
+        sequence = lwd_sequence
+        title = 'LWD BNG-057 8.5 In Trimming Layout'
+    else:
+        # Use WL sequence and scale RHOZ if available
+        if 'RHOZ' in df.columns:
+            df['RHOZ'] = df['RHOZ'] / 1000
+        sequence = wl_sequence
+        title = 'Wire Line BNG-057 12.25 In Trimming Layout'
+
+    # Filter sequence to only include available columns
+    sequence = [col for col in sequence if col in df.columns]
+
+    if not sequence:
+        raise ValueError("No valid columns found for Module1 plot")
 
     fig = main_plot(df, sequence, title=title)
 

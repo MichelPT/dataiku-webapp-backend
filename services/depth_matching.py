@@ -1,171 +1,140 @@
+# services/depth_matching.py
+
+import sys
+import os
 import lasio
 import numpy as np
 import pandas as pd
-from dtaidistance import dtw
-from scipy.interpolate import interp1d
+import time
+import logging
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import os
+
+# --- Konfigurasi Path untuk Impor Modul 'cow' ---
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.dirname(current_dir)
+    utils_path = os.path.join(base_dir, 'utils')
+    if utils_path not in sys.path:
+        sys.path.insert(0, utils_path)
+    import cow_fixed as cow
+    logging.info(
+        "Modul 'cow_fixed' berhasil diimpor sebagai 'cow' dari folder 'utils'.")
+except ImportError as e:
+    logging.error(
+        "GAGAL mengimpor modul 'cow_fixed'. Pastikan 'cow_fixed.py' ada di dalam folder 'utils'.")
+    raise e
+
+# --- FUNGSI LOGIKA UTAMA (DIUBAH) ---
 
 
-def normalize(series):
-    std_dev = np.std(series)
-    if std_dev == 0:
-        # Jika semua nilai sama, kembalikan array berisi nol
-        return np.zeros_like(series)
-    return (series - np.mean(series)) / std_dev
+def depth_matching(ref_las_path: str, lwd_las_path: str, ref_log_curve: str, lwd_log_curve: str, num_chunks: int = 15, slack: int = 20):
+    logging.info(f"--- Memulai Proses Depth Matching (Logika Baru) ---")
+
+    # 1. Baca file LAS dan simpan DataFrame asli
+    ref_las = lasio.read(ref_las_path)
+    lwd_las = lasio.read(lwd_las_path)
+    ref_df_orig = ref_las.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
+    lwd_df_orig = lwd_las.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
+
+    # Validasi kolom
+    if 'DEPTH' not in ref_df_orig.columns or ref_log_curve not in ref_df_orig.columns:
+        raise ValueError(
+            f"Kolom '{ref_log_curve}' atau 'DEPTH' tidak ada di file Referensi.")
+    if 'DEPTH' not in lwd_df_orig.columns or lwd_log_curve not in lwd_df_orig.columns:
+        raise ValueError(
+            f"Kolom '{lwd_log_curve}' atau 'DEPTH' tidak ada di file LWD.")
+
+    # --- LOGIKA FINAL: Menyelaraskan dan Mengisi Data Sesuai Referensi ---
+    logging.info(
+        "Membangun DataFrame yang selaras berdasarkan rentang kedalaman referensi...")
+
+    # Set DEPTH sebagai index untuk semua operasi
+    ref_df = ref_df_orig.set_index('DEPTH')
+    lwd_df = lwd_df_orig.set_index('DEPTH')
+
+    # 1. Buat DataFrame baru yang terpusat, menggunakan index dari referensi
+    # Ini secara otomatis melakukan TRIM dan menyisakan NaN untuk data LWD yang perlu diisi
+    aligned_df = pd.DataFrame(index=ref_df.index)
+    aligned_df['REF'] = ref_df[ref_log_curve]
+    aligned_df['LWD'] = lwd_df[lwd_log_curve].reindex(ref_df.index)
+
+    # 2. Lakukan pembersihan data pada DataFrame yang sudah selaras
+    aligned_df['REF'] = pd.to_numeric(aligned_df['REF'], errors='coerce')
+    aligned_df['LWD'] = pd.to_numeric(aligned_df['LWD'], errors='coerce')
+    aligned_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+    # 3. Tangani nilai NaN sesuai aturan
+    # Pertama, buang baris di mana data REFERENSI itu sendiri tidak valid
+    aligned_df.dropna(subset=['REF'], inplace=True)
+
+    # Kedua, ISI data LWD yang hilang menggunakan backward fill lalu forward fill
+    logging.info(
+        "Mengisi nilai LWD yang hilang dengan metode bfill dan ffill...")
+    aligned_df['LWD'].fillna(method='bfill', inplace=True)
+    aligned_df['LWD'].fillna(method='ffill', inplace=True)
+
+    # Terakhir, sebagai jaring pengaman, buang baris jika LWD masih NaN (artinya tidak ada data LWD sama sekali)
+    final_df = aligned_df.dropna()
+
+    if final_df.empty:
+        raise ValueError(
+            "Tidak ada data valid yang tersisa setelah proses alignment dan fill.")
+
+    # 4. Ekstrak sinyal final. Panjangnya DIJAMIN SAMA.
+    ref_signal = final_df['REF'].values
+    lwd_signal = final_df['LWD'].values
+    # -----------------------------------------------------------------------------
+
+    logging.info(
+        f"Sinyal siap untuk COW dengan panjang yang identik: {len(ref_signal)}")
+
+    # 5. Jalankan algoritma COW
+    aligner = cow.COW(lwd_signal, ref_signal, num_chunks, slack)
+    aligned_lwd_signal, _ = aligner.warp_sample_to_target()
+
+    # 6. Buat DataFrame hasil akhir
+    final_result_df = pd.DataFrame({
+        'DEPTH': final_df.index,
+        'LOG_REF': final_df['REF'].values,
+        'LOG_ALIGNED_LWD': aligned_lwd_signal
+    })
+
+    return ref_df_orig, lwd_df_orig, final_result_df
 
 
-def depth_matching(ref_las_path: str, lwd_las_path: str, num_chunks: int = 10):
+def plot_depth_matching_results(ref_df: pd.DataFrame, lwd_df: pd.DataFrame, final_df: pd.DataFrame, ref_log_curve: str, lwd_log_curve: str):
     """
-    Menjalankan logika DTW dan mengembalikan tiga DataFrame: 
-    data referensi, data LWD asli, dan data hasil alignment.
+    Membuat visualisasi Plotly menggunakan nama kurva yang spesifik.
     """
-    try:
-        ref_las = lasio.read(ref_las_path)
-        lwd_las = lasio.read(lwd_las_path)
-
-        ref_df = ref_las.df().reset_index()[["DEPT", "GR_CAL"]].dropna()
-        ref_df.columns = ["Depth", "GR"]
-
-        lwd_df = lwd_las.df().reset_index()[["DEPT", "DGRCC"]].dropna()
-        lwd_df.columns = ["Depth", "DGRCC"]
-
-        N_ref = len(ref_df)
-        N_lwd = len(lwd_df)
-
-        ref_chunk_size = N_ref // num_chunks
-        lwd_chunk_size = N_lwd // num_chunks
-
-        all_chunks = []
-
-        for i in range(num_chunks):
-            ref_start = i * ref_chunk_size
-            ref_end = N_ref if i == num_chunks - \
-                1 else (i + 1) * ref_chunk_size
-            ref_chunk = ref_df.iloc[ref_start:ref_end]
-
-            lwd_start = i * lwd_chunk_size
-            lwd_end = N_lwd if i == num_chunks - \
-                1 else (i + 1) * lwd_chunk_size
-            lwd_chunk = lwd_df.iloc[lwd_start:lwd_end]
-
-            if len(ref_chunk) < 2 or len(lwd_chunk) < 2:
-                continue
-
-            ref_signal = normalize(ref_chunk["GR"].values)
-            lwd_signal = normalize(lwd_chunk["DGRCC"].values)
-
-            path = dtw.warping_path(lwd_signal, ref_signal)
-
-            aligned_depths = []
-            aligned_dgrcc = []
-            for lwd_idx, ref_idx in path:
-                aligned_depths.append(ref_chunk.iloc[ref_idx]["Depth"])
-                aligned_dgrcc.append(lwd_chunk.iloc[lwd_idx]["DGRCC"])
-
-            aligned_df = pd.DataFrame({
-                "Depth": aligned_depths,
-                "Aligned_DGRCC": aligned_dgrcc
-            }).sort_values(by="Depth")
-
-            interp_func = interp1d(aligned_df["Depth"], aligned_df["Aligned_DGRCC"],
-                                   kind='linear', bounds_error=False, fill_value="extrapolate")
-            interp_dgrcc = interp_func(ref_chunk["Depth"].values)
-
-            chunk_result = pd.DataFrame({
-                "Depth": ref_chunk["Depth"].values,
-                "REF_GR": ref_chunk["GR"].values,
-                "LWD_DGRCC_Aligned": interp_dgrcc
-            })
-
-            all_chunks.append(chunk_result)
-
-            final_df = pd.concat(all_chunks, ignore_index=True)
-            final_df = final_df.drop_duplicates(
-                subset="Depth").sort_values(by="Depth")
-
-    except Exception as e:
-        print(f"Error di dalam depth_matching_logic: {e}")
-        return None, None, None
-
-    return ref_df, lwd_df, final_df
-
-
-def plot_depth_matching_results(ref_df, lwd_df, final_df):
-    """
-    Menerima 3 DataFrame dan membuat plot 4-panel yang komprehensif.
-    """
-    if ref_df is None or lwd_df is None or final_df is None:
-        raise ValueError("Data input untuk plotting tidak boleh None.")
-
-    # Buat 4 subplot dengan sumbu Y yang sama
     fig = make_subplots(
-        rows=1, cols=4,
-        shared_yaxes=True,
-        subplot_titles=("WL 8.5in", "LWD 8.5in",
-                        "Before Alignment", "After Alignment")
+        rows=1, cols=2, shared_yaxes=True,
+        subplot_titles=("Before Alignment", "After Alignment")
     )
 
-    # --- Panel 1 (Paling Kiri): Reference Log ---
-    fig.add_trace(go.Scattergl(
-        x=ref_df["GR"], y=ref_df["Depth"], name='REF GR',
-        line=dict(color='black')
+    # Track 1: Sebelum Alignment (menggunakan nama kurva spesifik)
+    fig.add_trace(go.Scatter(
+        x=ref_df[ref_log_curve], y=ref_df['DEPTH'], name=f'WL ({ref_log_curve})', line=dict(color='black')
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=lwd_df[lwd_log_curve], y=lwd_df['DEPTH'], name=f'LWD ({lwd_log_curve})', line=dict(color='red', dash='dash')
     ), row=1, col=1)
 
-    # --- Panel 2: LWD Log Asli ---
-    fig.add_trace(go.Scattergl(
-        x=lwd_df["DGRCC"], y=lwd_df["Depth"], name='LWD GR',
-        line=dict(color='red')
+    # Track 2: Sesudah Alignment (menggunakan kolom generik dari final_df)
+    fig.add_trace(go.Scatter(
+        x=final_df['LOG_REF'], y=final_df['DEPTH'], name=f'WL ({ref_log_curve})', line=dict(color='black'), showlegend=False
+    ), row=1, col=2)
+    fig.add_trace(go.Scatter(
+        x=final_df['LOG_ALIGNED_LWD'], y=final_df['DEPTH'], name=f'LWD Aligned ({lwd_log_curve})', line=dict(color='blue')
     ), row=1, col=2)
 
-    # --- Panel 3: Sebelum Alignment (Ditumpuk) ---
-    fig.add_trace(go.Scattergl(
-        x=ref_df["GR"], y=ref_df["Depth"], name='REF GR (Before)',
-        line=dict(color='black'), legendgroup='before'
-    ), row=1, col=3)
-    fig.add_trace(go.Scattergl(
-        x=lwd_df["DGRCC"], y=lwd_df["Depth"], name='LWD GR (Before)',
-        line=dict(color='red', dash='dash'), legendgroup='before'
-    ), row=1, col=3)
-
-    # --- Panel 4 (Paling Kanan): Setelah Alignment (Ditumpuk) ---
-    fig.add_trace(go.Scattergl(
-        x=final_df["REF_GR"], y=final_df["Depth"], name='REF GR (After)',
-        line=dict(color='black'), legendgroup='after'
-    ), row=1, col=4)
-    fig.add_trace(go.Scattergl(
-        x=final_df["LWD_DGRCC_Aligned"], y=final_df[
-            "Depth"], name='LWD Aligned (After)',
-        line=dict(color='red', dash='dash'), legendgroup='after'
-    ), row=1, col=4)
-
+    # Update Layout
     fig.update_layout(
-        title_text="Depth Matching Analysis",
-        height=8600,
-        showlegend=False,
-        template="plotly_white",
-        yaxis=dict(autorange='reversed', title_text="Depth (m)"),
-        hovermode="y unified",
+        title_text=f'Depth Matching Result: {ref_log_curve} vs {lwd_log_curve}',
+        height=800, yaxis_title='DEPTH (m)',
+        legend=dict(orientation="h", yanchor="bottom",
+                    y=1.02, xanchor="right", x=1)
     )
-
-    fig.update_yaxes(
-        showgrid=True,
-        gridwidth=1,
-        gridcolor='red',
-        dtick=15,
-        griddash='dot',
-        showline=True,
-        linewidth=1.5,
-        linecolor='black',
-        mirror=True
-    )
-
-    fig.update_xaxes(
-        showline=True,
-        linewidth=1.5,
-        linecolor='black',
-        mirror=True
-    )
+    fig.update_yaxes(autorange="reversed")
 
     return fig

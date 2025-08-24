@@ -38,7 +38,7 @@ from services.plotting_service import (
     plot_rwa_indo,
 )
 from services.plotting_service import plot_normalization
-from services.depth_matching import depth_matching, plot_depth_matching_results
+from services.depth_matching import depth_matching
 from services.trim_data import trim_well_log
 from services.rgbe_rpbe import process_rgbe_rpbe, plot_rgbe_rpbe
 from services.rt_r0 import process_rt_r0
@@ -893,40 +893,50 @@ def run_depth_matching_endpoint():
     if request.method == 'POST':
         try:
             well_name = request.json.get('well_name', 'BNG-56')
-            ref_las_path = os.path.join(
-                LAS_DIR, f'{well_name}_WL_8.5in.las')
+
+            # --- TENTUKAN NAMA KURVA DI SINI ---
+            ref_curve = 'GR_CAL'
+            lwd_curve = 'DGRCC'
+
+            logging.info(f"Menerima request untuk sumur: {well_name}")
+            logging.info(
+                f"Kurva Referensi (WL): {ref_curve}, Kurva LWD: {lwd_curve}")
+
+            ref_las_path = os.path.join(LAS_DIR, f'{well_name}_WL_8.5in.las')
             lwd_las_path = os.path.join(LAS_DIR, f'{well_name}_LWD_8.5in.las')
 
-            print(ref_las_path)
-
             if not os.path.exists(ref_las_path):
-                return jsonify({"error": f"File tidak ditemukan: {ref_las_path}"}), 404
+                return jsonify({"error": f"File tidak ditemukan: {os.path.basename(ref_las_path)}"}), 404
             if not os.path.exists(lwd_las_path):
-                return jsonify({"error": f"File tidak ditemukan: {lwd_las_path}"}), 404
+                return jsonify({"error": f"File tidak ditemukan: {os.path.basename(lwd_las_path)}"}), 404
 
-            # 1. Panggil fungsi logika untuk mendapatkan data
+            # 1. Panggil fungsi logika dengan argumen kurva yang baru
             ref_data, lwd_data, aligned_data = depth_matching(
                 ref_las_path=ref_las_path,
                 lwd_las_path=lwd_las_path,
+                ref_log_curve=ref_curve,
+                lwd_log_curve=lwd_curve,
                 num_chunks=8
             )
 
-            if aligned_data is None:
-                raise ValueError("Proses komputasi Depth Matching gagal.")
+            if aligned_data is None or aligned_data.empty:
+                raise ValueError(
+                    "Proses komputasi Depth Matching gagal menghasilkan data.")
 
-            # 2. Panggil fungsi plotting dengan data yang sudah diolah
+            # 2. Panggil fungsi plotting dengan argumen kurva yang baru
             fig_result = plot_depth_matching_results(
                 ref_df=ref_data,
                 lwd_df=lwd_data,
-                final_df=aligned_data
+                final_df=aligned_data,
+                ref_log_curve=ref_curve,
+                lwd_log_curve=lwd_curve
             )
 
-            # 3. Kirim plot yang sudah jadi sebagai JSON
+            # 3. Kirim plot sebagai JSON
             return jsonify(fig_result.to_json())
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logging.error(f"Terjadi kesalahan di server: {e}")
             return jsonify({"error": str(e)}), 500
 
 

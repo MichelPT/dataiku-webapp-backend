@@ -901,7 +901,7 @@ def run_depth_matching_endpoint():
 
             if not os.path.exists(ref_las_path):
                 return jsonify({"error": f"File tidak ditemukan: {ref_las_path}"}), 404
-            if not os.path.exists(lwd_las_path):
+            if not os.path.exists(lwd_las_path):  
                 return jsonify({"error": f"File tidak ditemukan: {lwd_las_path}"}), 404
 
             # 1. Panggil fungsi logika untuk mendapatkan data

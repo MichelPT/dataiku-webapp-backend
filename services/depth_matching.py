@@ -1,9 +1,11 @@
 import sys
+import os
 import importlib.util
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import os
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 
 def import_cow():
@@ -12,7 +14,7 @@ def import_cow():
     Pastikan path ini benar di lingkungan server Anda.
     """
     cow_path = Path(
-        "D:/DATAIKU/PROJECT PERTAMINA/dataiku_webapp/api/utils/cow_fixed.py")
+        "utils\cow_fixed.py")
 
     if not cow_path.exists():
         raise ImportError(
@@ -41,10 +43,13 @@ def run_depth_matching(ref_csv_path: str, lwd_csv_path: str, ref_log_curve: str,
         df_wl_full = pd.read_csv(ref_csv_path)
         df_lwd_full = pd.read_csv(lwd_csv_path)
 
-        df_wl_full.rename(columns={'DEPT': 'DEPTH'}, inplace=True)
-        df_lwd_full.rename(columns={'DEPT': 'DEPTH'}, inplace=True)
+        # Ganti nama 'DEPT' ke 'DEPTH' jika ada, tanpa mengubah DataFrame asli di memori
+        if 'DEPT' in df_wl_full.columns:
+            df_wl_full = df_wl_full.rename(columns={'DEPT': 'DEPTH'})
+        if 'DEPT' in df_lwd_full.columns:
+            df_lwd_full = df_lwd_full.rename(columns={'DEPT': 'DEPTH'})
 
-        # 2. Validasi dan siapkan DataFrame, bersihkan data NaN
+        # 2. Validasi dan siapkan DataFrame
         if 'DEPTH' not in df_wl_full.columns or ref_log_curve not in df_wl_full.columns:
             raise KeyError(
                 f"Kolom 'DEPTH' atau '{ref_log_curve}' tidak ditemukan di {os.path.basename(ref_csv_path)}")
@@ -57,7 +62,7 @@ def run_depth_matching(ref_csv_path: str, lwd_csv_path: str, ref_log_curve: str,
         df_lwd = df_lwd_full[['DEPTH', lwd_log_curve]
                              ].dropna().reset_index(drop=True)
 
-        # 3. Tentukan dan terapkan rentang kedalaman yang sama (overlapping)
+        # 3. Tentukan rentang kedalaman yang sama
         common_min_depth = max(df_wl['DEPTH'].min(), df_lwd['DEPTH'].min())
         common_max_depth = min(df_wl['DEPTH'].max(), df_lwd['DEPTH'].max())
 
@@ -76,10 +81,7 @@ def run_depth_matching(ref_csv_path: str, lwd_csv_path: str, ref_log_curve: str,
         depth_index = df_wl_trimmed['DEPTH'].iloc[:minlen]
 
         # 5. Jalankan Algoritma COW
-        a1_list = a1.tolist()
-        a2_list = a2.tolist()
-
-        aligner = cow.COW(a2_list, a1_list, nbFrames, slack)
+        aligner = cow.COW(a2.tolist(), a1.tolist(), nbFrames, slack)
         aligned_a2_raw = aligner.warp_sample_to_target()
 
         # 6. Siapkan DataFrame hasil
@@ -99,6 +101,47 @@ def run_depth_matching(ref_csv_path: str, lwd_csv_path: str, ref_log_curve: str,
         raise FileNotFoundError(f"File CSV tidak ditemukan: {e.filename}")
     except KeyError as e:
         raise KeyError(
-            f"Error pada kolom: {e}. Pastikan nama kolom 'DEPTH' dan nama kurva log sudah benar di file CSV.")
+            f"Error pada kolom: {e}. Pastikan nama kolom 'DEPTH' dan kurva log sudah benar.")
     except Exception as e:
         raise RuntimeError(f"Terjadi kesalahan saat proses COW: {e}")
+
+
+def create_before_after_plot_and_summary(df):
+    """
+    Membaca DataFrame dari MATCHING.csv dan membuat plot perbandingan
+    "Before" dan "After" beserta data ringkasan.
+    """
+    if 'DEPTH' not in df.columns or len(df.columns) < 4:
+        raise ValueError(
+            "MATCHING.csv harus berisi 'DEPTH' dan setidaknya 3 kurva data.")
+
+    depth_col, ref_col, lwd_col, dm_col = df.columns[0], df.columns[1], df.columns[2], df.columns[3]
+
+    clean_df = df[[ref_col, lwd_col, dm_col]].dropna()
+    corr_before, corr_after = np.nan, np.nan
+    if len(clean_df) >= 2:
+        corr_before = np.corrcoef(clean_df[ref_col], clean_df[lwd_col])[0, 1]
+        corr_after = np.corrcoef(clean_df[ref_col], clean_df[dm_col])[0, 1]
+
+    summary_data = {
+        "Data Points Used": len(clean_df),
+        "Correlation Before": f"{corr_before:.4f}",
+        "Correlation After": f"{corr_after:.4f}",
+        "Improvement Delta": f"{(corr_after - corr_before):.4f}"
+    }
+
+    fig = make_subplots(rows=1, cols=2, subplot_titles=(
+        "Before Alignment", "After Alignment"), shared_yaxes=True)
+    fig.add_trace(go.Scatter(x=df[ref_col], y=df[depth_col],
+                  name=f'Ref ({ref_col})', line=dict(color='black')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df[lwd_col], y=df[depth_col], name=f'Original ({lwd_col})', line=dict(
+        color='red', dash='dash')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df[ref_col], y=df[depth_col], name=f'Ref ({ref_col})', line=dict(
+        color='black'), showlegend=False), row=1, col=2)
+    fig.add_trace(go.Scatter(x=df[dm_col], y=df[depth_col],
+                  name=f'Aligned ({dm_col})', line=dict(color='blue')), row=1, col=2)
+    fig.update_layout(title_text="Depth Matching Analysis", height=800, legend=dict(
+        orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    fig.update_yaxes(autorange="reversed", title_text="DEPTH")
+    fig.update_xaxes(title_text="Curve Value")
+    return fig, summary_data

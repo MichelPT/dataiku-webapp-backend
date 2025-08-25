@@ -36,10 +36,10 @@ class COW:
         if (nbFrames < 4):
             print('WARNING: Number of frames should be at least 4')
             return None
-        self.s = int(slack)
+        self.s = slack
         self.X = sampleV
         self.Y = refV
-        self.n = int(nbFrames)
+        self.n = nbFrames
         if (self.X == None or self.Y == None):
             return None
         # 2x(self.n+1) contains boundaries for segments in X and Y
@@ -93,7 +93,7 @@ class COW:
         if (pX == N):
             return segX  # no resampling is needed
 
-        Xabs = [(x+1)/(float)(pX+1) for x in range(pX)]
+        Xabs = map(lambda x: (x+1)/(float)(pX+1), range(pX))
 
         # fill in sampledSegX vector
 
@@ -143,8 +143,8 @@ class COW:
         """
         nX, nY = len(self.X), len(self.Y)
         bounds = []
-        nSegX = nX//self.n
-        nSegY = nY//self.n
+        nSegX = nX/self.n
+        nSegY = nY/self.n
         bX, bY = [], []
         # example
         # [..][...][....] corresponds to boundaries [022559] that we abbreviate in [0259]
@@ -179,14 +179,14 @@ class COW:
             F.append([tp1[i] for i in range(pX)])
             U.append([tp2[i] for i in range(pX)])
 
-        bIdx = list(range(self.n+1))[::-1]  # indices for bounds
+        bIdx = range(self.n+1)[::-1]  # indices for bounds
 
         ##############################################################################
         # consider each segment right to left:
 
         # first segment
         segY = self.Y[bY[bIdx[1]]:bY[bIdx[0]]]
-        jm, jM = self.possible_positions_bounds(self.n, pX//self.n)
+        jm, jM = self.possible_positions_bounds(self.n, pX/self.n)
 
         for j in range(jm, jM+1):  # loop over possible left bound position for first segment
             resampledSegX = self.resample(self.X[j:], len(
@@ -200,7 +200,7 @@ class COW:
             segY = self.Y[bY[i-1]:bY[i]]
 
             jm, jM = self.possible_positions_bounds(
-                i, pX//self.n)  # possible left bound position
+                i, pX/self.n)  # possible left bound position
 
             for j in range(jm, jM+1):  # loop over possible left bound position for each segment
                 # compute maximum correlation and corresponding path for current position
@@ -249,7 +249,7 @@ class COW:
             print('error: index for previous array exceeds number of segments')
             return
 
-        segL = len(self.X)//self.n  # length for majority of segments in X
+        segL = len(self.X)/self.n  # length for majority of segments in X
         s = self.s
 
         max_corr = float(0)
@@ -304,7 +304,7 @@ class COW:
         jM = min([(i - 1)*(m + s), (pX - (pX % self.n) - (self.n - i + 1)*(m - s))])
         jM = min(jM, (len(self.X)-1))  # should not exceed matrix dimension
 
-        return int(jm), int(jM)
+        return jm, jM
 
     def score(self, sX, sY, eX, eY):
         """
@@ -333,7 +333,7 @@ class COW:
     def warp_sample_to_target(self):
 
         fwdsrch = self.forward_search()
-        sY = len(self.Y)//self.n  # length for majority of segments in Y
+        sY = len(self.Y)/self.n  # length for majority of segments in Y
         pLastY = len(self.Y) % self.n + sY
 
         if (fwdsrch != False):
@@ -344,7 +344,7 @@ class COW:
 
         if (len(path) < 3):
             print(
-                'WARNING: optimal path do not have required number of elements, there is some problem.')
+                'WARNING: optimal path does not have required number of elements, there is some problem.')
             return False
 
         warpedX = []
@@ -381,7 +381,7 @@ def bisect_left(a, x, lo=0, hi=None):
     if (hi == None):
         hi = len(a)
     while lo < hi:
-        mid = (lo+hi)//2
+        mid = (lo+hi)/2
         if a[mid] < x:
             lo = mid+1
         else:

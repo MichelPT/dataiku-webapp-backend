@@ -916,7 +916,6 @@ def run_depth_matching_endpoint():
                 lwd_las_path=lwd_las_path,
                 ref_log_curve=ref_curve,
                 lwd_log_curve=lwd_curve,
-                num_chunks=8
             )
 
             if aligned_data is None or aligned_data.empty:

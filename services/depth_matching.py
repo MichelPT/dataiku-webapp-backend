@@ -1,171 +1,104 @@
-import lasio
+import sys
+import importlib.util
+from pathlib import Path
 import numpy as np
 import pandas as pd
-from dtaidistance import dtw
-from scipy.interpolate import interp1d
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import os
 
 
-def normalize(series):
-    std_dev = np.std(series)
-    if std_dev == 0:
-        # Jika semua nilai sama, kembalikan array berisi nol
-        return np.zeros_like(series)
-    return (series - np.mean(series)) / std_dev
-
-
-def depth_matching(ref_las_path: str, lwd_las_path: str, num_chunks: int = 10):
+def import_cow():
     """
-    Menjalankan logika DTW dan mengembalikan tiga DataFrame: 
-    data referensi, data LWD asli, dan data hasil alignment.
+    Mengimpor library COW dari path yang spesifik.
+    Pastikan path ini benar di lingkungan server Anda.
+    """
+    cow_path = Path(
+        "D:/DATAIKU/PROJECT PERTAMINA/dataiku_webapp/api/utils/cow_fixed.py")
+
+    if not cow_path.exists():
+        raise ImportError(
+            f"Tidak dapat menemukan file 'cow_fixed.py' di: {cow_path}")
+
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "cow_fixed", str(cow_path))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["cow_fixed"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception as e:
+        raise ImportError(f"Gagal mengimpor 'cow_fixed.py': {e}")
+
+
+cow = import_cow()
+
+
+def run_depth_matching(ref_csv_path: str, lwd_csv_path: str, ref_log_curve: str, lwd_log_curve: str, nbFrames: int, slack: int):
+    """
+    Fungsi utama untuk menjalankan proses depth matching dari file CSV.
     """
     try:
-        ref_las = lasio.read(ref_las_path)
-        lwd_las = lasio.read(lwd_las_path)
+        # 1. Baca file CSV
+        df_wl_full = pd.read_csv(ref_csv_path)
+        df_lwd_full = pd.read_csv(lwd_csv_path)
 
-        ref_df = ref_las.df().reset_index()[["DEPT", "GR_CAL"]].dropna()
-        ref_df.columns = ["Depth", "GR"]
+        df_wl_full.rename(columns={'DEPT': 'DEPTH'}, inplace=True)
+        df_lwd_full.rename(columns={'DEPT': 'DEPTH'}, inplace=True)
 
-        lwd_df = lwd_las.df().reset_index()[["DEPT", "DGRCC"]].dropna()
-        lwd_df.columns = ["Depth", "DGRCC"]
+        # 2. Validasi dan siapkan DataFrame, bersihkan data NaN
+        if 'DEPTH' not in df_wl_full.columns or ref_log_curve not in df_wl_full.columns:
+            raise KeyError(
+                f"Kolom 'DEPTH' atau '{ref_log_curve}' tidak ditemukan di {os.path.basename(ref_csv_path)}")
+        if 'DEPTH' not in df_lwd_full.columns or lwd_log_curve not in df_lwd_full.columns:
+            raise KeyError(
+                f"Kolom 'DEPTH' atau '{lwd_log_curve}' tidak ditemukan di {os.path.basename(lwd_csv_path)}")
 
-        N_ref = len(ref_df)
-        N_lwd = len(lwd_df)
+        df_wl = df_wl_full[['DEPTH', ref_log_curve]
+                           ].dropna().reset_index(drop=True)
+        df_lwd = df_lwd_full[['DEPTH', lwd_log_curve]
+                             ].dropna().reset_index(drop=True)
 
-        ref_chunk_size = N_ref // num_chunks
-        lwd_chunk_size = N_lwd // num_chunks
+        # 3. Tentukan dan terapkan rentang kedalaman yang sama (overlapping)
+        common_min_depth = max(df_wl['DEPTH'].min(), df_lwd['DEPTH'].min())
+        common_max_depth = min(df_wl['DEPTH'].max(), df_lwd['DEPTH'].max())
 
-        all_chunks = []
+        df_wl_trimmed = df_wl[(df_wl['DEPTH'] >= common_min_depth) & (
+            df_wl['DEPTH'] <= common_max_depth)].copy()
+        df_lwd_trimmed = df_lwd[(df_lwd['DEPTH'] >= common_min_depth) & (
+            df_lwd['DEPTH'] <= common_max_depth)].copy()
 
-        for i in range(num_chunks):
-            ref_start = i * ref_chunk_size
-            ref_end = N_ref if i == num_chunks - \
-                1 else (i + 1) * ref_chunk_size
-            ref_chunk = ref_df.iloc[ref_start:ref_end]
+        # 4. Ekstrak data log sebagai numpy array
+        a1 = df_wl_trimmed[ref_log_curve].values
+        a2 = df_lwd_trimmed[lwd_log_curve].values
 
-            lwd_start = i * lwd_chunk_size
-            lwd_end = N_lwd if i == num_chunks - \
-                1 else (i + 1) * lwd_chunk_size
-            lwd_chunk = lwd_df.iloc[lwd_start:lwd_end]
+        minlen = min(len(a1), len(a2))
+        a1 = a1[:minlen]
+        a2 = a2[:minlen]
+        depth_index = df_wl_trimmed['DEPTH'].iloc[:minlen]
 
-            if len(ref_chunk) < 2 or len(lwd_chunk) < 2:
-                continue
+        # 5. Jalankan Algoritma COW
+        a1_list = a1.tolist()
+        a2_list = a2.tolist()
 
-            ref_signal = normalize(ref_chunk["GR"].values)
-            lwd_signal = normalize(lwd_chunk["DGRCC"].values)
+        aligner = cow.COW(a2_list, a1_list, nbFrames, slack)
+        aligned_a2_raw = aligner.warp_sample_to_target()
 
-            path = dtw.warping_path(lwd_signal, ref_signal)
+        # 6. Siapkan DataFrame hasil
+        final_len = min(len(aligned_a2_raw), len(a1))
+        output_curve_name = f"{lwd_log_curve}_MATCHED"
 
-            aligned_depths = []
-            aligned_dgrcc = []
-            for lwd_idx, ref_idx in path:
-                aligned_depths.append(ref_chunk.iloc[ref_idx]["Depth"])
-                aligned_dgrcc.append(lwd_chunk.iloc[lwd_idx]["DGRCC"])
+        final_df = pd.DataFrame({
+            'DEPTH': depth_index.iloc[:final_len],
+            ref_log_curve: a1[:final_len],
+            lwd_log_curve: a2[:final_len],
+            output_curve_name: aligned_a2_raw[:final_len]
+        })
 
-            aligned_df = pd.DataFrame({
-                "Depth": aligned_depths,
-                "Aligned_DGRCC": aligned_dgrcc
-            }).sort_values(by="Depth")
+        return final_df
 
-            interp_func = interp1d(aligned_df["Depth"], aligned_df["Aligned_DGRCC"],
-                                   kind='linear', bounds_error=False, fill_value="extrapolate")
-            interp_dgrcc = interp_func(ref_chunk["Depth"].values)
-
-            chunk_result = pd.DataFrame({
-                "Depth": ref_chunk["Depth"].values,
-                "REF_GR": ref_chunk["GR"].values,
-                "LWD_DGRCC_Aligned": interp_dgrcc
-            })
-
-            all_chunks.append(chunk_result)
-
-            final_df = pd.concat(all_chunks, ignore_index=True)
-            final_df = final_df.drop_duplicates(
-                subset="Depth").sort_values(by="Depth")
-
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"File CSV tidak ditemukan: {e.filename}")
+    except KeyError as e:
+        raise KeyError(
+            f"Error pada kolom: {e}. Pastikan nama kolom 'DEPTH' dan nama kurva log sudah benar di file CSV.")
     except Exception as e:
-        print(f"Error di dalam depth_matching_logic: {e}")
-        return None, None, None
-
-    return ref_df, lwd_df, final_df
-
-
-def plot_depth_matching_results(ref_df, lwd_df, final_df):
-    """
-    Menerima 3 DataFrame dan membuat plot 4-panel yang komprehensif.
-    """
-    if ref_df is None or lwd_df is None or final_df is None:
-        raise ValueError("Data input untuk plotting tidak boleh None.")
-
-    # Buat 4 subplot dengan sumbu Y yang sama
-    fig = make_subplots(
-        rows=1, cols=4,
-        shared_yaxes=True,
-        subplot_titles=("WL 8.5in", "LWD 8.5in",
-                        "Before Alignment", "After Alignment")
-    )
-
-    # --- Panel 1 (Paling Kiri): Reference Log ---
-    fig.add_trace(go.Scattergl(
-        x=ref_df["GR"], y=ref_df["Depth"], name='REF GR',
-        line=dict(color='black')
-    ), row=1, col=1)
-
-    # --- Panel 2: LWD Log Asli ---
-    fig.add_trace(go.Scattergl(
-        x=lwd_df["DGRCC"], y=lwd_df["Depth"], name='LWD GR',
-        line=dict(color='red')
-    ), row=1, col=2)
-
-    # --- Panel 3: Sebelum Alignment (Ditumpuk) ---
-    fig.add_trace(go.Scattergl(
-        x=ref_df["GR"], y=ref_df["Depth"], name='REF GR (Before)',
-        line=dict(color='black'), legendgroup='before'
-    ), row=1, col=3)
-    fig.add_trace(go.Scattergl(
-        x=lwd_df["DGRCC"], y=lwd_df["Depth"], name='LWD GR (Before)',
-        line=dict(color='red', dash='dash'), legendgroup='before'
-    ), row=1, col=3)
-
-    # --- Panel 4 (Paling Kanan): Setelah Alignment (Ditumpuk) ---
-    fig.add_trace(go.Scattergl(
-        x=final_df["REF_GR"], y=final_df["Depth"], name='REF GR (After)',
-        line=dict(color='black'), legendgroup='after'
-    ), row=1, col=4)
-    fig.add_trace(go.Scattergl(
-        x=final_df["LWD_DGRCC_Aligned"], y=final_df[
-            "Depth"], name='LWD Aligned (After)',
-        line=dict(color='red', dash='dash'), legendgroup='after'
-    ), row=1, col=4)
-
-    fig.update_layout(
-        title_text="Depth Matching Analysis",
-        height=8600,
-        showlegend=False,
-        template="plotly_white",
-        yaxis=dict(autorange='reversed', title_text="Depth (m)"),
-        hovermode="y unified",
-    )
-
-    fig.update_yaxes(
-        showgrid=True,
-        gridwidth=1,
-        gridcolor='red',
-        dtick=15,
-        griddash='dot',
-        showline=True,
-        linewidth=1.5,
-        linecolor='black',
-        mirror=True
-    )
-
-    fig.update_xaxes(
-        showline=True,
-        linewidth=1.5,
-        linecolor='black',
-        mirror=True
-    )
-
-    return fig
+        raise RuntimeError(f"Terjadi kesalahan saat proses COW: {e}")

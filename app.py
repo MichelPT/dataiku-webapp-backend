@@ -2027,7 +2027,7 @@ def get_crossplot():
         df = pd.concat(df_list, ignore_index=True)
 
         fig = generate_crossplot(
-            df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, prcnt_qz, prcnt_wtr, selected_intervals)
+            df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, prcnt_qz=5, prcnt_wtr=5, selected_intervals=selected_intervals)
         fig_json = pio.to_json(fig)
         return Response(response=fig_json, status=200, mimetype='application/json')
 
@@ -3714,7 +3714,7 @@ def get_matching_plot_endpoint():
         return jsonify({'status': 'ok'}), 200
     try:
         # payload = request.get_json()
-        lwd_path = 'data\\structures\\adera\\benuang\\BNG-056\\'
+        lwd_path = 'data/structures/adera/benuang/BNG-056/'
         # if not lwd_path:
         #     return jsonify({"error": "Payload harus menyertakan 'lwd_path'."}), 400
 

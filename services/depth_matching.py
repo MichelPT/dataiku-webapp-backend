@@ -13,10 +13,9 @@ def import_cow():
     Mengimpor library COW dari path yang spesifik.
     Pastikan path ini benar di lingkungan server Anda.
     """
-    cow_path = Path(
-        "utils\cow_fixed.py")
+    cow_path = "utils/cow_fixed.py"
 
-    if not cow_path.exists():
+    if not os.path.exists(cow_path):
         raise ImportError(
             f"Tidak dapat menemukan file 'cow_fixed.py' di: {cow_path}")
 
@@ -140,7 +139,7 @@ def create_before_after_plot_and_summary(df):
         color='black'), showlegend=False), row=1, col=2)
     fig.add_trace(go.Scatter(x=df[dm_col], y=df[depth_col],
                   name=f'Aligned ({dm_col})', line=dict(color='blue')), row=1, col=2)
-    fig.update_layout(title_text="Depth Matching Analysis", height=800, legend=dict(
+    fig.update_layout(title_text="Depth Matching Analysis", height=3200, legend=dict(
         orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     fig.update_yaxes(autorange="reversed", title_text="DEPTH")
     fig.update_xaxes(title_text="Curve Value")

@@ -11,18 +11,20 @@ from services.histogram import plot_histogram
 from services.ngsa import process_all_wells_ngsa
 from services.dgsa import process_all_wells_dgsa
 from services.rgsa import process_all_wells_rgsa
-from services.depth_matching import depth_matching, plot_depth_matching_results
+from services.depth_matching import run_depth_matching
 from services.porosity import calculate_porosity
 # from routes.qc_routes import qc_bp
 from services.plotting_service import (
     extract_markers_with_mean_depth,
     normalize_xover,
     plot_custom,
+    plot_depth_matching,
     plot_fill_missing,
     plot_gsa_main,
     plot_gwd,
     plot_iqual,
     plot_log_default,
+    plot_matching_results,
     plot_module_2,
     plot_module1,
     plot_module_3,
@@ -38,7 +40,6 @@ from services.plotting_service import (
     plot_rwa_indo,
 )
 from services.plotting_service import plot_normalization
-from services.depth_matching import depth_matching, plot_depth_matching_results
 from services.trim_data import trim_well_log
 from services.rgbe_rpbe import process_rgbe_rpbe, plot_rgbe_rpbe
 from services.rt_r0 import process_rt_r0
@@ -887,47 +888,115 @@ def run_smoothing():
 
 @app.route('/api/run-depth-matching', methods=['POST', 'OPTIONS'])
 def run_depth_matching_endpoint():
+    """
+    Endpoint untuk menerima request, menjalankan proses depth matching,
+    menyimpan hasilnya, dan mengembalikan data sebagai JSON.
+    """
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
     if request.method == 'POST':
         try:
-            well_name = request.json.get('well_name', 'BNG-56')
-            ref_las_path = os.path.join(
-                LAS_DIR, f'{well_name}_WL_8.5in.las')
-            lwd_las_path = os.path.join(LAS_DIR, f'{well_name}_LWD_8.5in.las')
+            # 1. Ekstrak data dari payload JSON (disederhanakan dan diperbaiki)
+            payload = request.get_json()
+            logging.info(f"Menerima payload: {payload}")
 
-            print(ref_las_path)
+            ref_csv_path_from_payload = payload.get(
+                'ref_las_path', '')  # Nama kunci dari frontend
+            lwd_csv_path_from_payload = payload.get(
+                'lwd_las_path', '')  # Nama kunci dari frontend
+            ref_curve = payload.get('ref_curve')
+            lwd_curve = payload.get('lwd_curve')
+            slack = int(payload.get('slack', 35))
+            num_chunks = int(payload.get('num_chunks', 20))
+            output_lwd_curve = payload.get('output_lwd_curve')
 
-            if not os.path.exists(ref_las_path):
-                return jsonify({"error": f"File tidak ditemukan: {ref_las_path}"}), 404
-            if not os.path.exists(lwd_las_path):
-                return jsonify({"error": f"File tidak ditemukan: {lwd_las_path}"}), 404
+            # Validasi input
+            if not all([ref_csv_path_from_payload, lwd_csv_path_from_payload, ref_curve, lwd_curve, output_lwd_curve]):
+                return jsonify({"error": "Parameter tidak lengkap. Pastikan semua field terisi."}), 400
 
-            # 1. Panggil fungsi logika untuk mendapatkan data
-            ref_data, lwd_data, aligned_data = depth_matching(
-                ref_las_path=ref_las_path,
-                lwd_las_path=lwd_las_path,
-                num_chunks=8
+            # Buat path file absolut dan aman
+            ref_csv_filename = os.path.basename(ref_csv_path_from_payload)
+            lwd_csv_filename = os.path.basename(lwd_csv_path_from_payload)
+            ref_csv_path = ref_csv_path_from_payload
+            lwd_csv_path = lwd_csv_path_from_payload
+
+            # 2. Panggil fungsi logika utama
+            # Pastikan fungsi run_depth_matching di file lain juga menangani 'DEPT' -> 'DEPTH'
+            result_df = run_depth_matching(
+                ref_csv_path=ref_csv_path,
+                lwd_csv_path=lwd_csv_path,
+                ref_log_curve=ref_curve,
+                lwd_log_curve=lwd_curve,
+                nbFrames=num_chunks,
+                slack=slack
             )
 
-            if aligned_data is None:
-                raise ValueError("Proses komputasi Depth Matching gagal.")
+            if result_df is None or result_df.empty:
+                raise ValueError(
+                    "Proses depth matching tidak menghasilkan data.")
 
-            # 2. Panggil fungsi plotting dengan data yang sudah diolah
-            fig_result = plot_depth_matching_results(
-                ref_df=ref_data,
-                lwd_df=lwd_data,
-                final_df=aligned_data
-            )
+            # 3. Tambahkan kurva baru ke file LWD CSV asli
+            # Baca file LWD asli untuk dimodifikasi
+            original_lwd_df = pd.read_csv(lwd_csv_path)
 
-            # 3. Kirim plot yang sudah jadi sebagai JSON
-            return jsonify(fig_result.to_json())
+            # --- LOKASI PERBAIKAN ---
+            # Ganti nama 'DEPT' ke 'DEPTH' SETELAH file dibaca menjadi DataFrame
+            if 'DEPT' in original_lwd_df.columns and 'DEPTH' not in original_lwd_df.columns:
+                original_lwd_df.rename(columns={'DEPT': 'DEPTH'}, inplace=True)
 
+            new_curve_col_name = f"{lwd_curve}_MATCHED"
+            new_curve_series = result_df.set_index('DEPTH')[new_curve_col_name]
+
+            merged_df = pd.merge(
+                original_lwd_df, new_curve_series, on='DEPTH', how='left')
+            merged_df.rename(
+                columns={new_curve_col_name: output_lwd_curve}, inplace=True)
+
+            merged_df.to_csv(lwd_csv_path, index=False)
+            logging.info(
+                f"Kurva '{output_lwd_curve}' telah ditambahkan/diperbarui di file {lwd_csv_filename}")
+
+            try:
+                # Ambil kolom referensi dan kolom hasil matching dari result_df
+                ref_data_series = result_df[ref_curve]
+                matched_data_series = result_df[new_curve_col_name]
+
+                # Buat DataFrame baru untuk file MATCHING.csv
+                # Kolom kedua dinamai sesuai output yang diinginkan (misal: DGRCC_DM)
+                matching_df = pd.DataFrame({
+                    ref_curve: ref_data_series,
+                    output_lwd_curve: matched_data_series
+                })
+
+                # Tentukan path untuk menyimpan file baru
+                output_dir = os.path.dirname(lwd_csv_path)
+                matching_file_path = os.path.join(output_dir, "MATCHING.csv")
+
+                # Simpan ke file CSV
+                matching_df.to_csv(matching_file_path, index=False)
+                logging.info(
+                    f"Dataset baru 'MATCHING.csv' berhasil dibuat di: {output_dir}")
+
+            except Exception as e:
+                logging.error(f"Gagal membuat file MATCHING.csv: {e}")
+
+            # 4. Konversi DataFrame hasil ke format JSON
+            result_json = result_df.to_json(orient='split')
+
+            return jsonify({
+                "message": f"Depth matching berhasil. Kurva '{output_lwd_curve}' telah ditambahkan ke {lwd_csv_filename}",
+                "saved_filename": lwd_csv_filename,
+                "plot_data": result_json
+            })
+
+        except (FileNotFoundError, KeyError, RuntimeError) as e:
+            logging.error(f"Error yang terkendali selama proses: {e}")
+            return jsonify({"error": str(e)}), 400
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": str(e)}), 500
+            logging.error(
+                f"Terjadi kesalahan tak terduga di server: {e}", exc_info=True)
+            return jsonify({"error": "Terjadi kesalahan internal pada server."}), 500
 
 
 @app.route('/api/run-vsh-calculation', methods=['POST', 'OPTIONS'])
@@ -3671,6 +3740,80 @@ def save_las_curve():
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"An unexpected error occurred during save: {str(e)}"}), 500
+
+
+@app.route('/api/get-depth-matching-prep-plot', methods=['POST', 'OPTIONS'])
+def depth_matching_plot():
+
+    if request.method == 'POST':
+        try:
+            request_data = request.get_json()
+
+            file_path = request_data.get('file_path')
+
+            if file_path:
+                # DirectorySidebar mode - single file
+                if not os.path.exists(file_path):
+                    return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
+                df = pd.read_csv(file_path, on_bad_lines='warn')
+
+            # Call plotting function with processed data
+            fig_result = plot_depth_matching(df)
+
+            # Send finished plot as JSON
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+# DEPTH MATCHING DUMMY
+
+
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+# Menggabungkan base path dengan subfolder untuk membentuk path data yang dinamis
+DM_DIR = os.path.join(BASE_DIR, 'data', 'depth-matching')
+
+
+@app.route('/api/get-matching-plot', methods=['POST', 'OPTIONS'])
+def get_matching_plot_endpoint():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
+    if request.method == 'POST':
+        try:
+            payload = request.get_json()
+            # file_path = r"D:\DATAIKU\PROJECT PERTAMINA\dataiku_webapp\api\data\structures\adera\benuang\BNG-056"
+
+            # if not file_path:
+            #     return jsonify({"error": "Payload harus menyertakan 'file_path' ke MATCHING.csv"}), 400
+
+            # logging.info(f"Menerima base_path: {file_path}")
+
+            # Tentukan direktori dari path yang diberikan
+            # directory = os.path.dirname(file_path)
+            directory = "data\structures\\adera\\benuang\\BNG-056"
+            # Buat path lengkap ke file MATCHING.csv
+            matching_file_path = os.path.join(directory, "MATCHING.csv")
+
+            logging.info(f"Mencari MATCHING.csv di path: {matching_file_path}")
+
+            if not os.path.exists(matching_file_path):
+                return jsonify({"error": f"File tidak ditemukan: {os.path.basename(matching_file_path)}"}), 404
+
+            # Baca file MATCHING.csv
+            df = pd.read_csv(matching_file_path)
+
+            # Panggil fungsi plotting yang baru
+            fig_result = plot_matching_results(df)
+
+            return jsonify(fig_result.to_json())
+
+        except Exception as e:
+            logging.error(
+                f"Error di endpoint matching-plot: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
 
 
 # This is for local development testing, Vercel will use its own server

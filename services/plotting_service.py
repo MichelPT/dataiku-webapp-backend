@@ -3727,3 +3727,105 @@ def plot_custom(df, sequence):
     """
     fig = main_plot(df, sequence)
     return fig
+
+
+def plot_depth_matching(df):
+    """
+    Membuat plot Normalization Preparation.
+    """
+    # Reset index seperti di colab code
+    df = df.reset_index()
+
+    # Ensure DEPTH column exists (rename DEPT to DEPTH if needed)
+    if 'DEPT' in df.columns and 'DEPTH' not in df.columns:
+        df = df.rename(columns={'DEPT': 'DEPTH'})
+
+    # Auto-detect LWD vs WL berdasarkan kolom yang tersedia
+    lwd_sequence = [
+        'DGRCC', 'DGRCC_DM',
+        'ALCDLC', 'ALCDLC_DM',
+        'TNPL', 'TNPL_DM',
+        'R39PC', 'R39PC_DM'
+    ]
+
+    wl_sequence = [
+        'GR_CAL', 'GR_CAL_DM',
+        'RHOZ', 'RHOZ_DM',
+        'RLA5', 'RLA5_DM',
+        'TNPH', 'TNPH_DM'
+    ]
+
+    # Check which type of data we have
+    lwd_available = sum(1 for col in lwd_sequence if col in df.columns)
+    wl_available = sum(1 for col in wl_sequence if col in df.columns)
+
+    if lwd_available >= wl_available:
+        # Use LWD sequence
+        sequence = lwd_sequence
+        title = 'Depth Matching Layout'
+    else:
+        # Use WL sequence and scale RHOZ if available
+        if 'RHOZ' in df.columns:
+            df['RHOZ'] = df['RHOZ'] / 1000
+        sequence = wl_sequence
+        title = 'Depth Matching Layout'
+
+    # Filter sequence to only include available columns
+    sequence = [col for col in sequence if col in df.columns]
+
+    if not sequence:
+        raise ValueError("No valid columns found for Module1 plot")
+
+    fig = main_plot(df, sequence, title=title)
+
+    return fig
+
+# DUMMY DEPTH MATCHING PLOT
+
+
+def plot_matching_results(df):
+    """
+    Membuat plot perbandingan dari file MATCHING.csv menggunakan Plotly.
+    """
+    # 1. Validasi DataFrame
+    if df.shape[1] < 2:
+        raise ValueError(
+            "Data tidak valid. File MATCHING.csv harus memiliki setidaknya 2 kolom.")
+
+    # 2. Asumsikan urutan kolom: [0] = Referensi, [1] = Hasil Match
+    ref_col_name = df.columns[0]
+    matched_col_name = df.columns[1]
+
+    # Membuat plot
+    fig = go.Figure()
+
+    # 3. Tambahkan trace untuk kurva referensi (misal: GR_CAL)
+    fig.add_trace(go.Scatter(
+        y=df.index,  # Gunakan index sebagai sumbu Y (kedalaman relatif)
+        x=df[ref_col_name],
+        name=f'Reference: {ref_col_name}',
+        line=dict(color='black', width=2)
+    ))
+
+    # 4. Tambahkan trace untuk kurva yang sudah di-align (misal: DGRCC_DM)
+    fig.add_trace(go.Scatter(
+        y=df.index,
+        x=df[matched_col_name],
+        name=f'Aligned: {matched_col_name}',
+        line=dict(color='blue', width=2)
+    ))
+
+    # 5. Atur layout agar informatif dan rapi
+    fig.update_layout(
+        title='Final Depth Matching Alignment',
+        # Anda bisa membuat ini lebih dinamis jika perlu
+        xaxis_title='Gamma Ray (API)',
+        yaxis_title='Relative Depth Index',
+        # Balikkan sumbu Y seperti plot log sumur
+        yaxis=dict(autorange="reversed"),
+        legend=dict(orientation="h", yanchor="bottom",
+                    y=1.02, xanchor="right", x=1),
+        height=2600
+    )
+
+    return fig

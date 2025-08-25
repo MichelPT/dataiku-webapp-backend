@@ -1,147 +1,104 @@
-# services/depth_matching.py
-
 import sys
-import os
-import lasio
+import importlib.util
+from pathlib import Path
 import numpy as np
 import pandas as pd
-import time
-import logging
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-
-# --- Konfigurasi Path untuk Impor Modul 'cow' ---
-try:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    base_dir = os.path.dirname(current_dir)
-    utils_path = os.path.join(base_dir, 'utils')
-    if utils_path not in sys.path:
-        sys.path.insert(0, utils_path)
-    import cow_fixed as cow
-    logging.info("Modul 'cow' berhasil diimpor dari folder 'utils'.")
-except ImportError as e:
-    logging.error(
-        "GAGAL mengimpor modul 'cow'. Pastikan 'cow.py' ada di folder 'utils'.")
-    raise e
-
-# --- FUNGSI HELPER: Normalisasi Sinyal ---
+import os
 
 
-def normalize(series: np.ndarray) -> np.ndarray:
-    """Mengubah skala sinyal ke mean=0 dan std_dev=1."""
-    mean = np.mean(series)
-    std_dev = np.std(series)
-    if std_dev == 0:
-        return np.zeros_like(series)
-    return (series - mean) / std_dev
+def import_cow():
+    """
+    Mengimpor library COW dari path yang spesifik.
+    Pastikan path ini benar di lingkungan server Anda.
+    """
+    cow_path = Path(
+        "D:/DATAIKU/PROJECT PERTAMINA/dataiku_webapp/api/utils/cow_fixed.py")
 
-# --- FUNGSI LOGIKA UTAMA (PALING STABIL) ---
+    if not cow_path.exists():
+        raise ImportError(
+            f"Tidak dapat menemukan file 'cow_fixed.py' di: {cow_path}")
 
-
-def depth_matching(ref_las_path: str, lwd_las_path: str, ref_log_curve: str, lwd_log_curve: str, num_chunks: int = 15, slack: int = 30):
-    logging.info(f"--- Memulai Proses Depth Matching (dengan Normalisasi) ---")
-
-    # 1. Baca dan validasi data
-    ref_las = lasio.read(ref_las_path)
-    lwd_las = lasio.read(lwd_las_path)
-    ref_df_orig = ref_las.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
-    lwd_df_orig = lwd_las.df().reset_index().rename(columns={'DEPT': 'DEPTH'})
-
-    if 'DEPTH' not in ref_df_orig.columns or ref_log_curve not in ref_df_orig.columns:
-        raise ValueError(
-            f"Kolom '{ref_log_curve}' atau 'DEPTH' tidak ada di file Referensi.")
-    if 'DEPTH' not in lwd_df_orig.columns or lwd_log_curve not in lwd_df_orig.columns:
-        raise ValueError(
-            f"Kolom '{lwd_log_curve}' atau 'DEPTH' tidak ada di file LWD.")
-
-    # 2. Selaraskan, bersihkan, dan isi data
-    ref_df = ref_df_orig.set_index('DEPTH')
-    lwd_df = lwd_df_orig.set_index('DEPTH')
-
-    # Buat DataFrame terpusat berdasarkan index referensi (otomatis trim)
-    aligned_df = pd.DataFrame(index=ref_df.index)
-    aligned_df['REF'] = ref_df[ref_log_curve]
-    aligned_df['LWD'] = lwd_df[lwd_log_curve].reindex(ref_df.index)
-
-    # Bersihkan data
-    aligned_df['REF'] = pd.to_numeric(aligned_df['REF'], errors='coerce')
-    aligned_df['LWD'] = pd.to_numeric(aligned_df['LWD'], errors='coerce')
-    aligned_df.replace([np.inf, -np.inf], np.nan, inplace=True)
-
-    # Tangani nilai NaN
-    aligned_df.dropna(subset=['REF'], inplace=True)
-    aligned_df['LWD'] = aligned_df['LWD'].bfill().ffill()
-    final_df = aligned_df.dropna()
-
-    if final_df.empty:
-        raise ValueError(
-            "Tidak ada data valid yang tersisa setelah proses alignment dan fill.")
-
-    ref_signal_orig = final_df['REF'].values
-    lwd_signal_orig = final_df['LWD'].values
-
-    # 3. Normalisasi Sinyal (Langkah Kunci)
-    logging.info("Normalisasi sinyal referensi dan LWD...")
-    ref_signal_norm = normalize(ref_signal_orig)
-    lwd_signal_norm = normalize(lwd_signal_orig)
-
-    # Simpan parameter LWD asli untuk denormalisasi
-    lwd_mean = np.mean(lwd_signal_orig)
-    lwd_std = np.std(lwd_signal_orig)
-
-    # 4. Jalankan algoritma COW pada data yang sudah dinormalisasi
-    logging.info(
-        f"Sinyal ternormalisasi siap untuk COW dengan panjang: {len(ref_signal_norm)}")
-    aligner = cow.COW(lwd_signal_norm, ref_signal_norm, num_chunks, slack)
-    aligned_lwd_signal_norm, _ = aligner.warp_sample_to_target()
-
-    # 5. Denormalisasi Hasil (mengembalikan ke skala asli)
-    if lwd_std > 0:
-        aligned_lwd_signal = (aligned_lwd_signal_norm * lwd_std) + lwd_mean
-    else:
-        aligned_lwd_signal = aligned_lwd_signal_norm + lwd_mean
-
-    # 6. Buat DataFrame hasil akhir
-    final_result_df = pd.DataFrame({
-        'DEPTH': final_df.index,
-        'LOG_REF': ref_signal_orig,
-        'LOG_ALIGNED_LWD': aligned_lwd_signal
-    })
-
-    return ref_df_orig, lwd_df_orig, final_result_df
-
-# --- FUNGSI PLOTTING ---
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "cow_fixed", str(cow_path))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["cow_fixed"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception as e:
+        raise ImportError(f"Gagal mengimpor 'cow_fixed.py': {e}")
 
 
-def plot_depth_matching_results(ref_df: pd.DataFrame, lwd_df: pd.DataFrame, final_df: pd.DataFrame, ref_log_curve: str, lwd_log_curve: str):
-    fig = make_subplots(
-        rows=1, cols=2, shared_yaxes=True,
-        subplot_titles=("Before Alignment", "After Alignment")
-    )
+cow = import_cow()
 
-    # Track 1: Sebelum Alignment
-    fig.add_trace(go.Scatter(
-        x=ref_df[ref_log_curve], y=ref_df['DEPTH'], name=f'WL ({ref_log_curve})', line=dict(color='black')
-    ), row=1, col=1)
-    fig.add_trace(go.Scatter(
-        x=lwd_df[lwd_log_curve], y=lwd_df['DEPTH'], name=f'LWD ({lwd_log_curve})', line=dict(color='red', dash='dash')
-    ), row=1, col=1)
 
-    # Track 2: Sesudah Alignment
-    fig.add_trace(go.Scatter(
-        x=final_df['LOG_REF'], y=final_df['DEPTH'], name=f'WL ({ref_log_curve})', line=dict(color='black'), showlegend=False
-    ), row=1, col=2)
-    fig.add_trace(go.Scatter(
-        x=final_df['LOG_ALIGNED_LWD'], y=final_df['DEPTH'], name=f'LWD Aligned ({lwd_log_curve})', line=dict(color='blue')
-    ), row=1, col=2)
+def run_depth_matching(ref_csv_path: str, lwd_csv_path: str, ref_log_curve: str, lwd_log_curve: str, nbFrames: int, slack: int):
+    """
+    Fungsi utama untuk menjalankan proses depth matching dari file CSV.
+    """
+    try:
+        # 1. Baca file CSV
+        df_wl_full = pd.read_csv(ref_csv_path)
+        df_lwd_full = pd.read_csv(lwd_csv_path)
 
-    # Update Layout
-    fig.update_layout(
-        title_text=f'Depth Matching Result: {ref_log_curve} vs {lwd_log_curve}',
-        height=800, yaxis_title='DEPTH (m)',
-        legend=dict(orientation="h", yanchor="bottom",
-                    y=1.02, xanchor="right", x=1)
-    )
-    fig.update_yaxes(autorange="reversed")
+        df_wl_full.rename(columns={'DEPT': 'DEPTH'}, inplace=True)
+        df_lwd_full.rename(columns={'DEPT': 'DEPTH'}, inplace=True)
 
-    return fig
+        # 2. Validasi dan siapkan DataFrame, bersihkan data NaN
+        if 'DEPTH' not in df_wl_full.columns or ref_log_curve not in df_wl_full.columns:
+            raise KeyError(
+                f"Kolom 'DEPTH' atau '{ref_log_curve}' tidak ditemukan di {os.path.basename(ref_csv_path)}")
+        if 'DEPTH' not in df_lwd_full.columns or lwd_log_curve not in df_lwd_full.columns:
+            raise KeyError(
+                f"Kolom 'DEPTH' atau '{lwd_log_curve}' tidak ditemukan di {os.path.basename(lwd_csv_path)}")
+
+        df_wl = df_wl_full[['DEPTH', ref_log_curve]
+                           ].dropna().reset_index(drop=True)
+        df_lwd = df_lwd_full[['DEPTH', lwd_log_curve]
+                             ].dropna().reset_index(drop=True)
+
+        # 3. Tentukan dan terapkan rentang kedalaman yang sama (overlapping)
+        common_min_depth = max(df_wl['DEPTH'].min(), df_lwd['DEPTH'].min())
+        common_max_depth = min(df_wl['DEPTH'].max(), df_lwd['DEPTH'].max())
+
+        df_wl_trimmed = df_wl[(df_wl['DEPTH'] >= common_min_depth) & (
+            df_wl['DEPTH'] <= common_max_depth)].copy()
+        df_lwd_trimmed = df_lwd[(df_lwd['DEPTH'] >= common_min_depth) & (
+            df_lwd['DEPTH'] <= common_max_depth)].copy()
+
+        # 4. Ekstrak data log sebagai numpy array
+        a1 = df_wl_trimmed[ref_log_curve].values
+        a2 = df_lwd_trimmed[lwd_log_curve].values
+
+        minlen = min(len(a1), len(a2))
+        a1 = a1[:minlen]
+        a2 = a2[:minlen]
+        depth_index = df_wl_trimmed['DEPTH'].iloc[:minlen]
+
+        # 5. Jalankan Algoritma COW
+        a1_list = a1.tolist()
+        a2_list = a2.tolist()
+
+        aligner = cow.COW(a2_list, a1_list, nbFrames, slack)
+        aligned_a2_raw = aligner.warp_sample_to_target()
+
+        # 6. Siapkan DataFrame hasil
+        final_len = min(len(aligned_a2_raw), len(a1))
+        output_curve_name = f"{lwd_log_curve}_MATCHED"
+
+        final_df = pd.DataFrame({
+            'DEPTH': depth_index.iloc[:final_len],
+            ref_log_curve: a1[:final_len],
+            lwd_log_curve: a2[:final_len],
+            output_curve_name: aligned_a2_raw[:final_len]
+        })
+
+        return final_df
+
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"File CSV tidak ditemukan: {e.filename}")
+    except KeyError as e:
+        raise KeyError(
+            f"Error pada kolom: {e}. Pastikan nama kolom 'DEPTH' dan nama kurva log sudah benar di file CSV.")
+    except Exception as e:
+        raise RuntimeError(f"Terjadi kesalahan saat proses COW: {e}")

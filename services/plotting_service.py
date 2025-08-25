@@ -112,6 +112,8 @@ data_col = {
     'A40H': ['A40H'],
     'ROBB': ['ROBB'],
     'DGRCC': ['DGRCC'],
+    'DGRCC_GR_CAL': ['DGRCC', 'GR_CAL'],
+    'DGRCC_DM': ['DGRCC_DM', 'GR_CAL'],
     'ARM48PC': ['ARM48PC'],
     'ALCDLC': ['ALCDLC'],
     'TNPL': ['TNPL'],
@@ -142,6 +144,8 @@ unit_col = {
     'ZONE': [''],
     'GR_NORM': ['GAPI'],
     'GR': ['GAPI'],
+    'DGRCC_DM': ['GAPI', 'GAPI'],
+    'DGRCC_GR_CAL': ['GAPI', 'GAPI'],
     'GR_DUAL': ['GAPI', 'GAPI'],
     'GR_DUAL_2': ['GAPI', 'GAPI'],
     'GR_RAW_NORM': ['GAPI'],
@@ -304,7 +308,9 @@ color_col = {
     'C3_C1': ['blue'],
     'C3_C1_BASELINE': [colors_dict['black']],
     'GR_CAL': ['darkblue'],         # Sama seperti GR
-    'DGRCC': ['darkblue'],          # Sama seperti GR
+    'DGRCC': ['darkblue'],
+    'DGRCC_GR_CAL': ['#FF0000', "#FFD014"],
+    'DGRCC_DM': ['#FF0000', 'darkblue'],          # Sama seperti GR
     'RLA5': [colors_dict['red']],   # Sama seperti RT
     'A40H': [colors_dict['red']],   # Sama seperti RT
     'ARM48PC': [colors_dict['red']],  # Sama seperti RT
@@ -454,6 +460,8 @@ range_col = {
     'R39PC_FM': [[0.2, 2000]], 'A40H_FM': [[0.2, 2000]], 'ARM48PC_FM': [[0.2, 2000]],
     'RHOZ_FM': [[1.71, 2.71]], 'ALCDLC_FM': [[1.71, 2.71]], 'ROBB_FM': [[1.71, 2.71]],
     'TNPH_FM': [[0.6, 0]], 'TNPL_FM': [[0.6, 0]],
+    'DGRCC_DM': [[0, 250], [0, 250]],
+    'DGRCC_GR_CAL': [[0, 250], [0, 250]],
     'MISSING_FLAG': [[0, 2]]
 }
 
@@ -527,6 +535,8 @@ ratio_plots = {
     'C3_C1_BASELINE': 1,
     'GR_CAL': 1,        # Sama seperti GR
     'DGRCC': 1,         # Sama seperti GR
+    'DGRCC_GR_CAL': 1,         # Sama seperti GR
+    'DGRCC_DM': 1,         # Sama seperti GR
     'RLA5': 1,          # Sama seperti RT
     'R39PC': 1,          # Sama seperti RT
     'A40H': 1,          # Sama seperti RT
@@ -2123,7 +2133,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'SW_Z4', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT_Z4', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE', 'DGRCC', 'GR_CAL', 'RHOZ', 'ALCDLC', 'TNPL', 'TNPH']:
+            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'SW_Z4', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT_Z4', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE', 'DGRCC', 'GR_CAL', 'RHOZ', 'ALCDLC', 'TNPL', 'TNPH', 'DGRCC_GR_CAL', 'DGRCC_DM']:
                 fig.update_layout(
                     **{axis: dict(
                         # gridcolor='rgba(0,0,0,0)',
@@ -2765,6 +2775,14 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             fig, axes = plot_line(df, fig, axes, col, n_seq)
         elif col == 'DNSV':
             fig, axes = plot_line(df, fig, axes, col, n_seq)
+
+        # DEPTH MATCHING
+        elif col == 'DGRCC_GR_CAL':
+            fig, axes, counter = plot_two_features_simple(
+                df, fig, axes, 'DGRCC_GR_CAL', n_seq, counter, n_plots=subplot_col, log_scale=False)
+        elif col == 'DGRCC_DM':
+            fig, axes, counter = plot_two_features_simple(
+                df, fig, axes, 'DGRCC_DM', n_seq, counter, n_plots=subplot_col, log_scale=False)
 
         # RT R0
         elif col == 'RT_RO':
@@ -3741,42 +3759,9 @@ def plot_depth_matching(df):
         df = df.rename(columns={'DEPT': 'DEPTH'})
 
     # Auto-detect LWD vs WL berdasarkan kolom yang tersedia
-    lwd_sequence = [
-        'DGRCC', 'DGRCC_DM',
-        'ALCDLC', 'ALCDLC_DM',
-        'TNPL', 'TNPL_DM',
-        'R39PC', 'R39PC_DM'
-    ]
+    sequence = ['DGRCC_GR_CAL', 'DGRCC_DM']
 
-    wl_sequence = [
-        'GR_CAL', 'GR_CAL_DM',
-        'RHOZ', 'RHOZ_DM',
-        'RLA5', 'RLA5_DM',
-        'TNPH', 'TNPH_DM'
-    ]
-
-    # Check which type of data we have
-    lwd_available = sum(1 for col in lwd_sequence if col in df.columns)
-    wl_available = sum(1 for col in wl_sequence if col in df.columns)
-
-    if lwd_available >= wl_available:
-        # Use LWD sequence
-        sequence = lwd_sequence
-        title = 'Depth Matching Layout'
-    else:
-        # Use WL sequence and scale RHOZ if available
-        if 'RHOZ' in df.columns:
-            df['RHOZ'] = df['RHOZ'] / 1000
-        sequence = wl_sequence
-        title = 'Depth Matching Layout'
-
-    # Filter sequence to only include available columns
-    sequence = [col for col in sequence if col in df.columns]
-
-    if not sequence:
-        raise ValueError("No valid columns found for Module1 plot")
-
-    fig = main_plot(df, sequence, title=title)
+    fig = main_plot(df, sequence, title='DEPTH MATCHING BNG-056')
 
     return fig
 

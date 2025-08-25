@@ -3676,11 +3676,14 @@ def save_las_curve():
 
 @app.route('/api/get-depth-matching-prep-plot', methods=['POST', 'OPTIONS'])
 def depth_matching_plot():
+    # Handle the browser's preflight OPTIONS request.
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
 
+    # Handle the actual POST request.
     if request.method == 'POST':
         try:
             request_data = request.get_json()
-
             file_path = request_data.get('file_path')
 
             if file_path:
@@ -3688,18 +3691,30 @@ def depth_matching_plot():
                 if not os.path.exists(file_path):
                     return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
                 df = pd.read_csv(file_path, on_bad_lines='warn')
+            else:
+                # Handle case where file_path is not provided
+                return jsonify({"error": "No file_path provided in the request"}), 400
 
             # Call plotting function with processed data
+            # Assuming main_plot returns a plotly figure object
             fig_result = plot_depth_matching(df)
 
             # Send finished plot as JSON
-            return jsonify(fig_result.to_json())
+            # The .to_json() method for plotly figures returns a JSON string,
+            # so we should load it back to a dict to be re-serialized by jsonify
+            # or just return the string with the correct content type.
+            # A cleaner way is to use plotly.io.to_json
+            import plotly.io as pio
+            fig_json = pio.to_json(fig_result)
+            return fig_json, 200, {'Content-Type': 'application/json'}
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 
+    # It's good practice to have a fallback return, though with POST and OPTIONS it shouldn't be reached.
+    return jsonify({"error": "Method not allowed"}), 405
 # DEPTH MATCHING DUMMY
 
 

@@ -3445,18 +3445,21 @@ def get_custom_plot():
         try:
             request_data = request.get_json()
             full_path = request_data.get('full_path', [])
+            file_path = request_data.get('file_path', '')
             selected_wells = request_data.get('selected_wells', [])
             selected_intervals = request_data.get('selected_intervals', [])
             custom_columns = request_data.get('custom_columns', [])
             selected_zones = request_data.get('selected_zones', [])
 
             if not selected_wells:
-                return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
-
-            # Baca dan gabungkan data dari sumur yang dipilih
-            df_list = [pd.read_csv(os.path.join(
-                full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
-            df = pd.concat(df_list, ignore_index=True)
+                df_list = [pd.read_csv(file_path, on_bad_lines='warn')]
+                df = pd.concat(df_list, ignore_index=True)
+                # return jsonify({"error": "Tidak ada sumur yang dipilih."}), 400
+            else:
+                # Baca dan  gabungkan data dari sumur yang dipilih
+                df_list = [pd.read_csv(os.path.join(
+                    full_path, f"{well}.csv"), on_bad_lines='warn') for well in selected_wells]
+                df = pd.concat(df_list, ignore_index=True)
 
             if selected_intervals:
                 if 'MARKER' in df.columns:
@@ -3475,7 +3478,6 @@ def get_custom_plot():
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
-            # Panggil fungsi plotting GSA yang baru
             fig_result = plot_custom(df, custom_columns)
 
             return jsonify(fig_result.to_json())

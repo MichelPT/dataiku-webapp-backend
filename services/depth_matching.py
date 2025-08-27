@@ -102,7 +102,7 @@ def run_depth_matching(ref_csv_path: str, lwd_csv_path: str, ref_log_curve: str,
         raise KeyError(
             f"Error pada kolom: {e}. Pastikan nama kolom 'DEPTH' dan kurva log sudah benar.")
     except Exception as e:
-        raise RuntimeError(f"Terjadi kesalahan saat proses COW: {e}")
+        raise RuntimeError(f"Terjx  adi kesalahan saat proses COW: {e}")
 
 
 def create_before_after_plot_and_summary(df):

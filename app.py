@@ -432,7 +432,7 @@ def get_log_percentiles():
 
             # Buat base_dir yang aman dari DATA_ROOT
             base_dir = os.path.abspath(
-                os.path.join(PROJECT_ROOT, '..', full_path))
+                os.path.join(PROJECT_ROOT, full_path))
             if not base_dir.startswith(DATA_ROOT):
                 return jsonify({"error": f"Akses ke direktori '{full_path}' ditolak."}), 403
 
@@ -744,6 +744,7 @@ def run_interval_normalization():
         high_in = float(params.get('HIGH_IN', 146))
         cutoff_min = float(params.get('CUTOFF_MIN', 0.0))
         cutoff_max = float(params.get('CUTOFF_MAX', 250.0))
+        isDataPrep = params.get('isDataPrep', True)
 
         processed_dfs = []
 
@@ -774,7 +775,8 @@ def run_interval_normalization():
                 high_in=high_in,
                 cutoff_min=cutoff_min,
                 cutoff_max=cutoff_max,
-                log_out_col=log_out_col
+                log_out_col=log_out_col,
+                isDataPrep=isDataPrep
             )
 
             # Save the modified data back to the original file
@@ -806,54 +808,49 @@ def run_smoothing():
 
     try:
         payload = request.get_json()
-        params = payload.get('params', {})  # Ambil 'params' jika ada
+        params = payload.get('params', {})
 
-        # Ambil parameter dari 'params' atau dari root payload untuk kompatibilitas
-        window = int(params.get('WINDOW', payload.get('WINDOW', 5)))
-        col_in = params.get('LOG_IN', payload.get('LOG_IN', 'GR'))
-        col_out = params.get('LOG_OUT', payload.get('LOG_OUT', f"{col_in}_SM"))
+        window = int(params.get('WINDOW', 5))
+        col_in = params.get('LOG_IN', 'GR')
+        col_out = params.get('LOG_OUT', f"{col_in}_SM")
 
-        file_paths = payload.get('file_paths', [])
-        selected_wells = payload.get('selected_wells', [])
+        isDataPrep = payload.get('isDataPrep', False)
 
-        # --- PENAMBAHAN LOGIKA UNTUK MEMBEDAKAN KASUS ---
-
-        # KASUS 1: DATA PREP (jika 'file_paths' dikirim)
-        if file_paths:
-            print(
-                f"Mulai smoothing untuk Data Prep pada {len(file_paths)} file...")
-            # Untuk Data Prep, kita tidak memerlukan interval
-            # Loop akan berjalan pada path file yang sudah lengkap
-            paths_to_process = []
+        # --- LOGIKA PENANGANAN PATH YANG DISESUAIKAN ---
+        paths_to_process = []
+        if isDataPrep:
+            print(f"Mulai smoothing untuk Data Prep...")
+            # Untuk Data Prep, 'file_paths' berisi path relatif lengkap
+            file_paths = payload.get('file_paths', [])
             for path in file_paths:
                 full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
-                data_root = os.path.abspath(os.path.join(PROJECT_ROOT, 'data'))
-                if full_path.startswith(data_root):
+                if full_path.startswith(DATA_ROOT):
                     paths_to_process.append(full_path)
                 else:
                     print(
                         f"Peringatan Keamanan: Akses ke path '{path}' ditolak.")
-
-        # KASUS 2: DASHBOARD (jika 'file_paths' tidak ada, gunakan logika lama)
         else:
+            # Untuk Dashboard, bangun path dari 'selected_wells'
+            selected_wells = payload.get('selected_wells', [])
+            full_path_dir = payload.get('full_path', '')  # Ini adalah wellsDir
             print(
                 f"Mulai smoothing untuk Dashboard pada {len(selected_wells)} sumur...")
-            selected_intervals = payload.get('selected_intervals', [])
-            # Pengecekan wajib untuk Dashboard, sesuai kode asli Anda
-            if not selected_wells or not selected_intervals:
-                return jsonify({"error": "Sumur dan interval harus dipilih untuk alur kerja dashboard."}), 400
 
-            # Buat path file dari selected_wells
             paths_to_process = [os.path.join(
-                full_path, f"{well_name}.csv") for well_name in selected_wells]
-
-        # --- AKHIR PENAMBAHAN LOGIKA ---
+                full_path_dir, f"{well_name}.csv") for well_name in selected_wells]
 
         if not paths_to_process:
             return jsonify({"error": "Tidak ada file valid yang ditemukan untuk diproses."}), 400
 
+        # --- LOGIKA VALIDASI DAN PEMROSESAN ---
+        selected_intervals = payload.get('selected_intervals', [])
+        selected_zones = payload.get('selected_zones', [])
+
+        # Validasi untuk Dashboard: harus ada interval atau zona
+        if not isDataPrep and not selected_intervals and not selected_zones:
+            return jsonify({"error": "Sumur dan setidaknya satu interval atau zona harus dipilih."}), 400
+
         processed_dfs = []
-        # Loop utama sekarang bekerja untuk kedua kasus
         for file_path in paths_to_process:
             if not os.path.exists(file_path):
                 print(f"Peringatan: File tidak ditemukan di path: {file_path}")
@@ -861,12 +858,38 @@ def run_smoothing():
 
             df = pd.read_csv(file_path, on_bad_lines='warn')
 
-            # Memanggil fungsi smoothing Anda yang sudah ada tanpa perubahan
-            df_smooth = smoothing(df, window, col_in, col_out)
+            # Tentukan baris mana yang akan diproses
+            # Default: proses semua baris (untuk Data Prep)
+            mask = pd.Series(True, index=df.index)
+            if not isDataPrep:
+                if selected_intervals and 'MARKER' in df.columns:
+                    mask = df['MARKER'].isin(selected_intervals)
+                elif selected_zones and 'ZONE' in df.columns:
+                    mask = df['ZONE'].isin(selected_zones)
+                else:
+                    # Jika tidak ada interval/zona yang cocok, lewati file ini
+                    print(
+                        f"Peringatan: Tidak ada baris yang cocok dengan interval/zona di {os.path.basename(file_path)}")
+                    continue
 
-            # Simpan kembali ke file
-            df_smooth.to_csv(file_path, index=False)
-            processed_dfs.append(df_smooth)
+            if not mask.any():
+                print(
+                    f"Peringatan: Tidak ada data yang cocok dengan filter di {os.path.basename(file_path)}")
+                continue
+
+            # Terapkan smoothing hanya pada baris yang cocok dengan mask
+            df_to_smooth = df[mask].copy()
+            df_to_smooth[col_out] = df_to_smooth[col_in].rolling(
+                window=window, center=True, min_periods=1).mean()
+
+            # Gabungkan kembali hasil smoothing ke dataframe asli
+            df[col_out] = np.nan  # Buat kolom baru
+            # Update hanya baris yang telah di-smooth
+            df.update(df_to_smooth[[col_out]])
+
+            # Simpan kembali file dengan data yang sudah diperbarui
+            df.to_csv(file_path, index=False)
+            processed_dfs.append(df)
             print(f"Smoothing selesai untuk {os.path.basename(file_path)}")
 
         if not processed_dfs:
@@ -881,8 +904,6 @@ def run_smoothing():
         })
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -3009,89 +3030,6 @@ def get_splicing_plot():
             return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/flag-missing', methods=['POST'])
-def flag_missing_route():
-    """
-    Endpoint untuk menjalankan Tahap 1: Menandai (flag) nilai yang hilang.
-    Sekarang fleksibel untuk Data Prep dan Dashboard.
-    """
-    try:
-        payload = request.get_json()
-        full_path = payload.get('full_path', [])
-        logs_to_check = payload.get('logs_to_check', [])
-
-        # --- LOGIKA PATH FLEKSIBEL ---
-        file_paths = payload.get('file_paths', [])
-        selected_wells = payload.get('selected_wells', [])
-
-        if not file_paths and selected_wells:
-            # Fallback untuk Dashboard
-            file_paths = [os.path.join(
-                full_path, f"{well}.csv") for well in selected_wells]
-
-        if not file_paths or not logs_to_check:
-            return jsonify({"error": "File/sumur dan log harus dipilih."}), 400
-        # --- AKHIR LOGIKA PATH ---
-
-        for path in file_paths:
-            # Gunakan path yang aman
-            full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
-            if not full_path.startswith(DATA_ROOT) or not os.path.exists(full_path):
-                print(
-                    f"Peringatan: File tidak ditemukan atau akses ditolak untuk {full_path}")
-                continue
-
-            df = pd.read_csv(full_path)
-            df_flagged = flag_missing_values(df, logs_to_check)
-            df_flagged.to_csv(full_path, index=False)
-
-        return jsonify({
-            "message": "Flagging missing values complete.",
-            "flag_columns": ["MISSING_FLAG"]
-        }), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# @app.route('/api/fill-flagged-missing', methods=['POST'])
-# def fill_flagged_route():
-#     """
-#     Endpoint untuk menjalankan Tahap 2: Mengisi nilai yang sudah ditandai.
-#     Sekarang fleksibel untuk Data Prep dan Dashboard.
-#     """
-#     try:
-#         payload = request.get_json()
-#         logs_to_fill = payload.get('logs_to_fill', [])
-#         max_consecutive = payload.get('max_consecutive_nan', 3)
-
-#         # --- LOGIKA PATH FLEKSIBEL (SAMA SEPERTI DI ATAS) ---
-#         file_paths = payload.get('file_paths', [])
-#         selected_wells = payload.get('selected_wells', [])
-
-#         if not file_paths and selected_wells:
-#             file_paths = [os.path.join(
-#                 WELLS_DIR, f"{well}.csv") for well in selected_wells]
-
-#         if not file_paths or not logs_to_fill:
-#             return jsonify({"error": "File/sumur dan log harus dipilih."}), 400
-#         # --- AKHIR LOGIKA PATH ---
-
-#         for path in file_paths:
-#             full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
-#             if not full_path.startswith(DATA_ROOT) or not os.path.exists(full_path):
-#                 print(
-#                     f"Peringatan: File tidak ditemukan atau akses ditolak untuk {full_path}")
-#                 continue
-
-#             df = pd.read_csv(full_path)
-#             df_filled = fill_flagged_values(df, logs_to_fill, max_consecutive)
-#             df_filled.to_csv(full_path, index=False)
-
-#         return jsonify({"message": "Fill missing process complete."}), 200
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
-
-
 @app.route('/api/structure-folders/<field_name>/<structure_name>', methods=['GET'])
 def get_structure_folders(field_name: str, structure_name: str):
     """
@@ -3300,89 +3238,114 @@ def get_smoothing_prep_plot():
 # ====================================================================
 
 
-# @app.route('/api/flag-missing', methods=['POST'])
-# def flag_missing_route():
-#     """
-#     Endpoint to run Stage 1: Flagging missing values.
-#     Handles requests from both Data Prep (file_paths) and Dashboard (selected_wells).
-#     """
-#     try:
-#         payload = request.get_json()
-#         file_paths = payload.get('file_paths', [])
-#         selected_wells = payload.get('selected_wells', [])
-#         logs_to_check = payload.get('logs_to_check', [])
+def resolve_paths(payload):
+    """
+    Helper function to resolve file paths from a request payload.
+    Handles two cases:
+    1. Data Prep: A 'file_paths' key with a list of relative paths.
+    2. Dashboard: 'selected_wells' (names) and 'full_path' (directory).
+    Returns a list of absolute, validated file paths.
+    """
+    paths_to_process = []
 
-#         # Fallback for Dashboard: If file_paths is empty, build it from selected_wells
-#         if not file_paths and selected_wells:
-#             print(
-#                 f"Dashboard Request: Building paths from selected_wells: {selected_wells}")
-#             file_paths = [os.path.join(
-#                 WELLS_DIR, f"{well}.csv") for well in selected_wells]
+    # CASE 1: Data Prep (satu file)
+    if 'file_paths' in payload and payload.get('file_paths'):
+        print("Path Resolution: Data Prep flow detected.")
+        for rel_path in payload['file_paths']:
+            # Bangun path absolut dari project root
+            abs_path = os.path.abspath(os.path.join(PROJECT_ROOT, rel_path))
+            if abs_path.startswith(DATA_ROOT) and os.path.exists(abs_path):
+                paths_to_process.append(abs_path)
+            else:
+                print(
+                    f"Warning: Path invalid or access denied for '{rel_path}'")
 
-#         if not file_paths or not logs_to_check:
-#             return jsonify({"error": "Files (or wells) and logs must be selected."}), 400
+    # CASE 2: Dashboard (banyak sumur)
+    elif 'selected_wells' in payload and 'full_path' in payload:
+        print("Path Resolution: Dashboard flow detected.")
+        base_dir_rel = payload['full_path']
+        selected_wells = payload['selected_wells']
 
-#         for path in file_paths:
-#             full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
-#             if not full_path.startswith(DATA_ROOT):
-#                 print(f"Security Warning: Access denied for path '{path}'")
-#                 continue
+        # Bangun path direktori absolut dari project root
+        base_dir_abs = os.path.abspath(
+            os.path.join(PROJECT_ROOT, base_dir_rel))
 
-#             if not os.path.exists(full_path):
-#                 print(f"Warning: File not found at path: {full_path}")
-#                 continue
+        if not base_dir_abs.startswith(DATA_ROOT):
+            print(
+                f"Security Warning: Access to directory '{base_dir_rel}' is denied.")
+            return []  # Kembalikan list kosong jika direktori dasar tidak aman
 
-#             df = pd.read_csv(full_path)
-#             df_flagged = flag_missing_values(df, logs_to_check)
-#             df_flagged.to_csv(full_path, index=False)
+        for well_name in selected_wells:
+            abs_path = os.path.join(base_dir_abs, f"{well_name}.csv")
+            if os.path.exists(abs_path):
+                paths_to_process.append(abs_path)
+            else:
+                print(
+                    f"Warning: File not found for well '{well_name}' at '{abs_path}'")
 
-#         return jsonify({
-#             "message": "Flagging missing values complete.",
-#             "flag_columns": ["MISSING_FLAG"]
-#         }), 200
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
+    return paths_to_process
+
+
+@app.route('/api/flag-missing', methods=['POST'])
+def flag_missing_route():
+    """
+    Endpoint untuk Tahap 1: Menandai nilai yang hilang.
+    Sekarang menggunakan helper untuk menangani path.
+    """
+    try:
+        payload = request.get_json()
+        logs_to_check = payload.get('logs_to_check', [])
+
+        if not logs_to_check:
+            return jsonify({"error": "Log harus dipilih."}), 400
+
+        # Gunakan helper untuk mendapatkan daftar path yang valid
+        file_paths = resolve_paths(payload)
+
+        if not file_paths:
+            return jsonify({"error": "Tidak ada file valid yang ditemukan untuk diproses."}), 400
+
+        for path in file_paths:
+            df = pd.read_csv(path)
+            df_flagged = flag_missing_values(df, logs_to_check)
+            df_flagged.to_csv(path, index=False)
+
+        return jsonify({
+            "message": f"Flagging missing values complete for {len(file_paths)} file(s).",
+            "flag_columns": ["MISSING_FLAG"]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/fill-flagged-missing', methods=['POST'])
 def fill_flagged_route():
     """
-    Endpoint to run Stage 2: Filling flagged missing values.
-    Handles requests from both Data Prep (file_paths) and Dashboard (selected_wells).
+    Endpoint untuk Tahap 2: Mengisi nilai yang sudah ditandai.
+    Sekarang menggunakan helper untuk menangani path.
     """
     try:
         payload = request.get_json()
-        file_paths = payload.get('file_paths', [])
-        full_path = payload.get('full_path', [])
-        selected_wells = payload.get('selected_wells', [])
         logs_to_fill = payload.get('logs_to_fill', [])
         max_consecutive = payload.get('max_consecutive_nan', 3)
+        isDataPrep = payload.get('isDataPrep', True)
 
-        # Fallback for Dashboard
-        if not file_paths and selected_wells:
-            print(
-                f"Dashboard Request: Building paths from selected_wells: {selected_wells}")
-            file_paths = [os.path.join(
-                full_path, f"{well}.csv") for well in selected_wells]
+        if not logs_to_fill:
+            return jsonify({"error": "Log harus dipilih."}), 400
 
-        if not file_paths or not logs_to_fill:
-            return jsonify({"error": "Files (or wells) and logs must be selected."}), 400
+        # Gunakan helper yang sama untuk mendapatkan daftar path
+        file_paths = resolve_paths(payload)
+
+        if not file_paths:
+            return jsonify({"error": "Tidak ada file valid yang ditemukan untuk diproses."}), 400
 
         for path in file_paths:
-            full_path = os.path.abspath(os.path.join(PROJECT_ROOT, path))
-            if not full_path.startswith(DATA_ROOT):
-                print(f"Security Warning: Access denied for path '{path}'")
-                continue
+            df = pd.read_csv(path)
+            df_filled = fill_flagged_values(
+                df, logs_to_fill, max_consecutive, isDataPrep)
+            df_filled.to_csv(path, index=False)
 
-            if not os.path.exists(full_path):
-                print(f"Warning: File not found at path: {full_path}")
-                continue
-
-            df = pd.read_csv(full_path)
-            df_filled = fill_flagged_values(df, logs_to_fill, max_consecutive)
-            df_filled.to_csv(full_path, index=False)
-
-        return jsonify({"message": "Fill missing process complete."}), 200
+        return jsonify({"message": f"Fill missing process complete for {len(file_paths)} file(s)."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3746,6 +3709,94 @@ def get_matching_plot_endpoint():
         logging.error(
             f"Error di get-full-matching-analysis: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-structures-summary', methods=['GET'])
+def get_structures_summary():
+    """
+    Memindai struktur folder 'data/structures' dan mengembalikan ringkasan
+    dalam format yang diharapkan oleh frontend StructuresDashboard.
+    """
+    try:
+        # Tentukan path dasar. Sesuaikan jika struktur proyek Anda berbeda.
+        base_path = os.path.join(os.path.dirname(
+            __file__), 'data', 'structures')
+
+        if not os.path.exists(base_path):
+            return jsonify({"error": f"Direktori dasar tidak ditemukan: {base_path}"}), 404
+
+        all_fields_data = []
+        summary = {
+            "total_fields": 0,
+            "total_structures": 0,
+            "total_wells": 0,
+            # Catatan: total_records & columns memerlukan pembacaan file,
+            # yang bisa lambat. Untuk saat ini, kita berikan nilai default.
+            "total_records": "N/A"
+        }
+
+        # 1. Iterasi melalui Fields (e.g., Adera, Limau)
+        for field_name in sorted(os.listdir(base_path)):
+            field_path = os.path.join(base_path, field_name)
+            if os.path.isdir(field_path):
+                summary["total_fields"] += 1
+                field_data = {
+                    "field_name": field_name.capitalize(),
+                    "structures_count": 0,
+                    "structures": []
+                }
+
+                # 2. Iterasi melalui Structures (e.g., Abab, Benuang)
+                structures_in_field = []
+                for structure_name in sorted(os.listdir(field_path)):
+                    structure_path = os.path.join(field_path, structure_name)
+                    if os.path.isdir(structure_path):
+                        summary["total_structures"] += 1
+
+                        # 3. Iterasi melalui Wells (folder di dalam structure)
+                        wells_list = []
+                        for well_name in sorted(os.listdir(structure_path)):
+                            well_path = os.path.join(structure_path, well_name)
+                            # Asumsikan setiap item di dalam folder structure adalah well
+                            # Atau cek jika file .csv/.las
+                            if os.path.isdir(well_path):
+                                summary["total_wells"] += 1
+                                wells_list.append(well_name)
+
+                        structure_data = {
+                            "structure_name": structure_name.replace('_', ' ').title(),
+                            "field_name": field_name.capitalize(),
+                            # Path ini hanya sebagai referensi, sesuaikan jika perlu
+                            "file_path": f"/data/structures/{field_name}/{structure_name}",
+                            "wells_count": len(wells_list),
+                            "wells": wells_list,
+                            # Nilai ini tidak bisa didapat tanpa membaca file, jadi kita beri placeholder
+                            "total_records": "N/A",
+                            "columns": ["N/A"]
+                        }
+                        structures_in_field.append(structure_data)
+
+                field_data["structures"] = structures_in_field
+                field_data["structures_count"] = len(structures_in_field)
+                all_fields_data.append(field_data)
+
+        # Gabungkan semua struktur dari semua field untuk list utama
+        all_structures = [
+            structure for field in all_fields_data for structure in field["structures"]]
+
+        response_data = {
+            "fields": all_fields_data,
+            "structures": all_structures,
+            "wells": [],  # Wells akan di-load saat structure dipilih
+            "summary": summary
+        }
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        logging.error(
+            f"Error saat memindai struktur folder: {e}", exc_info=True)
+        return jsonify({"error": "Terjadi kesalahan internal saat memproses struktur direktori."}), 500
 
 
 # This is for local development testing, Vercel will use its own server

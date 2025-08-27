@@ -599,6 +599,7 @@ thres = {
     'X_RT_F': 0.7,
     'X_RT_RHOB': 0.02,
     'VSH_LINEAR': 0.5,
+    'VSH_DN': 0.5,
     'VSH': 0.5,
     'VSH_Z4': 0.5,
     'PHIE': 0.1,
@@ -661,7 +662,7 @@ def fillcol_dual(label, data_value, threshold, above_color='green', below_color=
 
 
 def xover_label_df(df_well, key, type=1):
-    if key in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'VSH_LINEAR', 'PHIE', 'RGBE', 'RPBE', 'SW', 'SW_Z4', 'VSH', 'VSH_Z4']:
+    if key in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'VSH_LINEAR', 'PHIE', 'RGBE', 'RPBE', 'SW', 'SW_Z4', 'VSH', 'VSH_Z4', 'VSH_DN']:
         xover_df = pd.DataFrame(df_well[data_col[key]].copy())
         xover_df['thres'] = [thres[key]]*len(xover_df)
         xover_df['label'] = np.where(
@@ -2694,6 +2695,10 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             # fig, axes = plot_line(df, fig, axes, base_key='VSH_LINEAR', n_seq=n_seq, col=col, label=col)
             fig, axes, counter = plot_xover_thres_dual(
                 df, fig, axes, col, n_seq, counter)
+        elif col == 'VSH_DN':
+            # fig, axes = plot_line(df, fig, axes, base_key='VSH_DN', n_seq=n_seq, col=col, label=col)
+            fig, axes, counter = plot_xover_thres_dual(
+                df, fig, axes, col, n_seq, counter)
 
         elif col == 'VSH_GR_DN':
             fig, axes, counter = plot_two_features_simple(df, fig, axes, 'VSH_GR_DN', n_seq,
@@ -3426,6 +3431,10 @@ def plot_smoothing(df, df_marker, df_well_marker):
 def plot_module_2(df):
     marker_zone_sequence = ['ZONE', 'MARKER']
     # Filter the sequence to include only columns that exist in the DataFrame
+    if 'IQUAL' not in df.columns:
+        df['IQUAL'] = np.where((df['PHIE'] >= 0.2) & (
+            df['VSH_LINEAR'] <= 0.5), 1, 0).astype(int)
+
     filtered_sequence = [
         col for col in marker_zone_sequence if col in df.columns]
     seq_module_2 = filtered_sequence + ['GR', 'RT',

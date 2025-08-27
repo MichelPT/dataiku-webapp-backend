@@ -2037,8 +2037,16 @@ def get_crossplot():
         rho_sh = float(payload.get('RHO_SH', 2.61))
         nphi_ma = float(payload.get('NPHI_MA', -0.02))
         nphi_sh = float(payload.get('NPHI_SH', 0.398))
+
         prcnt_qz = float(payload.get('prcnt_qz', 5))
         prcnt_wtr = float(payload.get('prcnt_wtr', 5))
+
+        if prcnt_qz < 0 or prcnt_wtr < 0:
+            return jsonify({'error': 'Persentase kuarsa dan air tidak boleh negatif'}), 400
+        if prcnt_qz is None:
+            prcnt_qz = 0
+        if prcnt_wtr is None:
+            prcnt_wtr = 0
 
         if not selected_wells:
             return jsonify({'error': 'Well belum dipilih'}), 400
@@ -2048,7 +2056,7 @@ def get_crossplot():
         df = pd.concat(df_list, ignore_index=True)
 
         fig = generate_crossplot(
-            df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, prcnt_qz=5, prcnt_wtr=5, selected_intervals=selected_intervals)
+            df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, prcnt_qz=prcnt_qz, prcnt_wtr=prcnt_wtr, selected_intervals=selected_intervals, selected_zones=selected_zones)
         fig_json = pio.to_json(fig)
         return Response(response=fig_json, status=200, mimetype='application/json')
 

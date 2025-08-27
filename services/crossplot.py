@@ -10,7 +10,7 @@ import math
 from services.autoplot import calculate_gr_ma_sh_from_nphi_rhob, calculate_nphi_rhob_intersection
 
 
-def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, prcnt_qz, prcnt_wtr, selected_intervals, nbins=25):
+def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, nphi_sh, prcnt_qz, prcnt_wtr, selected_intervals, selected_zones, nbins=25):
     """
     Membuat visualisasi crossplot untuk data log sumur.
     Kini menggunakan fungsi terpusat untuk perhitungan intersection.
@@ -19,6 +19,12 @@ def generate_crossplot(df, x_col, y_col, gr_ma, gr_sh, rho_ma, rho_sh, nphi_ma, 
     if selected_intervals and 'MARKER' in df.columns:
         print(f"Filtering data for intervals: {selected_intervals}")
         df_filtered = df[df['MARKER'].isin(selected_intervals)].copy()
+    else:
+        df_filtered = df.copy()
+
+    if selected_zones and 'ZONE' in df.columns:
+        print(f"Filtering data for zones: {selected_zones}")
+        df_filtered = df[df['ZONE'].isin(selected_zones)].copy()
     else:
         df_filtered = df.copy()
 

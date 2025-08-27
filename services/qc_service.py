@@ -238,13 +238,18 @@ def run_full_qc_pipeline(well_logs_data: list, marker_data: dict, zone_data: dic
     qc_results = []
     conversion_log = []
     output_files = {}
-    required_logs = ['GR', 'NPHI', 'RT', 'RHOB']
+    required_logs = ['DEPTH', 'GR', 'NPHI', 'RT', 'RHOB']
+    skip_files_lower = ['abb-032.las', 'abb-033.las', 'abb-059.las']
 
     all_markers_df = process_formation_data(marker_data, 'Marker', logger)
     all_zones_df = process_formation_data(zone_data, 'Zone', logger)
 
     for file_info in well_logs_data:
         filename = file_info['name']
+        if filename.lower() in skip_files_lower:
+            logger.info(f"--- MELEWATI: {filename} ---")
+            continue
+
         well_name = os.path.splitext(filename)[0]
         status = "PASS"
         try:

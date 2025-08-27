@@ -29,7 +29,7 @@ def flag_missing_values(df, logs_to_check):
     return df_flagged
 
 
-def fill_flagged_values(df, logs_to_fill, max_consecutive):
+def fill_flagged_values(df, logs_to_fill, max_consecutive, isDataPrep):
     """
     Mengisi nilai yang hilang (NaN) pada log yang dipilih berdasarkan MISSING_FLAG == 1,
     namun HANYA jika jumlah data hilang yang berurutan kurang dari atau sama dengan
@@ -85,7 +85,10 @@ def fill_flagged_values(df, logs_to_fill, max_consecutive):
                 f"Peringatan: Kolom log '{log}' tidak ditemukan. Melewati...")
             continue
 
-        new_col_name = f"{log}_FM"
+        if isDataPrep:
+            new_col_name = f"{log}_FM"
+        else:
+            new_col_name = log
         df_filled[new_col_name] = df_filled[log]
 
         # Siapkan nilai untuk mengisi menggunakan metode bfill -> ffill

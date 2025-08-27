@@ -106,7 +106,7 @@ def selective_normalize_handler(df, log_column, marker_column,
                                 low_ref=40, high_ref=140,
                                 low_in=5, high_in=95,
                                 cutoff_min=0, cutoff_max=250,
-                                log_out_col=None):
+                                log_out_col=None, isDataPrep=True):
     """
     Handles normalization. If target_markers is empty or None, it normalizes the entire log.
     Otherwise, it normalizes only within the specified markers.
@@ -151,8 +151,10 @@ def selective_normalize_handler(df, log_column, marker_column,
             log_raw_norm[target_mask] = normalized_target
 
     # Gunakan nama kolom output yang diberikan dari frontend
-    if not log_out_col:
+    if not log_out_col and isDataPrep:
         log_out_col = f'{log_column}_NO'
+    else:
+        log_out_col = log_column
 
     result_df[log_out_col] = log_raw_norm
 

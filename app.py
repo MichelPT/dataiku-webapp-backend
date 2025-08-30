@@ -2063,7 +2063,7 @@ def get_crossplot():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Silahkan modifikasi nilai persentase'}), 500
 
 
 @app.route('/api/get-vsh-plot', methods=['POST', 'OPTIONS'])

@@ -526,7 +526,7 @@ ratio_plots = {
     'RPBE_TEXT': 0.5,
     'IQUAL': 0.5,
     'SWARRAY': 1,
-    'SWGRAD': 0.5,
+    'SWGRAD': 1,
     'DNS': 1,
     'DNSV': 1,
     'TGC': 1,
@@ -1703,6 +1703,11 @@ def plot_xover_bar_horizontal(df_well, fig, axes, key, n_seq, counter,
     """
     Plot horizontal bar chart style for RGBE / RPBE values with working hover.
     """
+
+    if key == 'RGBE':
+        above_thres_color='lightblue'
+        below_thres_color='darkgreen'
+
     axes[key].append('yaxis'+str(n_seq))
     axes[key].append('xaxis'+str(n_seq))
 

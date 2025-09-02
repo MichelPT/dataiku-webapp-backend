@@ -314,6 +314,37 @@ def run_full_qc_pipeline(well_logs_data: list, marker_data: dict, zone_data: dic
 
     return {'qc_summary': qc_results, 'output_files': output_files}
 
+def read_marker_file(marker_file_path):
+    """
+    Read marker file and return cleaned DataFrame.
+    
+    Args:
+        marker_file_path (str): Path to the marker CSV file
+    
+    Returns:
+        pd.DataFrame: Cleaned marker DataFrame
+    """
+    try:
+        # Try reading with different separators
+        try:
+            marker_df = pd.read_csv(marker_file_path, sep=';')
+        except:
+            try:
+                marker_df = pd.read_csv(marker_file_path, sep=',')
+            except:
+                marker_df = pd.read_csv(marker_file_path, sep='\t')
+        
+        # Verify required columns exist
+        required_columns = ['Well identifier', 'MD', 'Surface']
+        if not all(col in marker_df.columns for col in required_columns):
+            raise ValueError(f"Marker file must contain columns: {required_columns}")
+        
+        return marker_df
+        
+    except Exception as e:
+        print(f"Error reading marker file: {e}")
+        return pd.DataFrame()
+
 
 def append_zones_to_dataframe(df, well_name, depth_column='DEPTH'):
     """

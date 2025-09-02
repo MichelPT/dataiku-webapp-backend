@@ -2073,7 +2073,7 @@ def get_crossplot():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Silahkan modifikasi nilai persentase'}), 500
 
 
 @app.route('/api/get-vsh-plot', methods=['POST', 'OPTIONS'])
@@ -2833,8 +2833,8 @@ def run_splicing():
         # Get file paths from frontend
         run1_file_path = payload.get('run1_file_path')
         run2_file_path = payload.get('run2_file_path')
-        run1_well = payload.get('run1_well')
-        run2_well = payload.get('run2_well')
+        # run1_well = payload.get('run1_well')
+        # run2_well = payload.get('run2_well')
 
         print("Payload diterima:", payload)
 
@@ -2842,8 +2842,8 @@ def run_splicing():
         if not run1_file_path or not run2_file_path:
             return jsonify({"error": "run1_file_path and run2_file_path are required"}), 400
 
-        if not run1_well or not run2_well:
-            return jsonify({"error": "run1_well and run2_well are required"}), 400
+        # if not run1_well or not run2_well:
+        #     return jsonify({"error": "run1_well and run2_well are required"}), 400
 
         # 2. Use file paths from frontend directly
         path_run1 = run1_file_path

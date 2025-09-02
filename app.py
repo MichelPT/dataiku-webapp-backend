@@ -1,5 +1,5 @@
 # /api/app.py
-from flask import request, jsonify
+from flask import json, request, jsonify
 from services.autoplot import calculate_gr_ma_sh_from_nphi_rhob, calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
 from services.splicing import splice_and_flag_logs
@@ -614,14 +614,24 @@ def get_plot():
         if df.empty:
             return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
-        fig = plot_log_default(df=df)
+        # 1. Generate both plots from your plotting function
+        fig, fig_header = plot_log_default(df=df)
 
-        if fig is None:
-            # Jika tidak, kembalikan pesan error yang jelas
-            print("Error: Fungsi plot_log_default() mengembalikan None.")
-            return jsonify({"error": "Gagal membuat gambar plot. Fungsi internal plotting tidak mengembalikan hasil."}), 500
+        # 2. Check if the plots were created successfully
+        if fig is None or fig_header is None:
+            print("Error: plot_log_default() failed to return one or both figures.")
+            return jsonify({"error": "Failed to generate plot figures."}), 500
 
-        return jsonify(fig.to_json())
+        print(fig_header)
+
+        # 3. Create the response object with two distinct keys
+        response_data = {
+            "main_plot": json.loads(fig.to_json()),
+            "header_plot": json.loads(fig_header.to_json())
+        }
+
+        # 4. Return the combined JSON object
+        return jsonify(response_data)
 
     except Exception as e:
         import traceback

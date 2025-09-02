@@ -2340,20 +2340,24 @@ def layout_draw_main_lines(fig, ratio_plots, df_well, xgrid_intv):
     return fig
 
 
-def layout_axis_header(fig_main, axes, ratio_plots, plot_sequence):
+def layout_axis_header(fig_main, axes, ratio_plots, plot_sequence, subplot_col):
     """
     Membuat figure header yang terpisah dari main plot
     Returns: fig_header - figure untuk header
     """
-    import plotly.graph_objects as go
 
     # Buat figure baru untuk header
-    fig_header = go.Figure()
+    fig_header = make_subplots(
+        rows=1, cols=subplot_col,
+        shared_yaxes=True,
+        column_widths=ratio_plots,
+        horizontal_spacing=0.0
+    )
 
     # Atur ukuran dan margin untuk header
     fig_header.update_layout(
         height=200,  # Tinggi header yang lebih kecil
-        margin=dict(l=50, r=50, t=20, b=20),
+        margin=dict(l=45, r=20, t=40, b=20),
         showlegend=False,
         plot_bgcolor='white',
         paper_bgcolor='white'
@@ -2367,117 +2371,94 @@ def layout_axis_header(fig_main, axes, ratio_plots, plot_sequence):
              xanchor="right",
              yanchor="middle",
              showarrow=False,
-             text=depth+' (m)',
+             text=depth + ' (m)',
              textangle=-90,
              xref='paper',
              yref="paper"
              )
     )
 
+    # --- PERUBAHAN DIMULAI DI SINI ---
+    # 1. Inisialisasi list untuk menampung SEMUA shape
+    shapes = []
+
     pos_x_c = 0
     ratio_plots = np.array(ratio_plots)
     line_pos = []
     for i in ratio_plots:
         line_pos.append(
-            i*(1/(ratio_plots/len(ratio_plots)).sum())/len(ratio_plots))
+            i * (1 / (ratio_plots / len(ratio_plots)).sum()) / len(ratio_plots))
 
     pos_x_t = 0
     for i, key in enumerate(axes.keys()):
         pos_x = line_pos[i]
-        pos_y = 0.2  # Posisi untuk header (lebih rendah dari 0.85)
-        pos_x_c += 0.5*pos_x
+        pos_y = 0.2
+        pos_x_c += 0.5 * pos_x
 
-        # Ganti dengan key yang butuh semua axis (feature di datacol)
         if key in ['SWARRAY']:
-            axis_range = axes[key][1:]  # Semua axis
+            axis_range = axes[key][1:]
         else:
-            axis_range = axes[key][1:3]  # Hanya 2 axis pertama
+            axis_range = axes[key][1:3]
 
         for j, axis in enumerate(axis_range):
-            # UPDATE LAYOUT AXIS - SAMA SEPERTI KODE ASLI
-            fig_header.update_layout(
-                **{axis: dict(
-                    tickfont=dict(color=color_col[key][j], size=9),
-                    anchor="free",
-                    showline=True,        # INI YANG BIKIN GARIS BERWARNA
-                    position=pos_y,
-                    showticklabels=False,
-                    linewidth=1.5,
-                    linecolor=color_col[key][j],  # WARNA GARIS
-                )}
+            # 2. HAPUS 'fig_header.update_layout' yang lama untuk axis
+            #    GANTI dengan menambahkan 'shape' garis berwarna ke dalam list
+            shapes.append(
+                dict(
+                    type='line',
+                    xref='paper', yref='paper',
+                    x0=pos_x_t,
+                    y0=pos_y,
+                    x1=pos_x_t + pos_x,
+                    y1=pos_y,
+                    line=dict(
+                        color=color_col[key][j],
+                        width=1.5
+                    )
+                )
             )
 
             # Add Text Parameter
             fig_header.add_annotation(
                 dict(font=dict(color=color_col[key][j], size=12),
-                     x=pos_x_c,
-                     y=pos_y,
-                     xanchor="center",
-                     yanchor="bottom",
-                     showarrow=False,
-                     text=data_col[key][j],
-                     textangle=0,
-                     xref='paper',
-                     yref="paper"
-                     )
+                     x=pos_x_c, y=pos_y, xanchor="center", yanchor="bottom",
+                     showarrow=False, text=data_col[key][j], textangle=0,
+                     xref='paper', yref="paper")
             )
 
             # Add Text Unit
             fig_header.add_annotation(
                 dict(font=dict(color=color_col[key][j], size=10),
-                     x=pos_x_c,
-                     y=pos_y,
-                     xanchor="center",
-                     yanchor="top",
-                     showarrow=False,
-                     text=unit_col[key][j],
-                     textangle=0,
-                     xref='paper',
-                     yref="paper"
-                     )
+                     x=pos_x_c, y=pos_y, xanchor="center", yanchor="top",
+                     showarrow=False, text=unit_col[key][j], textangle=0,
+                     xref='paper', yref="paper")
             )
 
             # Add Text Min Max Range
-            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'RGBE', 'RPBE', 'IQUAL', 'RGBE_TEXT', 'RPBE_TEXT', 'MISSING_FLAG']:
+            if key not in ['CLASS', 'TEST', 'XPT', 'MARKER', 'ZONA', 'RESERVOIR_CLASS', 'RGBE', 'RPBE', 'IQUAL', 'RGBE_TEXT', 'RPBE_TEXT', 'ZONE']:
                 fig_header.add_annotation(
                     dict(font=dict(color=color_col[key][j], size=10),
-                         x=pos_x_t,
-                         y=pos_y,
-                         xanchor="left",
-                         yanchor="top",
-                         showarrow=False,
-                         text=range_col[key][j][0],
-                         textangle=0,
-                         xref='paper',
-                         yref="paper"
-                         )
+                         x=pos_x_t, y=pos_y, xanchor="left", yanchor="top",
+                         showarrow=False, text=range_col[key][j][0], textangle=0,
+                         xref='paper', yref="paper")
                 )
-
                 fig_header.add_annotation(
                     dict(font=dict(color=color_col[key][j], size=10),
-                         x=pos_x_t+pos_x,
-                         y=pos_y,
-                         xanchor="right",
-                         yanchor="top",
-                         showarrow=False,
-                         text=range_col[key][j][1],
-                         textangle=0,
-                         xref='paper',
-                         yref="paper"
-                         )
+                         x=pos_x_t + pos_x, y=pos_y, xanchor="right", yanchor="top",
+                         showarrow=False, text=range_col[key][j][1], textangle=0,
+                         xref='paper', yref="paper")
                 )
 
-            # Increment posisi y untuk axis selanjutnya (seperti kode asli)
-            pos_y += 0.35  # Lebih besar dari 0.04 karena ruang header lebih terbatas
+            pos_y += 0.35
             pos_y = min(pos_y, 1.0)
 
         pos_x_t += pos_x
-        pos_x_c += 0.5*pos_x
+        pos_x_c += 0.5 * pos_x
 
-    # Tambahkan garis pembatas vertikal di header
-    shapes = []
+    # 3. Tambahkan garis pembatas vertikal ke list 'shapes'
     x = 0
-    for pos in line_pos:
+    # Loop sampai sebelum terakhir agar garis paling kanan tidak digambar
+    for pos in line_pos[:-1]:
         x += pos
         shapes.append(
             dict(
@@ -2487,33 +2468,32 @@ def layout_axis_header(fig_main, axes, ratio_plots, plot_sequence):
             )
         )
 
-    # Garis border header
+    # 4. Tambahkan garis border header ke list 'shapes' yang sama
     shapes.extend([
-        # Garis atas
         dict(type='line', xref='paper', yref='paper',
              x0=0, x1=1, y0=1, y1=1,
-             line=dict(color='black', width=1, dash='solid')),
-        # Garis bawah
+             line=dict(color='black', width=1, dash='solid')),  # Garis atas
         dict(type='line', xref='paper', yref='paper',
              x0=0, x1=1, y0=0, y1=0,
-             line=dict(color='black', width=1, dash='solid')),
-        # Garis kiri
+             line=dict(color='black', width=1, dash='solid')),  # Garis bawah
         dict(type='line', xref='paper', yref='paper',
              x0=0, x1=0, y0=0, y1=1,
-             line=dict(color='black', width=1, dash='solid')),
-        # Garis kanan
+             line=dict(color='black', width=1, dash='solid')),  # Garis kiri
         dict(type='line', xref='paper', yref='paper',
              x0=1, x1=1, y0=0, y1=1,
-             line=dict(color='black', width=1, dash='solid'))
+             line=dict(color='black', width=1, dash='solid'))   # Garis kanan
     ])
 
+    # 5. Terapkan SEMUA shape yang sudah terkumpul dalam satu perintah
     fig_header.update_layout(shapes=shapes)
 
-    # TIDAK hilangkan axis - biarkan axis tetap visible untuk menampilkan garis berwarna
-    # Hanya hilangkan ticklabels dan grid
+    # Hilangkan ticklabels dan grid bawaan
     fig_header.update_layout(
-        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
-        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False)
+        xaxis=dict(showticklabels=False, showgrid=False,
+                   zeroline=False, visible=False),
+        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+        # Loop untuk semua xaxis tambahan yang mungkin dibuat oleh make_subplots
+        **{f'xaxis{i}': dict(showticklabels=False, showgrid=False, zeroline=False, visible=False) for i in range(2, subplot_col + 1)}
     )
 
     return fig_header
@@ -2880,7 +2860,7 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
         plot_bgcolor='white',
         showlegend=False,
         hovermode='y unified', hoverdistance=-1,
-        title_text=title,
+        # title_text=title,
         title_x=0.5,
         modebar_remove=['lasso', 'autoscale', 'zoom',
                         'zoomin', 'zoomout', 'pan', 'select']
@@ -2892,9 +2872,12 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
 
     fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=0)
 
-    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
+    # fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
 
-    return fig
+    fig_header = layout_axis_header(
+        fig, axes, ratio_plots_seq, plot_sequence, subplot_col)
+
+    return fig, fig_header
 
 
 def layout_axis(fig, axes, ratio_plots, plot_sequence):
@@ -3133,9 +3116,9 @@ def plot_log_default(df):
     sequence_default = filtered_sequence + ['GR', 'RT', 'NPHI_RHOB']
 
     # Create the plot with the filtered sequence
-    fig = main_plot(df, sequence=sequence_default,
-                    title="Plot Well Log Selected", height_plot=1600)
-    return fig
+    fig, fig_header = main_plot(df, sequence=sequence_default,
+                                title="Plot Well Log Selected", height_plot=1600)
+    return fig, fig_header
 
 
 def plot_normalization(df):

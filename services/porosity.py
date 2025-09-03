@@ -54,7 +54,7 @@ def calculate_porosity(
     df_processed = df.copy()
 
     # --- Ensure numeric types ---
-    for col in ["VSH", "RHOB", "NPHI"]:
+    for col in ["VSH_LINEAR", "RHOB", "NPHI"]:
         if col in df_processed.columns:
             df_processed[col] = pd.to_numeric(df_processed[col], errors="coerce")
 
@@ -84,9 +84,9 @@ def calculate_porosity(
     if not all(col in df_processed.columns for col in required_cols):
         raise ValueError(f"Kolom input {required_cols} tidak ditemukan.")
 
-    if 'VSH' not in df_processed.columns:
-        df_processed['VSH'] = df_processed.get('VSH_LINEAR', 'VSH_DN')
-    if 'VSH' not in df_processed.columns:
+    if 'VSH_LINEAR' not in df_processed.columns:
+        df_processed['_LINEAR'] = df_processed.get('VSH_LINEAR', 'VSH_DN')
+    if 'VSH_LINEAR' not in df_processed.columns:
         raise ValueError("Kolom VSH tidak ditemukan.")
 
     output_cols = ["RHOB_SR", "NPHI_SR", "PHIE_DEN",
@@ -101,7 +101,7 @@ def calculate_porosity(
                                     RHO_W) if (RHO_DSH - RHO_W) != 0 else np.nan
 
     # 1. Buat mask untuk kondisi serpih murni (VSH >= 0.95)
-    high_shale_mask = (df_processed['VSH'] >= 0.95) & mask
+    high_shale_mask = (df_processed['VSH_LINEAR'] >= 0.95) & mask
 
     # Terapkan nilai default untuk zona serpih murni
     if high_shale_mask.any():
@@ -115,7 +115,7 @@ def calculate_porosity(
                          'RHO_MAT'] = np.nan  # Tidak ada matriks
 
     # 2. Buat mask untuk perhitungan normal (bukan serpih murni)
-    normal_calc_mask = (df_processed['VSH'] < 0.95) & mask
+    normal_calc_mask = (df_processed['VSH_LINEAR'] < 0.95) & mask
 
     if not normal_calc_mask.any():
         print("Tidak ada baris untuk perhitungan normal, semua adalah serpih murni.")
@@ -125,7 +125,7 @@ def calculate_porosity(
         f"Menjalankan perhitungan crossplot untuk {normal_calc_mask.sum()} baris normal.")
 
     # --- Perhitungan normal hanya dijalankan pada mask yang sesuai ---
-    vsh_masked = df_processed.loc[normal_calc_mask, "VSH"]
+    vsh_masked = df_processed.loc[normal_calc_mask, "VSH_LINEAR"]
     denominator = 1 - vsh_masked
 
     # Hitung RHOB_SR & NPHI_SR yang aman
@@ -159,13 +159,13 @@ def calculate_porosity(
 
         # Hitung porositas untuk baris normal
         target_rows["PHIE_DEN"] = np.array(
-            target_rows['phix_temp']) * (1 - target_rows["VSH"])
+            target_rows['phix_temp']) * (1 - target_rows["VSH_LINEAR"])
         target_rows["PHIT_DEN"] = target_rows["PHIE_DEN"] + \
-            target_rows["VSH"] * PHIT_SH
+            target_rows["VSH_LINEAR"] * PHIT_SH
         target_rows["PHIE"] = target_rows["PHIE_DEN"].clip(
-            lower=0, upper=PHIE_MAX * (1 - target_rows["VSH"]))
+            lower=0, upper=PHIE_MAX * (1 - target_rows["VSH_LINEAR"]))
         target_rows["PHIT"] = target_rows["PHIE"] + \
-            target_rows["VSH"] * PHIT_SH
+            target_rows["VSH_LINEAR"] * PHIT_SH
         target_rows["RHO_MAT"] = np.array(target_rows['rma_temp']) / 1000
 
         # Update DataFrame utama HANYA untuk baris normal

@@ -662,7 +662,7 @@ def fillcol_dual(label, data_value, threshold, above_color='green', below_color=
 
 
 def xover_label_df(df_well, key, type=1):
-    if key in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'VSH_LINEAR', 'PHIE', 'RGBE', 'RPBE', 'SW', 'SW_Z4', 'VSH', 'VSH_Z4', 'VSH_DN']:
+    if key in ['X_RT_RO', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'VSH_LINEAR', 'PHIE', 'PHIE_Z4', 'RGBE', 'RPBE', 'SW', 'SW_Z4', 'VSH', 'VSH_Z4', 'VSH_DN']:
         xover_df = pd.DataFrame(df_well[data_col[key]].copy())
         xover_df['thres'] = [thres[key]]*len(xover_df)
         xover_df['label'] = np.where(
@@ -2139,7 +2139,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'SW_Z4', 'PHIE_PHIT', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT_Z4', 'PHIE', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE', 'DGRCC', 'GR_CAL', 'RHOZ', 'ALCDLC', 'TNPL', 'TNPH', 'DGRCC_GR_CAL', 'DGRCC_DM']:
+            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'SW_Z4', 'PHIE_PHIT', 'PHIE_PHIT_Z4', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT_Z4', 'PHIE', 'PHIE_Z4', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE', 'DGRCC', 'GR_CAL', 'RHOZ', 'ALCDLC', 'TNPL', 'TNPH', 'DGRCC_GR_CAL', 'DGRCC_DM']:
                 fig.update_layout(
                     **{axis: dict(
                         # gridcolor='rgba(0,0,0,0)',
@@ -2676,7 +2676,7 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
         axes[i] = []
 
     for n_seq, col in plot_sequence.items():
-        if col == 'GR':
+        if col == 'GR' or col == 'GR_NORM':
             fig, axes = plot_line(
                 df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
         elif col == 'RT':

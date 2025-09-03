@@ -148,7 +148,7 @@ def calculate_sw_simandoux(df: pd.DataFrame, params: dict, target_intervals: lis
     return df_processed
 
 
-def calculate_sw(df: pd.DataFrame, params: dict, target_intervals: list = None, target_zones: list = None) -> pd.DataFrame:
+def calculate_sw_lama(df: pd.DataFrame, params: dict, target_intervals: list = None, target_zones: list = None) -> pd.DataFrame:
     """
     Fungsi utama untuk menghitung Saturasi Air (SW Indonesia) dengan filter internal.
     """
@@ -165,7 +165,7 @@ def calculate_sw(df: pd.DataFrame, params: dict, target_intervals: list = None, 
 
     # Nama kolom
     SW = 'SW'
-    VSH = 'VSH'
+    VSH = 'VSH_LINEAR'
     PHIE = 'PHIE'
     RT = 'RT'
     RW_TEMP = "RW_TEMP"
@@ -225,4 +225,101 @@ def calculate_sw(df: pd.DataFrame, params: dict, target_intervals: list = None, 
     df_processed.loc[df_processed[PHIE] < 0.005, SW] = 1.0
     df_processed[SW] = df_processed[SW].clip(lower=0, upper=1)
 
+    return df_processed
+
+
+def calculate_sw(
+    df: pd.DataFrame,
+    params: dict,
+    target_intervals: list = None,
+    target_zones: list = None
+) -> pd.DataFrame:
+    """
+    Simplified version that only calculates and returns SW (SWE column).
+    """
+    df_processed = df.copy()
+    
+    # Extract parameters (same as original)
+    OPT_INDO = 'FULL'
+    OPT_RW = params.get('OPT_RW', 'MEASURED').upper()
+    OPT_M = params.get('OPT_M', 'CONSTANT').upper()
+    
+    RWS = float(params.get('RWS', 0.529))
+    RWT = float(params.get('RWT', 227))
+    RT_SH = float(params.get('RT_SH', 2.2))
+    A = float(params.get('A', 1.0))
+    M = float(params.get('M', 2.0))
+    N = float(params.get('N', 2.0))
+    SWE_IRR = float(params.get('SWE_IRR', 0.0))
+    
+    # Verify required columns
+    required_cols = ['PHIE', 'VSH_LINEAR', 'RT', 'GR']
+    missing_cols = [col for col in required_cols if col not in df_processed.columns]
+    if missing_cols:
+        raise ValueError(f"Missing columns: {missing_cols}")
+    
+    # Initialize only SW column
+    df_processed['SW'] = np.nan
+    
+    # Filter logic (same as original)
+    mask = pd.Series(True, index=df_processed.index)
+    has_filters = False
+    if target_intervals and 'MARKER' in df_processed.columns:
+        mask = df_processed['MARKER'].isin(target_intervals)
+        has_filters = True
+    if target_zones and 'ZONE' in df_processed.columns:
+        zone_mask = df_processed['ZONE'].isin(target_zones)
+        mask = (mask | zone_mask) if has_filters else zone_mask
+    
+    if not mask.any():
+        print("Warning: No data matches the filter.")
+        return df_processed
+    
+    # Calculate shale term
+    vsh = df_processed.loc[mask, 'VSH_LINEAR']
+    if OPT_INDO == 'FULL':
+        v = vsh ** (2 - vsh)
+    elif OPT_INDO == 'TAR_SAND':
+        v = vsh ** (2 - 2 * vsh)
+    else:
+        v = vsh ** 2
+    
+    # Handle low porosity
+    low_phie_mask = (df_processed['PHIE'] < 0.005) & mask
+    if low_phie_mask.any():
+        df_processed.loc[low_phie_mask, 'SW'] = 1.0
+    
+    # Calculate for valid porosity data
+    calc_mask = (df_processed['PHIE'] >= 0.005) & mask
+    if not calc_mask.any():
+        return df_processed
+    
+    # Calculate Rw
+    if OPT_RW == 'LOG':
+        rwtemp = df_processed.loc[calc_mask, 'RW']
+    else:
+        ftemp = df_processed.loc[calc_mask, 'FTEMP']
+        rwtemp = RWS * (RWT + 21.5) / (ftemp + 21.5)
+    
+    # Calculate formation factor
+    if OPT_M == 'VARIABLE':
+        mtemp = df_processed.loc[calc_mask, 'M_EXP']
+    else:
+        mtemp = M
+    
+    phie_masked = df_processed.loc[calc_mask, 'PHIE']
+    ff = A / (phie_masked ** mtemp)
+    
+    # Calculate SW
+    rt_masked = df_processed.loc[calc_mask, 'RT']
+    v_masked = v[calc_mask]
+    rwtemp_masked = rwtemp if not isinstance(rwtemp, pd.Series) else rwtemp[calc_mask]
+    
+    term1 = 1 / (ff * rwtemp_masked)
+    term2 = 2 * np.sqrt(v_masked / (rwtemp_masked * ff * RT_SH))
+    term3 = v_masked / RT_SH
+    
+    sw = (1 / (rt_masked * (term1 + term2 + term3))) ** (1 / N)
+    df_processed.loc[calc_mask, 'SW'] = sw.clip(lower=SWE_IRR, upper=1.0)
+    
     return df_processed

@@ -95,14 +95,19 @@ def min_max_normalize(log_in,
     if high_in == low_in:
         return np.full_like(log, low_ref)
 
+
     m = (high_ref - low_ref) / (high_in - low_in)
-    log_out = low_ref + m * (log - low_in)
+
+    log_out = low_ref + (m * (log - low_in))
+
+    
+    print(f"min max val: m:{m} low_ref: {low_ref}, high_ref: {high_ref}, low_in: {low_in}, high_in:{high_in}, data raw:{log}, data out: {log_out}")
 
     return log_out
 
 
 def selective_normalize_handler(df, log_column, marker_column,
-                                target_markers=None,
+                                target_markers=None, target_zones=None,
                                 low_ref=40, high_ref=140,
                                 low_in=5, high_in=95,
                                 cutoff_min=0, cutoff_max=250,
@@ -113,6 +118,7 @@ def selective_normalize_handler(df, log_column, marker_column,
     """
     result_df = df.copy()
     log_data = result_df[log_column].values
+    print(f"low_ref: {low_ref}, high_ref: {high_ref}, low_in: {low_in}, high_in:{high_in}")
 
     # Jika tidak ada interval yang dipilih (kasus Data Prep),
     # buat 'mask' yang mencakup semua data valid di log tersebut.
@@ -129,6 +135,24 @@ def selective_normalize_handler(df, log_column, marker_column,
         print(f"Normalizing for selected intervals: {target_markers}")
         # Mask akan memilih baris yang cocok dengan marker
         target_mask = result_df[marker_column].isin(target_markers)
+
+        # Data yang tidak dipilih (log_raw) adalah data di luar interval
+        log_raw = log_data.copy()
+        log_raw[target_mask] = np.nan
+
+    if not target_zones:
+        print("No intervals selected. Normalizing the entire log.")
+        # Mask akan memilih semua baris di mana log input tidak NaN
+        target_mask = ~np.isnan(log_data)
+
+        # Data yang tidak dipilih (log_raw) akan kosong
+        log_raw = np.full_like(log_data, np.nan, dtype=float)
+
+    # Jika ada interval yang dipilih (kasus Dashboard)
+    else:
+        print(f"Normalizing for selected intervals: {target_zones}")
+        # Mask akan memilih baris yang cocok dengan marker
+        target_mask = result_df[marker_column].isin(target_zones)
 
         # Data yang tidak dipilih (log_raw) adalah data di luar interval
         log_raw = log_data.copy()
@@ -151,10 +175,10 @@ def selective_normalize_handler(df, log_column, marker_column,
             log_raw_norm[target_mask] = normalized_target
 
     # Gunakan nama kolom output yang diberikan dari frontend
-    if not log_out_col and isDataPrep:
-        log_out_col = f'{log_column}_NO'
-    else:
-        log_out_col = log_column
+    # if not log_out_col and isDataPrep:
+    #     log_out_col = f'{log_column}_NO'
+    # else:
+    #     log_out_col = log_column
 
     result_df[log_out_col] = log_raw_norm
 

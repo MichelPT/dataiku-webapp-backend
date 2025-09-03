@@ -464,6 +464,10 @@ def get_log_percentiles():
         if selected_intervals and 'MARKER' in df.columns:
             df = df[df['MARKER'].isin(selected_intervals)]
 
+        selected_zones = payload.get('selected_zones', [])
+        if selected_zones and 'ZONE' in df.columns:
+            df = df[df['ZONE'].isin(selected_zones)]
+
         if df.empty or log_column not in df.columns:
             return jsonify({"error": f"Tidak ada data valid atau kolom '{log_column}' tidak ditemukan."}), 404
 
@@ -723,6 +727,7 @@ def run_interval_normalization():
         file_paths = payload.get('file_paths', [])
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
+        selected_zones = payload.get('selected_zones', [])
 
         # If file_paths are not provided, construct them from 'wells'
         if not file_paths and selected_wells:
@@ -769,6 +774,7 @@ def run_interval_normalization():
                 log_column=log_in_col,
                 marker_column='MARKER',
                 target_markers=selected_intervals,
+                target_zones=selected_zones,
                 low_ref=low_ref,
                 high_ref=high_ref,
                 low_in=low_in,
@@ -979,7 +985,7 @@ def run_vsh_calculation():
             # Ekstrak parameter dari frontend, dengan nilai default
             gr_ma = float(params.get('GR_MA', 30))
             gr_sh = float(params.get('GR_SH', 120))
-            input_log = params.get('input_log', 'GR')
+            input_log = params.get('GR', 'GR')
             output_log = params.get('output_log', 'VSH_LINEAR')
 
             # Loop melalui setiap sumur yang dipilih

@@ -749,6 +749,7 @@ def run_interval_normalization():
         high_in = float(params.get('HIGH_IN', 146))
         cutoff_min = float(params.get('CUTOFF_MIN', 0.0))
         cutoff_max = float(params.get('CUTOFF_MAX', 250.0))
+        bins = params.get('BINS', 100)
         isDataPrep = params.get('isDataPrep', True)
 
         processed_dfs = []
@@ -782,7 +783,9 @@ def run_interval_normalization():
                 cutoff_min=cutoff_min,
                 cutoff_max=cutoff_max,
                 log_out_col=log_out_col,
-                isDataPrep=isDataPrep
+                isDataPrep=isDataPrep,
+                use_bins=True,
+                bins=bins
             )
 
             # Save the modified data back to the original file

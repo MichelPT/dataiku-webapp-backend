@@ -3585,8 +3585,6 @@ def get_las_curves():
         # General error handler for any other unexpected issues
         return jsonify({'error': f"An unexpected error occurred: {str(e)}"}), 500
 
-
-# --- NEW API ENDPOINT FOR SAVING THE CURVE ---
 @app.route('/api/save-las-curve', methods=['POST'])
 def save_las_curve():
     """
@@ -3618,7 +3616,11 @@ def save_las_curve():
         # Ensure DEPTH and the source log exist
         if 'DEPTH' not in las_df.columns or source_log not in las_df.columns:
             return jsonify({"error": f"Required columns ('DEPTH', '{source_log}') not in LAS file."}), 400
+        
+        # FIXED: Rename the LAS column to the desired output name BEFORE merging
+        # This prevents pandas from creating _x and _y suffixes
         las_df_subset = las_df[['DEPTH', source_log]].copy()
+        las_df_subset.rename(columns={source_log: output_log_name}, inplace=True)
 
         # 3. Read the target CSV file
         if not os.path.exists(csv_full_path):
@@ -3628,10 +3630,11 @@ def save_las_curve():
         if 'DEPTH' not in csv_df.columns:
             return jsonify({"error": "'DEPTH' column not found in target CSV file."}), 400
 
+        # FIXED: Remove existing column if it exists (corrected syntax)
         if output_log_name in csv_df.columns:
             csv_df = csv_df.drop(columns=[output_log_name])
 
-        # Merge the two DataFrames
+        # 4. Merge the two DataFrames - now no naming conflicts will occur
         merged_df = pd.merge_asof(
             csv_df.sort_values("DEPTH"),
             las_df_subset.sort_values("DEPTH"),
@@ -3639,8 +3642,7 @@ def save_las_curve():
             direction="nearest"
         )
 
-        # 5. Rename the new column to the desired output name
-        merged_df.rename(columns={source_log: output_log_name}, inplace=True)
+        # 5. No need to rename anymore since we already did it before merging
 
         # 6. Save the updated DataFrame back to the CSV file
         merged_df.to_csv(csv_full_path, index=False)

@@ -1,5 +1,5 @@
 # /api/app.py
-from flask import request, jsonify
+from flask import json, request, jsonify
 from services.autoplot import calculate_gr_ma_sh_from_nphi_rhob, calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
 from services.splicing import splice_and_flag_logs
@@ -11,7 +11,7 @@ from services.histogram import plot_histogram
 from services.ngsa import process_all_wells_ngsa
 from services.dgsa import process_all_wells_dgsa
 from services.rgsa import process_all_wells_rgsa
-from services.depth_matching import create_before_after_plot_and_summary, run_depth_matching
+from services.depth_matching import run_depth_matching
 from services.porosity import calculate_porosity
 # from routes.qc_routes import qc_bp
 from services.plotting_service import (
@@ -618,14 +618,24 @@ def get_plot():
         if df.empty:
             return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
-        fig = plot_log_default(df=df)
+        # 1. Generate both plots from your plotting function
+        fig, fig_header = plot_log_default(df=df)
 
-        if fig is None:
-            # Jika tidak, kembalikan pesan error yang jelas
-            print("Error: Fungsi plot_log_default() mengembalikan None.")
-            return jsonify({"error": "Gagal membuat gambar plot. Fungsi internal plotting tidak mengembalikan hasil."}), 500
+        # 2. Check if the plots were created successfully
+        if fig is None or fig_header is None:
+            print("Error: plot_log_default() failed to return one or both figures.")
+            return jsonify({"error": "Failed to generate plot figures."}), 500
 
-        return jsonify(fig.to_json())
+        print(fig_header)
+
+        # 3. Create the response object with two distinct keys
+        response_data = {
+            "main_plot": json.loads(fig.to_json()),
+            "header_plot": json.loads(fig_header.to_json())
+        }
+
+        # 4. Return the combined JSON object
+        return jsonify(response_data)
 
     except Exception as e:
         import traceback
@@ -686,11 +696,25 @@ def get_normalization_plot():
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
-            fig_result = plot_normalization(
+            fig, fig_header = plot_normalization(
                 df=df
             )
 
-            return jsonify(fig_result.to_json())
+            # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -742,7 +766,7 @@ def run_interval_normalization():
 
         # Ambil parameter normalisasi (logic does not change)
         log_in_col = params.get('LOG_IN', 'GR')
-        log_out_col = params.get('LOG_OUT', log_in_col + '_NO')
+        log_out_col = params.get('LOG_OUT', log_in_col)
         low_ref = float(params.get('LOW_REF', 40))
         high_ref = float(params.get('HIGH_REF', 140))
         low_in = float(params.get('LOW_IN', 34))
@@ -918,6 +942,7 @@ def run_depth_matching_endpoint():
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
     try:
+        # --- (Tidak ada perubahan di bagian ini) ---
         payload = request.get_json()
         ref_path = payload.get('ref_las_path', '')
         lwd_path = payload.get('lwd_las_path', '')
@@ -927,21 +952,44 @@ def run_depth_matching_endpoint():
         num_chunks = int(payload.get('num_chunks', 10))
         output_lwd_curve = payload.get('output_lwd_curve')
 
+        # Memanggil fungsi pemrosesan data (tidak berubah)
         result_df = run_depth_matching(
             ref_path, lwd_path, ref_curve, lwd_curve, num_chunks, slack)
 
-        original_lwd_df = pd.read_csv(lwd_path)
-        if 'DEPT' in original_lwd_df.columns:
-            original_lwd_df.rename(columns={'DEPT': 'DEPTH'}, inplace=True)
+        # --------------------------------------------------------------------
+        # --- PERUBAHAN UTAMA: Logika Penyimpanan Hasil Dimodifikasi ---
+        # --------------------------------------------------------------------
 
-        new_curve_col_name = f"{lwd_curve}_MATCHED"
-        new_curve_series = result_df.set_index('DEPTH')[new_curve_col_name]
-        merged_df = pd.merge(
-            original_lwd_df, new_curve_series, on='DEPTH', how='left')
-        merged_df.rename(
+        # 1. Baca file Referensi (REF/WL) asli
+        original_ref_df = pd.read_csv(ref_path)
+        if 'DEPT' in original_ref_df.columns:
+            original_ref_df.rename(columns={'DEPT': 'DEPTH'}, inplace=True)
+
+        # 2. Siapkan data kurva baru yang akan ditambahkan/diperbarui
+        new_curve_col_name = f"{lwd_curve}_DM"
+        new_curve_df = result_df[['DEPTH', new_curve_col_name]]
+
+        # 3. LOGIKA OVERWRITE: Jika kolom dengan nama output sudah ada di file REF, hapus dulu.
+        if output_lwd_curve in original_ref_df.columns:
+            original_ref_df.drop(columns=[output_lwd_curve], inplace=True)
+
+        # 4. Gabungkan (merge) dataframe referensi asli dengan kurva baru
+        #    'how=left' memastikan semua baris dari file referensi asli tetap ada.
+        merged_ref_df = pd.merge(
+            original_ref_df, new_curve_df, on='DEPTH', how='left')
+
+        # 5. Ganti nama kolom '_DM' menjadi nama output akhir yang diinginkan
+        merged_ref_df.rename(
             columns={new_curve_col_name: output_lwd_curve}, inplace=True)
-        merged_df.to_csv(lwd_path, index=False)
 
+        # 6. Simpan kembali ke file Referensi (REF/WL), menimpa file yang lama
+        merged_ref_df.to_csv(ref_path, index=False)
+
+        # ---------------------------------------------------------------
+        # --- Akhir dari Perubahan ---
+        # ---------------------------------------------------------------
+
+        # Bagian untuk menyimpan file 'MATCHING.csv' tetap dipertahankan karena berguna untuk perbandingan
         matching_df = pd.DataFrame({
             'DEPTH': result_df['DEPTH'],
             ref_curve: result_df[ref_curve],
@@ -952,7 +1000,9 @@ def run_depth_matching_endpoint():
             os.path.dirname(lwd_path), "MATCHING.csv")
         matching_df.to_csv(matching_file_path, index=False)
 
-        return jsonify({"message": f"Proses berhasil. Kurva '{output_lwd_curve}' ditambahkan ke {os.path.basename(lwd_path)}."})
+        # Perbarui pesan sukses untuk mencerminkan file yang diubah
+        return jsonify({"message": f"Proses berhasil. Kurva '{output_lwd_curve}' ditambahkan/diperbarui di file {os.path.basename(ref_path)}."})
+
     except Exception as e:
         logging.error(f"Error di run-depth-matching: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -1118,11 +1168,25 @@ def get_porosity_plot():
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting yang baru
-            fig_result = plot_phie_den(
+            fig, fig_header = plot_phie_den(
                 df=df,
             )
 
-            return jsonify(fig_result.to_json())
+            # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -1254,9 +1318,23 @@ def get_gsa_plot():
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting GSA yang baru
-            fig_result = plot_gsa_main(df)
+            fig, fig_header = plot_gsa_main(df)
 
-            return jsonify(fig_result.to_json())
+            # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -1628,8 +1706,22 @@ def get_rgbe_rpbe_plot():
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
-            fig_result = plot_rgbe_rpbe(df)
-            return jsonify(fig_result.to_json())
+            fig, fig_header = plot_rgbe_rpbe(df)
+            # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -1849,9 +1941,23 @@ def get_rt_r0_plot():
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Generate plot
-            fig_result = plot_rt_r0(df)
+            fig, fig_header = plot_rt_r0(df)
 
-            return jsonify(fig_result.to_json())
+            # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -1912,8 +2018,22 @@ def get_swgrad_plot():
                 return jsonify({"error": "Data belum lengkap. Jalankan kalkulasi SWGRAD terlebih dahulu."}), 400
 
             # 4. Generate plot
-            fig_result = plot_swgrad(df)
-            return jsonify(fig_result.to_json())
+            fig, fig_header = plot_swgrad(df)
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -1962,10 +2082,23 @@ def get_dns_dnsv_plot():
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Generate plot
-            fig_result = plot_dns_dnsv(df)
+            fig, fig_header = plot_dns_dnsv(df)
 
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
 
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -2121,11 +2254,25 @@ def get_vsh_plot():
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
-            fig_result = plot_vsh_linear(
+            fig, fig_header = plot_vsh_linear(
                 df=df,
             )
 
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -2275,11 +2422,25 @@ def get_sw_plot():
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting yang baru
-            fig_result = plot_sw_indo(
+            fig, fig_header = plot_sw_indo(
                 df=df,
             )
 
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -2377,11 +2538,25 @@ def get_rwa_plot():
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting RWA
-            fig_result = plot_rwa_indo(
+            fig, fig_header = plot_rwa_indo(
                 df=df,
             )
 
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -2483,11 +2658,25 @@ def get_module2_plot():
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting RWA
-            fig_result = plot_module_2(
+            fig, fig_header = plot_module_2(
                 df=df,
             )
 
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -3034,9 +3223,22 @@ def get_splicing_plot():
 
             df = pd.read_csv(file_path, on_bad_lines='warn')
 
-            fig_result = plot_splicing(df=df)
-            print(jsonify(fig_result.to_json()))
-            return jsonify(fig_result.to_json())
+            fig, fig_header = plot_splicing(df=df)
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -3172,9 +3374,18 @@ def get_module1_plot():
 
             # 4. Hanya panggil plot jika df berhasil dibuat
             if df is not None and not df.empty:
-                fig_result = plot_module1(df=df)
-                print(fig_result)
-                return jsonify(fig_result.to_json())
+                fig, fig_header = plot_module1(df=df)
+                if fig is None or fig_header is None:
+                    print(
+                        "Error: plot_log_default() failed to return one or both figures.")
+                    return jsonify({"error": "Failed to generate plot figures."}), 500
+
+                response_data = {
+                    "main_plot": json.loads(fig.to_json()),
+                    "header_plot": json.loads(fig_header.to_json())
+                }
+
+                return jsonify(response_data)
             else:
                 return jsonify({"error": "Gagal memproses data atau data kosong."}), 500
 
@@ -3205,10 +3416,24 @@ def get_normalization_prep_plot():
                 df = pd.read_csv(file_path, on_bad_lines='warn')
 
             # Call plotting function with processed data
-            fig_result = plot_norm_prep(df=df)
+            fig, fig_header = plot_norm_prep(df=df)
 
             # Send finished plot as JSON
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -3388,10 +3613,24 @@ def get_fill_missing_plot():
                 df = pd.read_csv(file_path, on_bad_lines='warn')
 
             # Call plotting function with processed data
-            fig_result = plot_fill_missing(df, title="Fill Missing Plot")
+            fig, fig_header = plot_fill_missing(df, title="Fill Missing Plot")
 
             # Send finished plot as JSON
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -3439,11 +3678,25 @@ def get_module3_plot():
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
             # Panggil fungsi plotting RWA
-            fig_result = plot_module_3(
+            fig, fig_header = plot_module_3(
                 df=df,
             )
 
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -3492,9 +3745,23 @@ def get_custom_plot():
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
-            fig_result = plot_custom(df, custom_columns)
+            fig, fig_header = plot_custom(df, custom_columns)
 
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -3526,10 +3793,24 @@ def get_trimming_plot():
                 df = pd.read_csv(file_path, on_bad_lines='warn')
 
             # Call plotting function with processed data
-            fig_result = plot_trimming(df)
+            fig, fig_header = plot_trimming(df)
 
             # Send finished plot as JSON
-            return jsonify(fig_result.to_json())
+           # 2. Check if the plots were created successfully
+            if fig is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            # 3. Create the response object with two distinct keys
+            response_data = {
+                "main_plot": json.loads(fig.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            # 4. Return the combined JSON object
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
@@ -3655,46 +3936,43 @@ def save_las_curve():
 
 @app.route('/api/get-depth-matching-prep-plot', methods=['POST', 'OPTIONS'])
 def depth_matching_plot():
-    # Handle the browser's preflight OPTIONS request.
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
-    # Handle the actual POST request.
     if request.method == 'POST':
         try:
             request_data = request.get_json()
             file_path = request_data.get('file_path')
 
             if file_path:
-                # DirectorySidebar mode - single file
                 if not os.path.exists(file_path):
                     return jsonify({"error": f"File tidak ditemukan: {file_path}"}), 404
                 df = pd.read_csv(file_path, on_bad_lines='warn')
             else:
-                # Handle case where file_path is not provided
                 return jsonify({"error": "No file_path provided in the request"}), 400
 
-            # Call plotting function with processed data
-            # Assuming main_plot returns a plotly figure object
-            fig_result = plot_depth_matching(df)
+            fig_result, fig_header = plot_depth_matching(df)
 
-            # Send finished plot as JSON
-            # The .to_json() method for plotly figures returns a JSON string,
-            # so we should load it back to a dict to be re-serialized by jsonify
-            # or just return the string with the correct content type.
-            # A cleaner way is to use plotly.io.to_json
-            import plotly.io as pio
-            fig_json = pio.to_json(fig_result)
-            return fig_json, 200, {'Content-Type': 'application/json'}
+            if fig_result is None or fig_header is None:
+                print("Error: plot_log_default() failed to return one or both figures.")
+                return jsonify({"error": "Failed to generate plot figures."}), 500
+
+            print(fig_header)
+
+            response_data = {
+                "main_plot": json.loads(fig_result.to_json()),
+                "header_plot": json.loads(fig_header.to_json())
+            }
+
+            return jsonify(response_data)
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 
-    # It's good practice to have a fallback return, though with POST and OPTIONS it shouldn't be reached.
+    # DEPTH MATCHING DUMMY
     return jsonify({"error": "Method not allowed"}), 405
-# DEPTH MATCHING DUMMY
 
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -3702,29 +3980,29 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DM_DIR = os.path.join(BASE_DIR, 'data', 'depth-matching')
 
 
-@app.route('/api/get-matching-plot', methods=['POST', 'OPTIONS'])
-def get_matching_plot_endpoint():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-    try:
-        # payload = request.get_json()
-        lwd_path = 'data/structures/adera/benuang/BNG-056/'
-        # if not lwd_path:
-        #     return jsonify({"error": "Payload harus menyertakan 'lwd_path'."}), 400
+# @app.route('/api/get-matching-plot', methods=['POST', 'OPTIONS'])
+# def get_matching_plot_endpoint():
+#     if request.method == 'OPTIONS':
+#         return jsonify({'status': 'ok'}), 200
+#     try:
+#         # payload = request.get_json()
+#         lwd_path = 'data/structures/adera/benuang/BNG-056/'
+#         # if not lwd_path:
+#         #     return jsonify({"error": "Payload harus menyertakan 'lwd_path'."}), 400
 
-        matching_file_path = os.path.join(
-            os.path.dirname(lwd_path), "MATCHING.csv")
-        if not os.path.exists(matching_file_path):
-            return jsonify({"error": "'MATCHING.csv' tidak ditemukan."}), 404
+#         matching_file_path = os.path.join(
+#             os.path.dirname(lwd_path), "MATCHING.csv")
+#         if not os.path.exists(matching_file_path):
+#             return jsonify({"error": "'MATCHING.csv' tidak ditemukan."}), 404
 
-        df = pd.read_csv(matching_file_path)
-        fig_result, summary_result = create_before_after_plot_and_summary(df)
+#         df = pd.read_csv(matching_file_path)
+#         fig_result, summary_result = create_before_after_plot_and_summary(df)
 
-        return jsonify({"plot_data": fig_result.to_json(), "summary_data": summary_result})
-    except Exception as e:
-        logging.error(
-            f"Error di get-full-matching-analysis: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+#         return jsonify({"plot_data": fig_result.to_json(), "summary_data": summary_result})
+#     except Exception as e:
+#         logging.error(
+#             f"Error di get-full-matching-analysis: {e}", exc_info=True)
+#         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/get-structures-summary', methods=['GET'])

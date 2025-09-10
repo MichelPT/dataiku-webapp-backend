@@ -106,83 +106,83 @@ def min_max_normalize(log_in,
     return log_out
 
 
-def selective_normalize_handler(df, log_column, marker_column,
-                                target_markers=None, target_zones=None,
-                                low_ref=40, high_ref=140,
-                                low_in=5, high_in=95,
-                                cutoff_min=0, cutoff_max=250,
-                                log_out_col=None, isDataPrep=True):
-    """
-    Handles normalization. If target_markers is empty or None, it normalizes the entire log.
-    Otherwise, it normalizes only within the specified markers.
-    """
-    result_df = df.copy()
-    log_data = result_df[log_column].values
-    print(f"low_ref: {low_ref}, high_ref: {high_ref}, low_in: {low_in}, high_in:{high_in}")
+# def selective_normalize_handler(df, log_column, marker_column,
+#                                 target_markers=None, target_zones=None,
+#                                 low_ref=40, high_ref=140,
+#                                 low_in=5, high_in=95,
+#                                 cutoff_min=0, cutoff_max=250,
+#                                 log_out_col=None, isDataPrep=True):
+#     """
+#     Handles normalization. If target_markers is empty or None, it normalizes the entire log.
+#     Otherwise, it normalizes only within the specified markers.
+#     """
+#     result_df = df.copy()
+#     log_data = result_df[log_column].values
+#     print(f"low_ref: {low_ref}, high_ref: {high_ref}, low_in: {low_in}, high_in:{high_in}")
 
-    # Jika tidak ada interval yang dipilih (kasus Data Prep),
-    # buat 'mask' yang mencakup semua data valid di log tersebut.
-    if not target_markers:
-        print("No intervals selected. Normalizing the entire log.")
-        # Mask akan memilih semua baris di mana log input tidak NaN
-        target_mask = ~np.isnan(log_data)
+#     # Jika tidak ada interval yang dipilih (kasus Data Prep),
+#     # buat 'mask' yang mencakup semua data valid di log tersebut.
+#     if not target_markers:
+#         print("No intervals selected. Normalizing the entire log.")
+#         # Mask akan memilih semua baris di mana log input tidak NaN
+#         target_mask = ~np.isnan(log_data)
 
-        # Data yang tidak dipilih (log_raw) akan kosong
-        log_raw = np.full_like(log_data, np.nan, dtype=float)
+#         # Data yang tidak dipilih (log_raw) akan kosong
+#         log_raw = np.full_like(log_data, np.nan, dtype=float)
 
-    # Jika ada interval yang dipilih (kasus Dashboard)
-    else:
-        print(f"Normalizing for selected intervals: {target_markers}")
-        # Mask akan memilih baris yang cocok dengan marker
-        target_mask = result_df[marker_column].isin(target_markers)
+#     # Jika ada interval yang dipilih (kasus Dashboard)
+#     else:
+#         print(f"Normalizing for selected intervals: {target_markers}")
+#         # Mask akan memilih baris yang cocok dengan marker
+#         target_mask = result_df[marker_column].isin(target_markers)
 
-        # Data yang tidak dipilih (log_raw) adalah data di luar interval
-        log_raw = log_data.copy()
-        log_raw[target_mask] = np.nan
+#         # Data yang tidak dipilih (log_raw) adalah data di luar interval
+#         log_raw = log_data.copy()
+#         log_raw[target_mask] = np.nan
 
-    if not target_zones:
-        print("No intervals selected. Normalizing the entire log.")
-        # Mask akan memilih semua baris di mana log input tidak NaN
-        target_mask = ~np.isnan(log_data)
+#     if not target_zones:
+#         print("No intervals selected. Normalizing the entire log.")
+#         # Mask akan memilih semua baris di mana log input tidak NaN
+#         target_mask = ~np.isnan(log_data)
 
-        # Data yang tidak dipilih (log_raw) akan kosong
-        log_raw = np.full_like(log_data, np.nan, dtype=float)
+#         # Data yang tidak dipilih (log_raw) akan kosong
+#         log_raw = np.full_like(log_data, np.nan, dtype=float)
 
-    # Jika ada interval yang dipilih (kasus Dashboard)
-    else:
-        print(f"Normalizing for selected intervals: {target_zones}")
-        # Mask akan memilih baris yang cocok dengan marker
-        target_mask = result_df[marker_column].isin(target_zones)
+#     # Jika ada interval yang dipilih (kasus Dashboard)
+#     else:
+#         print(f"Normalizing for selected intervals: {target_zones}")
+#         # Mask akan memilih baris yang cocok dengan marker
+#         target_mask = result_df[marker_column].isin(target_zones)
 
-        # Data yang tidak dipilih (log_raw) adalah data di luar interval
-        log_raw = log_data.copy()
-        log_raw[target_mask] = np.nan
+#         # Data yang tidak dipilih (log_raw) adalah data di luar interval
+#         log_raw = log_data.copy()
+#         log_raw[target_mask] = np.nan
 
-    log_norm = np.full_like(log_data, np.nan, dtype=float)
-    log_raw_norm = log_raw.copy()
+#     log_norm = np.full_like(log_data, np.nan, dtype=float)
+#     log_raw_norm = log_raw.copy()
 
-    if np.any(target_mask):
-        target_data = log_data[target_mask]
+#     if np.any(target_mask):
+#         target_data = log_data[target_mask]
 
-        if len(target_data) > 0 and not np.all(np.isnan(target_data)):
-            normalized_target = min_max_normalize(
-                target_data,
-                low_ref=low_ref, high_ref=high_ref,
-                low_in=low_in, high_in=high_in,
-                cutoff_min=cutoff_min, cutoff_max=cutoff_max
-            )
-            log_norm[target_mask] = normalized_target
-            log_raw_norm[target_mask] = normalized_target
+#         if len(target_data) > 0 and not np.all(np.isnan(target_data)):
+#             normalized_target = min_max_normalize(
+#                 target_data,
+#                 low_ref=low_ref, high_ref=high_ref,
+#                 low_in=low_in, high_in=high_in,
+#                 cutoff_min=cutoff_min, cutoff_max=cutoff_max
+#             )
+#             log_norm[target_mask] = normalized_target
+#             log_raw_norm[target_mask] = normalized_target
 
-    # Gunakan nama kolom output yang diberikan dari frontend
-    # if not log_out_col and isDataPrep:
-    #     log_out_col = f'{log_column}_NO'
-    # else:
-    #     log_out_col = log_column
+#     # Gunakan nama kolom output yang diberikan dari frontend
+#     # if not log_out_col and isDataPrep:
+#     #     log_out_col = f'{log_column}_NO'
+#     # else:
+#     #     log_out_col = log_column
 
-    result_df[log_out_col] = log_raw_norm
+#     result_df[log_out_col] = log_raw_norm
 
-    return result_df
+#     return result_df
 
 
 # Trimming data
@@ -346,3 +346,149 @@ def fill_flagged_missing_values(df: pd.DataFrame, logs_to_fill: list, max_consec
             df_out.loc[final_col_mask, col] = filled_temp_col[final_col_mask]
 
     return df_out
+
+
+def compute_percentiles_bin(data, pct_min, pct_max, bins=100):
+    """
+    Compute percentiles using binning method similar to the provided code.
+    Returns (min_pnt, max_pnt) corresponding to the pct_min and pct_max.
+    """
+    data = data[~np.isnan(data)]
+    n = len(data)
+    if n == 0:
+        return np.nan, np.nan
+
+    log_min = np.min(data)
+    log_max = np.max(data)
+    
+    # Create bin limits
+    bin_lim = np.linspace(log_min, log_max, bins + 1)
+    
+    # Initialize bins
+    bin_cum = np.zeros(bins)
+    bin_cnt = np.zeros(bins)
+    
+    # Assign data to bins
+    indices = np.digitize(data, bin_lim) - 1
+    indices[indices == bins] = bins - 1  # Handle edge case
+    
+    for i in range(bins):
+        mask = (indices == i)
+        bin_cnt[i] = np.sum(mask)
+        bin_cum[i] = np.sum(data[mask])
+    
+    # Calculate count thresholds
+    cnt_min = n * pct_min * 0.01
+    cnt_max = n * pct_max * 0.01
+    
+    # Find lower percentile bin
+    tally = 0
+    i = 0
+    while i < bins and tally <= cnt_min:
+        tally += bin_cnt[i]
+        i += 1
+    min_idx = max(0, i - 1)
+    min_pnt = bin_cum[min_idx] / bin_cnt[min_idx] if bin_cnt[min_idx] > 0 else np.nan
+    
+    # Find upper percentile bin
+    tally = 0
+    i = 0
+    while i < bins and tally <= cnt_max:
+        tally += bin_cnt[i]
+        i += 1
+    max_idx = max(0, i - 1)
+    max_pnt = bin_cum[max_idx] / bin_cnt[max_idx] if bin_cnt[max_idx] > 0 else np.nan
+    
+    return min_pnt, max_pnt
+
+
+def selective_normalize_handler(df, log_column, marker_column,
+                                target_markers=None, target_zones=None,
+                                low_ref=40, high_ref=140,
+                                low_in=5, high_in=95,
+                                cutoff_min=0, cutoff_max=250,
+                                log_out_col=None, isDataPrep=True,
+                                use_bins=False, bins=100): 
+    """
+    Handles normalization. If target_markers is empty or None, it normalizes the entire log.
+    Otherwise, it normalizes only within the specified markers.
+    """
+    result_df = df.copy()
+    log_data = result_df[log_column].values
+    print(f"low_ref: {low_ref}, high_ref: {high_ref}, low_in: {low_in}, high_in:{high_in}")
+
+    # Jika tidak ada interval yang dipilih (kasus Data Prep),
+    # buat 'mask' yang mencakup semua data valid di log tersebut.
+    if not target_markers:
+        print("No intervals selected. Normalizing the entire log.")
+        # Mask akan memilih semua baris di mana log input tidak NaN
+        target_mask = ~np.isnan(log_data)
+
+        # Data yang tidak dipilih (log_raw) akan kosong
+        log_raw = np.full_like(log_data, np.nan, dtype=float)
+
+    # Jika ada interval yang dipilih (kasus Dashboard)
+    else:
+        print(f"Normalizing for selected intervals: {target_markers}")
+        # Mask akan memilih baris yang cocok dengan marker
+        target_mask = result_df[marker_column].isin(target_markers)
+
+        # Data yang tidak dipilih (log_raw) adalah data di luar interval
+        log_raw = log_data.copy()
+        log_raw[target_mask] = np.nan
+
+    if not target_zones:
+        print("No intervals selected. Normalizing the entire log.")
+        # Mask akan memilih semua baris di mana log input tidak NaN
+        target_mask = ~np.isnan(log_data)
+
+        # Data yang tidak dipilih (log_raw) akan kosong
+        log_raw = np.full_like(log_data, np.nan, dtype=float)
+
+    # Jika ada interval yang dipilih (kasus Dashboard)
+    else:
+        print(f"Normalizing for selected intervals: {target_zones}")
+        # Mask akan memilih baris yang cocok dengan marker
+        target_mask = result_df[marker_column].isin(target_zones)
+
+        # Data yang tidak dipilih (log_raw) adalah data di luar interval
+        log_raw = log_data.copy()
+        log_raw[target_mask] = np.nan
+
+    log_norm = np.full_like(log_data, np.nan, dtype=float)
+    log_raw_norm = log_raw.copy()
+
+    if use_bins:
+        # Compute dynamic low_in and high_in using binning
+        valid_data = log_data[target_mask]
+        valid_data = valid_data[~np.isnan(valid_data)]
+        if len(valid_data) > 0:
+            low_in_dynamic, high_in_dynamic = compute_percentiles_bin(
+                valid_data, low_in, high_in, bins
+            )
+            # Fallback if calculation fails
+            if np.isnan(low_in_dynamic):
+                low_in_dynamic = np.percentile(valid_data, low_in)
+            if np.isnan(high_in_dynamic):
+                high_in_dynamic = np.percentile(valid_data, high_in)
+        else:
+            low_in_dynamic, high_in_dynamic = low_in, high_in
+    else:
+        low_in_dynamic, high_in_dynamic = low_in, high_in
+
+    # Use computed values in normalization
+    if np.any(target_mask):
+        target_data = log_data[target_mask]
+        if len(target_data) > 0 and not np.all(np.isnan(target_data)):
+            normalized_target = min_max_normalize(
+                target_data,
+                low_ref=low_ref, high_ref=high_ref,
+                low_in=low_in_dynamic, high_in=high_in_dynamic,  # Use dynamic values
+                cutoff_min=cutoff_min, cutoff_max=cutoff_max
+            )
+            log_norm[target_mask] = normalized_target
+            log_raw_norm[target_mask] = normalized_target
+
+    result_df[log_out_col] = log_raw_norm
+
+    return result_df

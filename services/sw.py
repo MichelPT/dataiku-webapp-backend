@@ -227,6 +227,291 @@ def calculate_sw_lama(df: pd.DataFrame, params: dict, target_intervals: list = N
 
     return df_processed
 
+# def calculate_sw_full_code(
+#     df: pd.DataFrame,
+#     params: dict,
+#     target_intervals: list = None,
+#     target_zones: list = None
+# ) -> pd.DataFrame:
+#     """
+#     Corrected SW calculation following the exact LLS certified code logic.
+#     """
+#     df_processed = df.copy()
+    
+#     # 1. Extract parameters
+#     OPT_INDO = params.get('OPT_INDO', 'FULL').upper()  # Fixed: was hardcoded
+#     OPT_RW = params.get('OPT_RW', 'MEASURED').upper()
+#     OPT_M = params.get('OPT_M', 'CONSTANT').upper()
+    
+#     # Numeric parameters
+#     RWS = float(params.get('RWS', 0.529))
+#     RWT = float(params.get('RWT', 227))
+#     RT_SH = float(params.get('RT_SH', 2.2))
+#     RMF = params.get('RMF')  # Can be None
+#     A = float(params.get('A', 1.0))
+#     M = float(params.get('M', 2.0))
+#     N = float(params.get('N', 2.0))
+#     SWE_IRR = float(params.get('SWE_IRR', 0.0))
+    
+#     # 2. Verify required columns
+#     required_cols = ['PHIE', 'VSH_LINEAR', 'RT']
+#     if OPT_RW == 'MEASURED':
+#         required_cols.append('FTEMP')
+#     elif OPT_RW == 'LOG':
+#         required_cols.append('RW')
+#     if OPT_M == 'VARIABLE':
+#         required_cols.append('M_EXP')
+        
+#     missing_cols = [col for col in required_cols if col not in df_processed.columns]
+#     if missing_cols:
+#         raise ValueError(f"Missing required columns: {missing_cols}")
+    
+#     # 3. Initialize output columns (following LLS naming)
+#     output_cols = ['OPT_SW', 'SWE', 'SWE_INDO', 'VOL_UWAT', 'SXOE', 'VOL_XWAT']
+#     for col in output_cols:
+#         if col == 'OPT_SW':
+#             df_processed[col] = ''
+#         else:
+#             df_processed[col] = np.nan
+    
+#     # 4. Apply filters
+#     mask = pd.Series(True, index=df_processed.index)
+#     if target_intervals and 'MARKER' in df_processed.columns:
+#         mask = df_processed['MARKER'].isin(target_intervals)
+#     if target_zones and 'ZONE' in df_processed.columns:
+#         zone_mask = df_processed['ZONE'].isin(target_zones)
+#         mask = mask | zone_mask if target_intervals else zone_mask
+    
+#     if not mask.any():
+#         print("Warning: No data matches filter criteria")
+#         return df_processed
+    
+#     # 5. Process each row following LLS logic
+#     for idx in df_processed[mask].index:
+#         vsh = df_processed.loc[idx, 'VSH_LINEAR']
+#         phie = df_processed.loc[idx, 'PHIE']
+#         rt = df_processed.loc[idx, 'RT']
+        
+#         # Step 1: Assign saturation method and calculate shale term
+#         if OPT_INDO == 'FULL':
+#             df_processed.loc[idx, 'OPT_SW'] = 'INDO_FUL'
+#             v = vsh ** (2 - vsh)
+#         elif OPT_INDO == 'SIMPLE':
+#             df_processed.loc[idx, 'OPT_SW'] = 'INDO_SIM'
+#             v = vsh ** 2
+#         elif OPT_INDO == 'TAR_SAND':
+#             df_processed.loc[idx, 'OPT_SW'] = 'INDO_TAR'
+#             v = vsh ** (2 - 2 * vsh)
+#         else:
+#             # Default to SIMPLE if unknown
+#             df_processed.loc[idx, 'OPT_SW'] = 'INDO_SIM'
+#             v = vsh ** 2
+        
+#         # Step 2: Check for low effective porosity
+#         if phie < 0.005:
+#             df_processed.loc[idx, 'SWE'] = 1.0
+#             df_processed.loc[idx, 'SWE_INDO'] = 1.0
+#             df_processed.loc[idx, 'VOL_UWAT'] = phie
+#             df_processed.loc[idx, 'SXOE'] = 1.0
+#             df_processed.loc[idx, 'VOL_XWAT'] = phie
+#             continue  # Skip to next iteration (equivalent to goto END_MODEL)
+        
+#         # Step 3: Calculate Rw
+#         if OPT_RW == 'MEASURED':
+#             ftemp = df_processed.loc[idx, 'FTEMP']
+#             rwtemp = RWS * (RWT + 21.5) / (ftemp + 21.5)
+#         elif OPT_RW == 'LOG':
+#             rwtemp = df_processed.loc[idx, 'RW']
+#         # Note: SALINITY option not implemented as it wasn't in your original code
+#         else:
+#             # Default to MEASURED method
+#             ftemp = df_processed.loc[idx, 'FTEMP'] if 'FTEMP' in df_processed.columns else 75
+#             rwtemp = RWS * (RWT + 21.5) / (ftemp + 21.5)
+        
+#         # Step 4: Choose constant or variable cementation exponent
+#         if OPT_M == 'CONSTANT':
+#             mtemp = M
+#         else:  # VARIABLE
+#             if pd.isna(df_processed.loc[idx, 'M_EXP']):
+#                 # Set all values to missing and continue (following LLS logic)
+#                 df_processed.loc[idx, 'SWE_INDO'] = np.nan
+#                 df_processed.loc[idx, 'SWE'] = np.nan
+#                 df_processed.loc[idx, 'SXOE'] = np.nan
+#                 df_processed.loc[idx, 'VOL_UWAT'] = np.nan
+#                 df_processed.loc[idx, 'VOL_XWAT'] = np.nan
+#                 continue
+#             mtemp = df_processed.loc[idx, 'M_EXP']
+        
+#         # Step 5: Calculate formation factor
+#         ff = A / (phie ** mtemp)
+        
+#         # Step 6: Calculate SWE (following exact LLS formula)
+#         f1 = 1 / (ff * rwtemp)
+#         f2 = 2 * np.sqrt(v / (rwtemp * ff * RT_SH))
+#         f3 = v / RT_SH
+        
+#         swe = (1 / (rt * (f1 + f2 + f3))) ** (1/N)
+#         df_processed.loc[idx, 'SWE_INDO'] = swe  # Store original value
+#         df_processed.loc[idx, 'SWE'] = np.clip(swe, SWE_IRR, 1.0)  # Apply limits
+#         df_processed.loc[idx, 'VOL_UWAT'] = phie * df_processed.loc[idx, 'SWE']
+        
+#         # Step 7: Calculate SXOE
+#         if 'RXO' in df_processed.columns and not pd.isna(df_processed.loc[idx, 'RXO']) and RMF is not None:
+#             rxo = df_processed.loc[idx, 'RXO']
+#             f1_xo = 1 / (ff * RMF)
+#             f2_xo = 2 * np.sqrt(v / (RMF * ff * RT_SH))
+#             f3_xo = v / RT_SH
+            
+#             sxoe = (1 / (rxo * (f1_xo + f2_xo + f3_xo))) ** (1/N)
+#             df_processed.loc[idx, 'SXOE'] = np.clip(sxoe, SWE_IRR, 1.0)
+#             df_processed.loc[idx, 'VOL_XWAT'] = phie * df_processed.loc[idx, 'SXOE']
+#         else:
+#             df_processed.loc[idx, 'SXOE'] = np.nan  # Missing, as per LLS
+#             df_processed.loc[idx, 'VOL_XWAT'] = df_processed.loc[idx, 'VOL_UWAT']  # Copy VOL_UWAT
+    
+#     return df_processed
+
+
+# # Simplified version that only returns SW (SWE column)
+# def calculate_sw(
+#     df: pd.DataFrame,
+#     params: dict,
+#     target_intervals: list = None,
+#     target_zones: list = None
+# ) -> pd.DataFrame:
+#     """
+#     Simplified version that only calculates SW following LLS standard.
+#     Returns only the SWE column as 'SW'.
+#     """
+#     # Use the corrected function
+#     result_df = calculate_sw_full_code(df, params, target_intervals, target_zones)
+    
+#     # Keep only the original columns plus SW
+#     original_cols = df.columns.tolist()
+#     result_df['SW'] = result_df['SWE']  # Rename SWE to SW for consistency
+    
+#     # Return only original columns plus SW
+#     return result_df[original_cols + ['SW']]
+
+def calculate_sw_with_shale_cutoff(
+    df: pd.DataFrame,
+    params: dict,
+    target_intervals: list = None,
+    target_zones: list = None
+) -> pd.DataFrame:
+    """
+    SW calculation with shale cutoff logic (Geolog style).
+    
+    Additional parameter in params:
+    - 'VSH_CUTOFF': VSH threshold above which SW is set to 1.0 (default 0.5)
+    """
+    df_processed = df.copy()
+    
+    # Extract shale cutoff parameter
+    VSH_CUTOFF = float(params.get('VSH_CUTOFF', 0.5))
+    
+    # Other parameters (same as before)
+    OPT_INDO = params.get('OPT_INDO', 'FULL').upper()
+    OPT_RW = params.get('OPT_RW', 'MEASURED').upper()
+    OPT_M = params.get('OPT_M', 'CONSTANT').upper()
+    
+    RWS = float(params.get('RWS', 0.529))
+    RWT = float(params.get('RWT', 227))
+    RT_SH = float(params.get('RT_SH', 2.2))
+    RMF = params.get('RMF')
+    A = float(params.get('A', 1.0))
+    M = float(params.get('M', 2.0))
+    N = float(params.get('N', 2.0))
+    SWE_IRR = float(params.get('SWE_IRR', 0.0))
+    
+    # Verify required columns
+    required_cols = ['PHIE', 'VSH_LINEAR', 'RT']
+    if OPT_RW == 'MEASURED':
+        required_cols.append('FTEMP')
+    elif OPT_RW == 'LOG':
+        required_cols.append('RW')
+    if OPT_M == 'VARIABLE':
+        required_cols.append('M_EXP')
+        
+    missing_cols = [col for col in required_cols if col not in df_processed.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+    
+    # Initialize SW column
+    df_processed['SW'] = np.nan
+    
+    # Apply filters
+    mask = pd.Series(True, index=df_processed.index)
+    if target_intervals and 'MARKER' in df_processed.columns:
+        mask = df_processed['MARKER'].isin(target_intervals)
+    if target_zones and 'ZONE' in df_processed.columns:
+        zone_mask = df_processed['ZONE'].isin(target_zones)
+        mask = mask | zone_mask if target_intervals else zone_mask
+    
+    if not mask.any():
+        print("Warning: No data matches filter criteria")
+        return df_processed
+    
+    print(f"Calculating SW for {mask.sum()} rows with VSH cutoff = {VSH_CUTOFF}")
+    
+    # Process each row
+    for idx in df_processed[mask].index:
+        vsh = df_processed.loc[idx, 'VSH_LINEAR']
+        phie = df_processed.loc[idx, 'PHIE']
+        rt = df_processed.loc[idx, 'RT']
+        
+        # CRITICAL: Apply shale cutoff FIRST (Geolog logic)
+        if vsh >= VSH_CUTOFF:
+            df_processed.loc[idx, 'SW'] = 1.0
+            continue  # Skip Indonesian calculation for shaly intervals
+        
+        # Calculate shale term for non-shaly intervals
+        if OPT_INDO == 'FULL':
+            v = vsh ** (2 - vsh)
+        elif OPT_INDO == 'SIMPLE':
+            v = vsh ** 2
+        elif OPT_INDO == 'TAR_SAND':
+            v = vsh ** (2 - 2 * vsh)
+        else:
+            v = vsh ** 2
+        
+        # Check for low effective porosity
+        if phie < 0.005:
+            df_processed.loc[idx, 'SW'] = 1.0
+            continue
+        
+        # Calculate Rw
+        if OPT_RW == 'MEASURED':
+            ftemp = df_processed.loc[idx, 'FTEMP']
+            rwtemp = RWS * (RWT + 21.5) / (ftemp + 21.5)
+        elif OPT_RW == 'LOG':
+            rwtemp = df_processed.loc[idx, 'RW']
+        else:
+            ftemp = df_processed.loc[idx, 'FTEMP'] if 'FTEMP' in df_processed.columns else 75
+            rwtemp = RWS * (RWT + 21.5) / (ftemp + 21.5)
+        
+        # Choose cementation exponent
+        if OPT_M == 'CONSTANT':
+            mtemp = M
+        else:
+            if pd.isna(df_processed.loc[idx, 'M_EXP']):
+                df_processed.loc[idx, 'SW'] = np.nan
+                continue
+            mtemp = df_processed.loc[idx, 'M_EXP']
+        
+        # Calculate formation factor
+        ff = A / (phie ** mtemp)
+        
+        # Calculate SW using Indonesian equation
+        f1 = 1 / (ff * rwtemp)
+        f2 = 2 * np.sqrt(v / (rwtemp * ff * RT_SH))
+        f3 = v / RT_SH
+        
+        sw = (1 / (rt * (f1 + f2 + f3))) ** (1/N)
+        df_processed.loc[idx, 'SW'] = np.clip(sw, SWE_IRR, 1.0)
+    
+    return df_processed
+
 
 def calculate_sw(
     df: pd.DataFrame,
@@ -235,91 +520,38 @@ def calculate_sw(
     target_zones: list = None
 ) -> pd.DataFrame:
     """
-    Simplified version that only calculates and returns SW (SWE column).
+    Advanced version with multiple cutoff options similar to commercial software.
     """
     df_processed = df.copy()
     
-    # Extract parameters (same as original)
-    OPT_INDO = 'FULL'
-    OPT_RW = params.get('OPT_RW', 'MEASURED').upper()
-    OPT_M = params.get('OPT_M', 'CONSTANT').upper()
+    # Cutoff parameters
+    VSH_CUTOFF = float(params.get('VSH_CUTOFF', 0.5))
+    PHIE_CUTOFF = float(params.get('PHIE_CUTOFF', 0.05))  # Below this, SW = 1.0
+    # RT_CUTOFF = float(params.get('RT_CUTOFF', None))  # Above this, use different logic
     
-    RWS = float(params.get('RWS', 0.529))
-    RWT = float(params.get('RWT', 227))
-    RT_SH = float(params.get('RT_SH', 2.2))
-    A = float(params.get('A', 1.0))
-    M = float(params.get('M', 2.0))
-    N = float(params.get('N', 2.0))
-    SWE_IRR = float(params.get('SWE_IRR', 0.0))
+    # Apply the basic calculation first
+    df_result = calculate_sw_with_shale_cutoff(df, params, target_intervals, target_zones)
     
-    # Verify required columns
-    required_cols = ['PHIE', 'VSH_LINEAR', 'RT', 'GR']
-    missing_cols = [col for col in required_cols if col not in df_processed.columns]
-    if missing_cols:
-        raise ValueError(f"Missing columns: {missing_cols}")
+    # Apply additional cutoffs if specified
+    mask = pd.Series(True, index=df_result.index)
+    if target_intervals and 'MARKER' in df_result.columns:
+        mask = df_result['MARKER'].isin(target_intervals)
+    if target_zones and 'ZONE' in df_result.columns:
+        zone_mask = df_result['ZONE'].isin(target_zones)
+        mask = mask | zone_mask if target_intervals else zone_mask
     
-    # Initialize only SW column
-    df_processed['SW'] = np.nan
+    # Additional porosity cutoff
+    low_poro_mask = (df_result['PHIE'] < PHIE_CUTOFF) & mask
+    if low_poro_mask.any():
+        df_result.loc[low_poro_mask, 'SW'] = 1.0
+        print(f"Applied porosity cutoff: {low_poro_mask.sum()} points set to SW=1.0")
     
-    # Filter logic (same as original)
-    mask = pd.Series(True, index=df_processed.index)
-    has_filters = False
-    if target_intervals and 'MARKER' in df_processed.columns:
-        mask = df_processed['MARKER'].isin(target_intervals)
-        has_filters = True
-    if target_zones and 'ZONE' in df_processed.columns:
-        zone_mask = df_processed['ZONE'].isin(target_zones)
-        mask = (mask | zone_mask) if has_filters else zone_mask
+    # High resistivity cutoff (optional)
+    # if RT_CUTOFF and 'RT' in df_result.columns:
+    #     high_rt_mask = (df_result['RT'] > RT_CUTOFF) & mask
+    #     if high_rt_mask.any():
+    #         # For very high resistivity, you might want to cap SW at a lower value
+    #         # This is formation-specific logic
+    #         print(f"High resistivity detected: {high_rt_mask.sum()} points above {RT_CUTOFF} ohm-m")
     
-    if not mask.any():
-        print("Warning: No data matches the filter.")
-        return df_processed
-    
-    # Calculate shale term
-    vsh = df_processed.loc[mask, 'VSH_LINEAR']
-    if OPT_INDO == 'FULL':
-        v = vsh ** (2 - vsh)
-    elif OPT_INDO == 'TAR_SAND':
-        v = vsh ** (2 - 2 * vsh)
-    else:
-        v = vsh ** 2
-    
-    # Handle low porosity
-    low_phie_mask = (df_processed['PHIE'] < 0.005) & mask
-    if low_phie_mask.any():
-        df_processed.loc[low_phie_mask, 'SW'] = 1.0
-    
-    # Calculate for valid porosity data
-    calc_mask = (df_processed['PHIE'] >= 0.005) & mask
-    if not calc_mask.any():
-        return df_processed
-    
-    # Calculate Rw
-    if OPT_RW == 'LOG':
-        rwtemp = df_processed.loc[calc_mask, 'RW']
-    else:
-        ftemp = df_processed.loc[calc_mask, 'FTEMP']
-        rwtemp = RWS * (RWT + 21.5) / (ftemp + 21.5)
-    
-    # Calculate formation factor
-    if OPT_M == 'VARIABLE':
-        mtemp = df_processed.loc[calc_mask, 'M_EXP']
-    else:
-        mtemp = M
-    
-    phie_masked = df_processed.loc[calc_mask, 'PHIE']
-    ff = A / (phie_masked ** mtemp)
-    
-    # Calculate SW
-    rt_masked = df_processed.loc[calc_mask, 'RT']
-    v_masked = v[calc_mask]
-    rwtemp_masked = rwtemp if not isinstance(rwtemp, pd.Series) else rwtemp[calc_mask]
-    
-    term1 = 1 / (ff * rwtemp_masked)
-    term2 = 2 * np.sqrt(v_masked / (rwtemp_masked * ff * RT_SH))
-    term3 = v_masked / RT_SH
-    
-    sw = (1 / (rt_masked * (term1 + term2 + term3))) ** (1 / N)
-    df_processed.loc[calc_mask, 'SW'] = sw.clip(lower=SWE_IRR, upper=1.0)
-    
-    return df_processed
+    return df_result

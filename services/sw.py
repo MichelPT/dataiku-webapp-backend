@@ -1,6 +1,29 @@
 import pandas as pd
 import numpy as np
 
+def calculate_ftemp(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculates the Formation Temperature (FTEMP) log based on the TVDSS log.
+
+    Formula: FTEMP = 75 + (0.05 * TVDSS)
+
+    Args:
+        df: DataFrame containing a 'TVDSS' column.
+
+    Returns:
+        DataFrame with a new 'FTEMP' column added.
+    """
+    df_processed = df.copy()
+
+    # Check if the required TVDSS column exists
+    if 'TVDSS' not in df_processed.columns:
+        raise ValueError("Input DataFrame must contain a 'TVDSS' column.")
+
+    # Apply the formula vectorized for efficiency
+    df_processed['FTEMP'] = 75 + (0.05 * df_processed['TVDSS'])
+    
+    print("Successfully created 'FTEMP' log.")
+    return df_processed
 
 def newton_simandoux(rt, ff, rwtemp, rtsh, vsh, n, opt='MODIFIED', c=1, max_iter=20, tol=1e-5):
     """
@@ -55,6 +78,7 @@ def calculate_sw_simandoux(df: pd.DataFrame, params: dict, target_intervals: lis
     df_processed = df.copy()
     df_processed.columns = [col.upper() for col in df_processed.columns]
     df_processed.replace(-999.0, np.nan, inplace=True)
+    df_processed = calculate_ftemp(df_processed)
 
     # 1. Get parameters and check for required columns
     A = float(params.get('A', 1.0))
@@ -63,7 +87,6 @@ def calculate_sw_simandoux(df: pd.DataFrame, params: dict, target_intervals: lis
     C = float(params.get('C', 1.0))
     RWS = float(params.get('RWS', 0.1))
     RWT = float(params.get('RWT', 75))
-    FTEMP = float(params.get('FTEMP', 90))
     SWE_IRR = float(params.get('SWE_IRR', 0.0))
     RT_SH = float(params.get('RT_SH', 5.0))
     OPT_SIM = params.get('OPT_SIM', 'MODIFIED')
@@ -71,7 +94,7 @@ def calculate_sw_simandoux(df: pd.DataFrame, params: dict, target_intervals: lis
     if 'ILD' not in df_processed.columns and 'RT' in df_processed.columns:
         df_processed['ILD'] = df_processed['RT']
 
-    required_cols = ['GR', 'RHOB', 'ILD']
+    required_cols = ['GR', 'RHOB', 'ILD', 'FTEMP']
     if not all(col in df_processed.columns for col in required_cols):
         raise ValueError(f"Missing required columns: {required_cols}")
 
@@ -86,7 +109,7 @@ def calculate_sw_simandoux(df: pd.DataFrame, params: dict, target_intervals: lis
         mask = (mask | zone_mask) if has_filters else zone_mask
 
     # 3. Prepare data (VSH, PHIE) for the masked rows if they don't exist
-    df_processed["RW_TEMP"] = RWS * (RWT + 21.5) / (FTEMP + 21.5)
+    df_processed["RW_TEMP"] = RWS * (RWT + 21.5) / (df_processed['FTEMP'] + 21.5)
 
     if 'VSH' not in df_processed.columns:
         print("Calculating VSH from GR for selected intervals...")
@@ -157,7 +180,6 @@ def calculate_sw_lama(df: pd.DataFrame, params: dict, target_intervals: list = N
     # 1. Persiapan: Ekstrak parameter dan verifikasi kolom
     RWS = float(params.get('RWS', 0.529))
     RWT = float(params.get('RWT', 227))
-    FTEMP = float(params.get('FTEMP', 80))
     RT_SH = float(params.get('RT_SH', 2.2))
     A = float(params.get('A', 1.0))
     M = float(params.get('M', 2.0))
@@ -170,7 +192,7 @@ def calculate_sw_lama(df: pd.DataFrame, params: dict, target_intervals: list = N
     RT = 'RT'
     RW_TEMP = "RW_TEMP"
 
-    required_cols = ['GR', RT, PHIE, VSH]
+    required_cols = ['GR', RT, PHIE, VSH, 'FTEMP']
     if not all(col in df_processed.columns for col in required_cols):
         raise ValueError(
             "Kolom input (GR, RT, PHIE, VSH) tidak lengkap. Jalankan modul sebelumnya.")
@@ -194,7 +216,7 @@ def calculate_sw_lama(df: pd.DataFrame, params: dict, target_intervals: list = N
     # 3. Lakukan perhitungan HANYA pada baris yang cocok dengan mask
 
     # Hitung RW_TEMP untuk semua baris karena mungkin dibutuhkan di modul lain
-    df_processed[RW_TEMP] = RWS * (RWT + 21.5) / (FTEMP + 21.5)
+    df_processed[RW_TEMP] = RWS * (RWT + 21.5) / (df_processed['FTEMP'] + 21.5)
 
     # Ambil data yang sudah difilter untuk kalkulasi
     v = df_processed.loc[mask, VSH] ** 2

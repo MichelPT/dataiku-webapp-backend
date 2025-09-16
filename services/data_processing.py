@@ -429,7 +429,7 @@ def selective_normalize_handler(df, log_column, marker_column,
 
     # Jika ada interval yang dipilih (kasus Dashboard)
     else:
-        print(f"Normalizing for selected intervals: {target_markers}")
+        print(f"Normalizing for selected marker: {target_markers}")
         # Mask akan memilih baris yang cocok dengan marker
         target_mask = result_df[marker_column].isin(target_markers)
 
@@ -447,9 +447,9 @@ def selective_normalize_handler(df, log_column, marker_column,
 
     # Jika ada interval yang dipilih (kasus Dashboard)
     else:
-        print(f"Normalizing for selected intervals: {target_zones}")
+        print(f"Normalizing for selected zones: {target_zones}")
         # Mask akan memilih baris yang cocok dengan marker
-        target_mask = result_df[marker_column].isin(target_zones)
+        target_mask = result_df['ZONE'].isin(target_zones)
 
         # Data yang tidak dipilih (log_raw) adalah data di luar interval
         log_raw = log_data.copy()

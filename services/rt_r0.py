@@ -12,7 +12,7 @@ def calculate_R0(df):
     """
     df_copy = df.copy()
     # Pastikan semua kolom yang dibutuhkan untuk kalkulasi ada
-    required_cols = ['PHIE', 'M', 'A', 'RWA_FULL', 'VSH', 'RTSH', 'RT']
+    required_cols = ['PHIE', 'M', 'A', 'VSH', 'RTSH', 'RT']
     if not all(col in df_copy.columns for col in required_cols):
         print("Peringatan: Kolom yang dibutuhkan untuk kalkulasi R0 tidak lengkap. Melewatkan.")
         # Kembalikan kolom kosong agar tidak error saat merge

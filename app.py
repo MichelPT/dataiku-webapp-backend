@@ -1,7 +1,9 @@
 # /api/app.py
+import glob
 from flask import json, request, jsonify
 from services.autoplot import calculate_gr_ma_sh_from_nphi_rhob, calculate_nphi_rhob_intersection
 from services.iqual import calculate_iqual
+from services.normalization import calculate_gr_normalized
 from services.splicing import splice_and_flag_logs
 from services.vsh_dn import calculate_vsh_dn
 from services.rwa import calculate_rwa
@@ -395,55 +397,36 @@ def get_well_columns():
 @app.route('/api/get-log-percentiles', methods=['POST'])
 def get_log_percentiles():
     """
-    Menghitung persentil P5 dan P95.
-    Fleksibel untuk alur Data Prep (menggunakan file_paths) 
-    dan Dashboard (menggunakan selected_wells).
+    Menghitung persentil dinamis untuk SUMUR YANG DIPILIH (selected wells).
+    Endpoint ini menerima `low_percentile` dan `high_percentile` dari payload
+    untuk menentukan persentil mana yang akan dihitung.
     """
     try:
         payload = request.get_json()
+        if not payload:
+            return jsonify({"error": "Request body tidak valid."}), 400
+
+        # --- Ekstrak Parameter dari Payload ---
         log_column = payload.get('log_column')
-        print(f"Received request for log percentiles on column: {log_column}")
+        low_percentile = float(payload.get(
+            'low_percentile', 5.0))   # Default P5
+        high_percentile = float(payload.get(
+            'high_percentile', 95.0))  # Default P95
 
-        if not log_column:
-            return jsonify({"error": "Kolom log harus disediakan."}), 400
+        full_path = payload.get('full_path')
+        selected_wells = payload.get('selected_wells', [])
 
-        paths_to_process = []
+        if not log_column or not full_path or not selected_wells:
+            return jsonify({"error": "Parameter 'log_column', 'full_path', dan 'selected_wells' dibutuhkan."}), 400
 
-        # ALUR 1: DATA PREP -> mengirim 'file_paths' yang berisi path relatif lengkap
-        if 'file_paths' in payload and payload.get('file_paths'):
-            print("Percentile Flow: Data Prep (menggunakan file_paths)")
-            file_paths = payload['file_paths']
-            for path in file_paths:
-                # Buat path absolut yang aman dari DATA_ROOT
-                safe_path = os.path.abspath(
-                    os.path.join(PROJECT_ROOT, path))
-                if safe_path.startswith(DATA_ROOT):
-                    paths_to_process.append(safe_path)
-                else:
-                    print(
-                        f"Peringatan Keamanan: Akses ke path '{path}' ditolak.")
+        # --- Proses File ---
+        base_dir = os.path.abspath(os.path.join(
+            'data', full_path.replace('data/', '')))
+        if not base_dir.startswith(os.path.abspath('data')):
+            return jsonify({"error": f"Akses ke direktori '{full_path}' ditolak."}), 403
 
-        # ALUR 2: DASHBOARD -> mengirim 'selected_wells' (nama) dan 'full_path' (direktori)
-        elif 'selected_wells' in payload and 'full_path' in payload:
-            print("Percentile Flow: Dashboard (menggunakan selected_wells)")
-            selected_wells = payload['selected_wells']
-            # Ini adalah path relatif ke folder data bersih, misal: 'data/wells'
-            full_path = payload['full_path']
-
-            # Buat base_dir yang aman dari DATA_ROOT
-            base_dir = os.path.abspath(
-                os.path.join(PROJECT_ROOT, full_path))
-            if not base_dir.startswith(DATA_ROOT):
-                return jsonify({"error": f"Akses ke direktori '{full_path}' ditolak."}), 403
-
-            paths_to_process = [os.path.join(
-                base_dir, f"{well}.csv") for well in selected_wells]
-
-        else:
-            return jsonify({"error": "Payload tidak valid. Harus berisi 'file_paths' atau 'selected_wells' dan 'full_path'."}), 400
-
-        if not paths_to_process:
-            return jsonify({"error": "Tidak ada file valid yang ditemukan untuk diproses."}), 404
+        paths_to_process = [os.path.join(
+            base_dir, f"{well}.csv") for well in selected_wells]
 
         all_data_frames = []
         for file_path in paths_to_process:
@@ -452,14 +435,14 @@ def get_log_percentiles():
                 all_data_frames.append(df_temp)
             else:
                 print(f"Peringatan: File tidak ditemukan di path: {file_path}")
-                # Jangan hentikan proses jika satu file tidak ada, lewati saja
                 continue
 
         if not all_data_frames:
-            return jsonify({"error": "Data untuk file yang dipilih tidak ditemukan."}), 404
+            return jsonify({"error": "Tidak ada data valid yang ditemukan untuk sumur yang dipilih."}), 404
 
         df = pd.concat(all_data_frames, ignore_index=True)
 
+        # --- Filter Data (Opsional) ---
         selected_intervals = payload.get('selected_intervals', [])
         if selected_intervals and 'MARKER' in df.columns:
             df = df[df['MARKER'].isin(selected_intervals)]
@@ -469,19 +452,88 @@ def get_log_percentiles():
             df = df[df['ZONE'].isin(selected_zones)]
 
         if df.empty or log_column not in df.columns:
-            return jsonify({"error": f"Tidak ada data valid atau kolom '{log_column}' tidak ditemukan."}), 404
+            return jsonify({"error": f"Tidak ada data valid setelah filter atau kolom '{log_column}' tidak ditemukan."}), 404
 
+        # --- Hitung Persentil ---
         log_data = df[log_column].dropna()
-
         if log_data.empty:
-            return jsonify({"error": f"Tidak ada nilai log yang valid di kolom '{log_column}'."}), 404
+            return jsonify({"error": f"Tidak ada nilai numerik yang valid di kolom '{log_column}'."}), 404
 
-        p5_value = np.nanpercentile(log_data, 5)
-        p95_value = np.nanpercentile(log_data, 95)
+        p_low_value = np.nanpercentile(log_data, low_percentile)
+        p_high_value = np.nanpercentile(log_data, high_percentile)
 
         return jsonify({
-            "p5": round(p5_value, 2),
-            "p95": round(p95_value, 2)
+            "p_low": round(p_low_value, 4),
+            "p_high": round(p_high_value, 4)
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/get-folder-percentiles', methods=['POST'])
+def get_folder_percentiles():
+    """
+    Menghitung persentil dinamis untuk SEMUA SUMUR DALAM SATU FOLDER,
+    dengan menerapkan filter interval/zona jika ada.
+    """
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"error": "Request body tidak valid."}), 400
+
+        # --- Ekstrak Parameter dari Payload ---
+        full_path = payload.get('full_path')
+        log_column = payload.get('log_column')
+        low_percentile = float(payload.get('low_percentile', 5.0))
+        high_percentile = float(payload.get('high_percentile', 95.0))
+
+        if not all([full_path, log_column]):
+            return jsonify({"error": "Parameter 'full_path' dan 'log_column' dibutuhkan."}), 400
+
+        # --- Proses File ---
+        base_dir = os.path.abspath(os.path.join(
+            'data', full_path.replace('data/', '')))
+        if not base_dir.startswith(os.path.abspath('data')):
+            return jsonify({"error": f"Akses ke direktori '{full_path}' ditolak."}), 403
+
+        all_files_in_folder = glob.glob(os.path.join(base_dir, '*.csv'))
+        if not all_files_in_folder:
+            return jsonify({"error": f"Tidak ada file .csv yang ditemukan di {full_path}"}), 404
+
+        df_list = [pd.read_csv(f) for f in all_files_in_folder]
+        df_all_wells = pd.concat(df_list, ignore_index=True)
+
+        if log_column not in df_all_wells.columns:
+            return jsonify({"error": f"Kolom '{log_column}' tidak ditemukan pada data di folder tersebut."}), 404
+
+        # --- PENAMBAHAN: Filter Data (Opsional) ---
+        selected_intervals = payload.get('selected_intervals', [])
+        if selected_intervals and 'MARKER' in df_all_wells.columns:
+            df_all_wells = df_all_wells[df_all_wells['MARKER'].isin(
+                selected_intervals)]
+
+        selected_zones = payload.get('selected_zones', [])
+        if selected_zones and 'ZONE' in df_all_wells.columns:
+            df_all_wells = df_all_wells[df_all_wells['ZONE'].isin(
+                selected_zones)]
+
+        if df_all_wells.empty:
+            return jsonify({"error": f"Tidak ada data valid setelah filter pada folder '{full_path}'."}), 404
+
+        # --- Hitung Persentil ---
+        log_data = df_all_wells[log_column].dropna()
+        if log_data.empty:
+            return jsonify({"error": f"Tidak ada data numerik yang valid di kolom '{log_column}' setelah filter."}), 404
+
+        p_low_value = np.nanpercentile(log_data, low_percentile)
+        p_high_value = np.nanpercentile(log_data, high_percentile)
+
+        return jsonify({
+            "p_low_folder": round(p_low_value, 4),
+            "p_high_folder": round(p_high_value, 4)
         })
 
     except Exception as e:
@@ -747,72 +799,42 @@ def run_interval_normalization():
     try:
         payload = request.get_json()
         params = payload.get('params', {})
-        full_path = payload.get('full_path', [])
-        file_paths = payload.get('file_paths', [])
+        full_path = payload.get('full_path')
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
         selected_zones = payload.get('selected_zones', [])
+        isDataPrep = payload.get('isDataPrep', False)
 
-        # If file_paths are not provided, construct them from 'wells'
-        if not file_paths and selected_wells:
-            print("Received 'selected_wells', constructing file paths...")
-            file_paths = [os.path.join(
-                full_path, f"{well_name}.csv") for well_name in selected_wells]
+        if not selected_wells:
+            return jsonify({"error": "No wells were provided to process."}), 400
 
-        if not file_paths:
-            return jsonify({"error": "No wells or file paths were provided to process."}), 400
+        file_paths = [os.path.join(
+            full_path, f"{well_name}.csv") for well_name in selected_wells]
 
         print(f"Mulai normalisasi untuk {len(file_paths)} file...")
-
-        # Ambil parameter normalisasi (logic does not change)
-        log_in_col = params.get('LOG_IN', 'GR')
-        log_out_col = params.get('LOG_OUT', log_in_col)
-        low_ref = float(params.get('LOW_REF', 40))
-        high_ref = float(params.get('HIGH_REF', 140))
-        low_in = float(params.get('LOW_IN', 34))
-        high_in = float(params.get('HIGH_IN', 146))
-        cutoff_min = float(params.get('CUTOFF_MIN', 0.0))
-        cutoff_max = float(params.get('CUTOFF_MAX', 250.0))
-        bins = params.get('BINS', 100)
-        isDataPrep = params.get('isDataPrep', True)
-
         processed_dfs = []
 
         for path in file_paths:
-            # Security check
             safe_path = os.path.abspath(path)
             if not safe_path.startswith(os.path.abspath('data')):
                 print(f"Warning: Access denied for path '{path}'")
                 continue
-
             if not os.path.exists(safe_path):
                 print(f"Peringatan: File di {safe_path} tidak ditemukan.")
                 continue
 
             df = pd.read_csv(safe_path)
 
-            # The handler function now correctly processes both cases:
-            # - If selected_intervals has items, it normalizes by interval.
-            # - If selected_intervals is empty, it normalizes the whole log.
-            df_norm = selective_normalize_handler(
+            # Panggil fungsi normalisasi baru dari normalization.py
+            # Semua parameter yang dibutuhkan ada di dalam 'params'
+            df_norm = calculate_gr_normalized(
                 df=df,
-                log_column=log_in_col,
-                marker_column='MARKER',
-                target_markers=selected_intervals,
-                target_zones=selected_zones,
-                low_ref=low_ref,
-                high_ref=high_ref,
-                low_in=low_in,
-                high_in=high_in,
-                cutoff_min=cutoff_min,
-                cutoff_max=cutoff_max,
-                log_out_col=log_out_col,
-                isDataPrep=isDataPrep,
-                use_bins=True,
-                bins=bins
+                params=params,
+                target_intervals=selected_intervals,
+                target_zones=selected_zones
             )
 
-            # Save the modified data back to the original file
+            # Simpan data yang telah dimodifikasi kembali ke file CSV
             df_norm.to_csv(safe_path, index=False)
             processed_dfs.append(df_norm)
             print(f"Normalisasi selesai untuk {os.path.basename(safe_path)}")

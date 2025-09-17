@@ -2081,6 +2081,13 @@ def get_dns_dnsv_plot():
                     print(
                         "Warning: 'MARKER' column not found, cannot filter by interval.")
 
+            if selected_zones:
+                if 'ZONE' in df.columns:
+                    df = df[df['ZONE'].isin(selected_zones)]
+                else:
+                    print(
+                        "Warning: 'ZONE' column not found, cannot filter by zone.")
+
             if df.empty:
                 return jsonify({"error": "No data available for the selected wells and intervals."}), 404
 
@@ -3869,6 +3876,7 @@ def get_las_curves():
         # General error handler for any other unexpected issues
         return jsonify({'error': f"An unexpected error occurred: {str(e)}"}), 500
 
+
 @app.route('/api/save-las-curve', methods=['POST'])
 def save_las_curve():
     """
@@ -3900,11 +3908,12 @@ def save_las_curve():
         # Ensure DEPTH and the source log exist
         if 'DEPTH' not in las_df.columns or source_log not in las_df.columns:
             return jsonify({"error": f"Required columns ('DEPTH', '{source_log}') not in LAS file."}), 400
-        
+
         # FIXED: Rename the LAS column to the desired output name BEFORE merging
         # This prevents pandas from creating _x and _y suffixes
         las_df_subset = las_df[['DEPTH', source_log]].copy()
-        las_df_subset.rename(columns={source_log: output_log_name}, inplace=True)
+        las_df_subset.rename(
+            columns={source_log: output_log_name}, inplace=True)
 
         # 3. Read the target CSV file
         if not os.path.exists(csv_full_path):

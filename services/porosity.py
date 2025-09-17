@@ -42,6 +42,7 @@ def _klasifikasi_reservoir_numeric(phie):
     else:
         return 1  # Non Prospek
 
+
 def calculate_porosity(
     df: pd.DataFrame,
     params: dict,
@@ -56,8 +57,8 @@ def calculate_porosity(
     # --- Ensure numeric types ---
     for col in ["VSH_LINEAR", "RHOB", "NPHI"]:
         if col in df_processed.columns:
-            df_processed[col] = pd.to_numeric(df_processed[col], errors="coerce")
-
+            df_processed[col] = pd.to_numeric(
+                df_processed[col], errors="coerce")
 
     # --- Masking untuk filter interval/zona (tidak berubah) ---
     mask = pd.Series(True, index=df_processed.index)
@@ -77,7 +78,7 @@ def calculate_porosity(
     RHO_DSH = params.get('rhob_dsh', 2.60)
     NPHI_SH = params.get('nphi_sh', 0.35)
     PHIE_MAX = params.get('phie_max', 0.3)
-    # RHO_MA_BASE = params.get('rhob_ma_base', 2.71) * 1000
+    RHO_MA_BASE = params.get('rhob_ma_base', 2.71) * 1000
     RHO_MAX = params.get('rhob_max', 4.00) * 1000
 
     required_cols = ['RHOB', 'NPHI']

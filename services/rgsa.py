@@ -171,7 +171,7 @@ def calculate_dynamic_gr_cap(df_well: pd.DataFrame, params: Dict) -> pd.DataFram
         chunk = df_filtered.iloc[i:i + npoints]
         if len(chunk) < npoints / 2:
             continue
-        gr_cap_value = chunk[gr_col].quantile(0.98)
+        gr_cap_value = chunk[gr_col].quantile(0.95)
         median_depth = chunk['DEPTH'].median()
         gr_caps.append({'DEPTH': median_depth, 'GR_MAX': gr_cap_value})
     if not gr_caps:

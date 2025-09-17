@@ -11,9 +11,11 @@ def calculate_iqual(df: pd.DataFrame, params: dict, target_intervals: list = Non
     # 1. Ekstrak parameter threshold dari frontend, dengan nilai default
     phie_threshold = float(params.get('PHIE_THRESHOLD', 0.1))
     vsh_threshold = float(params.get('VSH_THRESHOLD', 0.5))
+    vsh = params.get('VSH_LOG', 'VSH_LINEAR')
+    phie = params.get('PHIE_LOG', 'PHIE')
 
     # 2. Validasi kolom input
-    required_cols = ['PHIE', 'VSH']
+    required_cols = [vsh, phie]
     if not all(col in df_processed.columns for col in required_cols):
         raise ValueError(
             "Kolom 'PHIE' dan 'VSH' dibutuhkan untuk kalkulasi IQUAL.")
@@ -41,8 +43,8 @@ def calculate_iqual(df: pd.DataFrame, params: dict, target_intervals: list = Non
 
     # 5. Lakukan perhitungan HANYA pada baris yang cocok dengan mask
     # Buat sub-mask untuk kondisi reservoir di dalam area yang sudah difilter
-    reservoir_condition = (df_processed.loc[mask, 'PHIE'] >= phie_threshold) & \
-                          (df_processed.loc[mask, 'VSH'] <= vsh_threshold)
+    reservoir_condition = (df_processed.loc[mask, phie] >= phie_threshold) & \
+                          (df_processed.loc[mask, vsh] <= vsh_threshold)
 
     # Dapatkan indeks absolut dari baris yang memenuhi kondisi reservoir
     reservoir_indices = df_processed[mask][reservoir_condition].index

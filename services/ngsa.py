@@ -59,7 +59,7 @@ def process_ngsa_for_well(df_well: pd.DataFrame, params: dict, target_intervals:
     for start in range(0, len(df_filtered_gr) - window_size, 20):
         window = df_filtered_gr.iloc[start:start+window_size]
         if len(window) > window_size / 2:
-            gr_cap_value = window[gr_col].quantile(0.98)  # Persentil ke-98
+            gr_cap_value = window[gr_col].quantile(0.95)  # Persentil ke-98
             # Kedalaman representatif
             gr_dep_value = window['DEPTH'].median()
             gr_caps.append({'GR_DEP': gr_dep_value, 'GR_CAP': gr_cap_value})

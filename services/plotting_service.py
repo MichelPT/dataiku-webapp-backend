@@ -87,6 +87,7 @@ data_col = {
     'PHIE_PHIT': ['PHIE', 'PHIT'],
     'RESERVOIR_CLASS': ['RESERVOIR_CLASS'],
     'RWA': ['RWA_FULL', 'RWA_SIMPLE', 'RWA_TAR'],
+    'RWA_INDO': 'RWA_INDO',
     'PHIE': ['PHIE'],
     'RT_GR': ['RT', 'GR', 'RT_NORM', 'GR_NORM_RT'],
     # 'RT_PHIE':['RT','PHIE','RT_NORM', 'PHIE_NORM_RT'],
@@ -191,6 +192,7 @@ unit_col = {
     'PHIE_PHIT': ['', ''],
     'RESERVOIR_CLASS': [''],
     'RWA': ['OHMM', 'OHMM', 'OHMM'],
+    'RWA_INDO': ['OHMM'],
     'PHIE': [''],
     'PHIE_Z4': [''],
     'RT_GR': ['OHMM', 'GAPI', 'OHMM', 'GAPI'],
@@ -288,6 +290,7 @@ color_col = {
     'PHIT_DEN': [colors_dict['red'], colors_dict['orange']],
     'PHIE_PHIT': ['darkblue', colors_dict['red']],
     'RESERVOIR_CLASS': [colors_dict['black']],
+    'RWA_INDO': ['darkgreen'],
     'RWA': ['darkblue', 'darkgreen', colors_dict['red']],
     'PHIE_Z4': ['darkgreen'],
     'PHIE': ['darkgreen'],
@@ -419,7 +422,7 @@ range_col = {
     'PHIT_DEN': [[0, 1], [0, 1]],
     'PHIE_PHIT': [[0, 0.5], [0, 0.5]],
     'PHIE_PHIT_Z4': [[0, 0.5], [0, 0.5]],
-    'RWA': [[0.02, 100], [0.02, 100], [0.02, 100]],
+    'RWA_INDO': [[0.02, 100]],
     'PHIE_Z4': [[0, 0.5]],  # perbaiki seluruh PHIE dan PHIT
     'PHIE': [[0, 0.5]],  # perbaiki seluruh PHIE dan PHIT
     'RT_GR': [[0.02, 2000], [0, 250], [0.02, 2000], [0, 250]],
@@ -516,6 +519,7 @@ ratio_plots = {
     'PHIE_Z4': 1,
     'PHIE_PHIT_Z4': 1,
     'RESERVOIR_CLASS': 0.5,
+    'RWA_INDO': 1,
     'RWA': 1,
     'PHIE': 1,
     'RT_GR': 1,
@@ -2124,7 +2128,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['RT_RO', 'PERM', 'RWAPP_RW', 'RT_F', 'RT_RHOB', 'RT_RGSA', 'RT', 'RT_GR', 'RT_PHIE', 'TGC', 'RWA', 'RLA5', 'R39PC']:
+            elif key in ['RT_RO', 'PERM', 'RWAPP_RW', 'RT_F', 'RT_RHOB', 'RT_RGSA', 'RT', 'RT_GR', 'RT_PHIE', 'TGC', 'RWA', 'RLA5', 'R39PC', 'RWA_INDO']:
                 a = range_col[key][0][0]
                 b = range_col[key][0][1]
                 arr = log_tickvals(a, b)
@@ -2720,6 +2724,9 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
         elif col == 'RWA':
             fig, axes, counter = plot_three_features_simple(
                 df, fig, axes, col, n_seq, counter, subplot_col, log_scale=True)
+        elif col == 'RWA_INDO':
+            fig, axes = plot_line(
+                df, fig, axes, base_key='RWA_INDO', n_seq=n_seq, type="log", col=col, label=col)
 
         # RGSA-NGSA-DGSA
         elif col == 'RT_RGSA':

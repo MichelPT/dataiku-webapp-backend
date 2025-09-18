@@ -34,7 +34,7 @@ def calculate_rwa(df: pd.DataFrame, params: dict, target_intervals: list = None,
     # Ambil nama log dinamis
     rt_log = params.get('RT', 'RT')
     phie_log = params.get('PHIE', 'PHIE')
-    vsh_log = params.get('VSH', 'VSH')
+    vsh_log = params.get('VSH', 'VSH_LINEAR')
     ftemp_log = params.get('FTEMP', 'FTEMP')
 
     # Ambil nama log output dinamis

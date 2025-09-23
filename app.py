@@ -56,6 +56,7 @@ from services.structures_service import get_fields_list, get_field_structures, g
 from services.folder_nav_service import get_structure_wells_folders, get_well_folder_files
 from services.module1_service import get_module1_plot_data
 from services.fill_missing import fill_flagged_values, flag_missing_values, flag_missing_values
+from services.ml_imputer import run_ml_imputation_for_well
 
 from typing import Optional
 import numpy as np
@@ -3589,35 +3590,104 @@ def flag_missing_route():
         return jsonify({"error": str(e)}), 500
 
 
+# @app.route('/api/fill-flagged-missing', methods=['POST'])
+# def fill_flagged_route():
+#     """
+#     Endpoint untuk Tahap 2: Mengisi nilai yang sudah ditandai.
+#     Sekarang menggunakan helper untuk menangani path.
+#     """
+#     try:
+#         payload = request.get_json()
+#         logs_to_fill = payload.get('logs_to_fill', [])
+#         max_consecutive = payload.get('max_consecutive_nan', 3)
+#         isDataPrep = payload.get('isDataPrep', True)
+
+#         if not logs_to_fill:
+#             return jsonify({"error": "Log harus dipilih."}), 400
+
+#         # Gunakan helper yang sama untuk mendapatkan daftar path
+#         file_paths = resolve_paths(payload)
+
+#         if not file_paths:
+#             return jsonify({"error": "Tidak ada file valid yang ditemukan untuk diproses."}), 400
+
+#         for path in file_paths:
+#             df = pd.read_csv(path)
+#             df_filled = fill_flagged_values(
+#                 df, logs_to_fill, max_consecutive, isDataPrep)
+#             df_filled.to_csv(path, index=False)
+
+#         return jsonify({"message": f"Fill missing process complete for {len(file_paths)} file(s)."}), 200
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
 @app.route('/api/fill-flagged-missing', methods=['POST'])
 def fill_flagged_route():
     """
-    Endpoint untuk Tahap 2: Mengisi nilai yang sudah ditandai.
-    Sekarang menggunakan helper untuk menangani path.
+    Endpoint untuk Tahap 2: Mengisi nilai yang hilang menggunakan imputasi Machine Learning.
     """
     try:
         payload = request.get_json()
+        full_path = payload.get('full_path')
+        selected_wells = payload.get('selected_wells', [])
         logs_to_fill = payload.get('logs_to_fill', [])
-        max_consecutive = payload.get('max_consecutive_nan', 3)
-        isDataPrep = payload.get('isDataPrep', True)
 
-        if not logs_to_fill:
-            return jsonify({"error": "Log harus dipilih."}), 400
+        # Anda bisa menambahkan parameter well_count jika ingin fleksibel dari frontend
+        neighbor_count = payload.get('neighbor_count', 5)
 
-        # Gunakan helper yang sama untuk mendapatkan daftar path
-        file_paths = resolve_paths(payload)
+        if not all([full_path, selected_wells, logs_to_fill]):
+            return jsonify({"error": "Parameter 'full_path', 'selected_wells', dan 'logs_to_fill' dibutuhkan."}), 400
 
-        if not file_paths:
-            return jsonify({"error": "Tidak ada file valid yang ditemukan untuk diproses."}), 400
+        # --- Integrasi Logika ML ---
 
-        for path in file_paths:
-            df = pd.read_csv(path)
-            df_filled = fill_flagged_values(
-                df, logs_to_fill, max_consecutive, isDataPrep)
-            df_filled.to_csv(path, index=False)
+        # 1. Tentukan path dan muat data koordinat
+        base_dir = os.path.abspath(os.path.join(
+            'data', full_path.replace('data/', '')))
+        coord_path = os.path.join('data', 'coord.csv')
 
-        return jsonify({"message": f"Fill missing process complete for {len(file_paths)} file(s)."}), 200
+        if not os.path.exists(coord_path):
+            return jsonify({"error": "File 'data/coord.csv' tidak ditemukan."}), 500
+
+        df_coord = pd.read_csv(coord_path)
+
+        df_coord['LAT'] = pd.to_numeric(df_coord['LAT'], errors='coerce')
+        df_coord['LONG'] = pd.to_numeric(df_coord['LONG'], errors='coerce')
+
+        df_coord.dropna(subset=['LAT', 'LONG'], inplace=True)
+
+        processed_count = 0
+        for well_filename in selected_wells:
+            target_path = os.path.join(base_dir, (well_filename + '.csv'))
+
+            if not os.path.exists(target_path):
+                print(
+                    f"Peringatan: File {target_path} tidak ditemukan. Melewati...")
+                continue
+
+            # Panggil fungsi utama dari ml_imputer
+            df_filled = run_ml_imputation_for_well(
+                target_well_path=target_path,
+                logs_to_fill=logs_to_fill,
+                coord_df=df_coord,
+                well_count=neighbor_count
+            )
+
+            # Simpan hasil ke file baru dengan sufiks '_FM'
+            new_filename = well_filename.replace('.csv', '_FM.csv')
+            save_path = os.path.join(base_dir, new_filename)
+            df_filled.to_csv(save_path, index=False)
+            processed_count += 1
+
+        if processed_count == 0:
+            return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 404
+
+        return jsonify({
+            "message": f"Proses imputasi ML selesai untuk {processed_count} sumur. File baru dengan sufiks '_FM.csv' telah dibuat."
+        }), 200
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 

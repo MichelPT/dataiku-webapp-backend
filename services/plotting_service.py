@@ -3351,7 +3351,7 @@ def plot_rwa_indo(df):
     filtered_sequence = [
         col for col in marker_zone_sequence if col in df.columns]
     sequence_rwa = filtered_sequence + ['GR',
-                                        'RT', 'NPHI_RHOB', 'VSH', 'PHIE', 'RWA']
+                                        'RT', 'NPHI_RHOB', 'VSH', 'PHIE', 'RWA_INDO']
     fig, fig_header = main_plot(df, sequence_rwa, title="Water Resistivity")
     return fig, fig_header
 

@@ -134,7 +134,7 @@ data_col = {
     'GR_CAL_FM': ['GR_CAL_FM'], 'DGRCC_FM': ['DGRCC_FM'], 'RLA5_FM': ['RLA5_FM'],
     'R39PC_FM': ['R39PC_FM'], 'A40H_FM': ['A40H_FM'], 'ARM48PC_FM': ['ARM48PC_FM'],
     'RHOZ_FM': ['RHOZ_FM'], 'ALCDLC_FM': ['ALCDLC_FM'], 'ROBB_FM': ['ROBB_FM'],
-    'TNPH_FM': ['TNPH_FM'], 'TNPL_FM': ['TNPL_FM'],
+    'TNPH_FM': ['TNPH_FM'], 'TNPL_FM': ['TNPL_FM'], 'GR_FM': ['GR_FM'],
     'MISSING_FLAG': ['MISSING_FLAG']
 }
 
@@ -235,7 +235,7 @@ unit_col = {
     # Filled Missing (_FM)
     'GR_CAL_FM': ['GAPI'], 'DGRCC_FM': ['GAPI'], 'RLA5_FM': ['OHMM'], 'R39PC_FM': ['OHMM'],
     'A40H_FM': ['OHMM'], 'ARM48PC_FM': ['OHMM'], 'RHOZ_FM': ['G/C3'], 'ALCDLC_FM': ['G/C3'],
-    'ROBB_FM': ['G/C3'], 'TNPH_FM': ['V/V'], 'TNPL_FM': ['V/V'],
+    'ROBB_FM': ['G/C3'], 'TNPH_FM': ['V/V'], 'TNPL_FM': ['V/V'], 'GR_FM': ['GAPI'],
     'MISSING_FLAG': ['']
 }
 
@@ -312,7 +312,7 @@ color_col = {
     'C3_C1_BASELINE': [colors_dict['black']],
     'GR_CAL': ['darkblue'],         # Sama seperti GR
     'DGRCC': ['darkblue'],
-    'DGRCC_GR_CAL': ['#FF0000', "#FFD014"],
+    'DGRCC_GR_CAL': ['#FF0000', "blue"],
     'DGRCC_DM': ['#FF0000', 'darkblue'],          # Sama seperti GR
     'RLA5': [colors_dict['red']],   # Sama seperti RT
     'A40H': [colors_dict['red']],   # Sama seperti RT
@@ -336,7 +336,7 @@ color_col = {
     # Filled Missing (_FM) - Magenta
     'GR_CAL_FM': ['magenta'], 'DGRCC_FM': ['magenta'], 'RLA5_FM': ['magenta'], 'R39PC_FM': ['magenta'],
     'A40H_FM': ['magenta'], 'ARM48PC_FM': ['magenta'], 'RHOZ_FM': ['magenta'], 'ALCDLC_FM': ['magenta'],
-    'ROBB_FM': ['magenta'], 'TNPH_FM': ['magenta'], 'TNPL_FM': ['magenta'],
+    'ROBB_FM': ['magenta'], 'TNPH_FM': ['magenta'], 'TNPL_FM': ['magenta'], 'GR_FM': ['magenta'],
     'MISSING_FLAG': [colors_dict['black']]
 }
 
@@ -465,7 +465,8 @@ range_col = {
     'TNPH_FM': [[0.6, 0]], 'TNPL_FM': [[0.6, 0]],
     'DGRCC_DM': [[0, 250], [0, 250]],
     'DGRCC_GR_CAL': [[0, 250], [0, 250]],
-    'MISSING_FLAG': [[0, 2]]
+    'MISSING_FLAG': [[0, 2]],
+    'GR_FM': [[0, 250]],
 }
 
 ratio_plots = {
@@ -557,7 +558,7 @@ ratio_plots = {
     'ARM48PC_SM': 1, 'RHOZ_SM': 1, 'ALCDLC_SM': 1, 'ROBB_SM': 1, 'TNPH_SM': 1, 'TNPL_SM': 1,
     'GR_CAL_FM': 1, 'DGRCC_FM': 1, 'RLA5_FM': 1, 'R39PC_FM': 1, 'A40H_FM': 1,
     'ARM48PC_FM': 1, 'RHOZ_FM': 1, 'ALCDLC_FM': 1, 'ROBB_FM': 1, 'TNPH_FM': 1, 'TNPL_FM': 1,
-    'MISSING_FLAG': 1
+    'MISSING_FLAG': 1, 'GR_FM': 1,
 }
 
 flags_name = {
@@ -2832,7 +2833,7 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             'GR_CAL_NO', 'DGRCC_NO',
             'GR_CAL_TR', 'DGRCC_TR',
             'GR_CAL_SM', 'DGRCC_SM',
-            'GR_CAL_FM', 'DGRCC_FM'
+            'GR_CAL_FM', 'DGRCC_FM', 'GR_FM'
         ]:
             fig, axes = plot_line(
                 df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)

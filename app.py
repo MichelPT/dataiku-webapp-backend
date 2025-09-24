@@ -3672,17 +3672,14 @@ def fill_flagged_route():
                 well_count=neighbor_count
             )
 
-            # Simpan hasil ke file baru dengan sufiks '_FM'
-            new_filename = well_filename.replace('.csv', '_FM.csv')
-            save_path = os.path.join(base_dir, new_filename)
-            df_filled.to_csv(save_path, index=False)
+            df_filled.to_csv(target_path, index=False)
             processed_count += 1
 
         if processed_count == 0:
             return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 404
 
         return jsonify({
-            "message": f"Proses imputasi ML selesai untuk {processed_count} sumur. File baru dengan sufiks '_FM.csv' telah dibuat."
+            "message": f"Proses imputasi ML selesai untuk {processed_count} sumur. Kolom baru dengan sufiks '_FM' telah ditambahkan ke file asli."
         }), 200
 
     except Exception as e:

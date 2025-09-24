@@ -85,7 +85,7 @@ def rank_dist(ref_well_name, all_wells_df, well_count):
 
 #     return models
 
-def train_rf_models(df, n_est=50, random_state=1337):
+def train_rf_models(df, available_features, n_est=50, random_state=1337):
     """
     Melatih model Random Forest untuk setiap kolom,
     sekaligus mengevaluasi kinerjanya dengan train-test split.
@@ -96,36 +96,29 @@ def train_rf_models(df, n_est=50, random_state=1337):
 
     for target_col in df.columns:
         if pd.api.types.is_numeric_dtype(df[target_col]) and target_col != 'DEPTH':
-            features = [col for col in df.columns if pd.api.types.is_numeric_dtype(
-                df[col]) and col != target_col]
+            features = [f for f in available_features if f != target_col]
             train_data = df[[target_col] + features].dropna()
 
-            if len(train_data) < 50:  # Butuh data yang cukup untuk evaluasi
+            if len(train_data) < 50:
                 continue
 
             X = train_data[features]
             y = train_data[target_col]
 
-            # --- EVALUASI DITAMBAHKAN DISINI ---
-            # 1. Bagi data menjadi 80% untuk training dan 20% untuk testing
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, random_state=random_state
             )
 
-            # 2. Latih model HANYA menggunakan data training
             model = RandomForestRegressor(
                 n_estimators=n_est, random_state=random_state, n_jobs=-1)
             model.fit(X_train, y_train)
 
-            # 3. Lakukan prediksi pada data testing
             y_pred = model.predict(X_test)
 
-            # 4. Hitung metrik evaluasi
             r2 = r2_score(y_test, y_pred)
             mae = mean_absolute_error(y_test, y_pred)
             rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
-            # 5. Simpan model dan hasil evaluasinya
             models[target_col] = {
                 'model': model,
                 'features': features,
@@ -135,13 +128,14 @@ def train_rf_models(df, n_est=50, random_state=1337):
                     'rmse': rmse
                 }
             }
-            # --- AKHIR BAGIAN EVALUASI ---
 
     return models
 
 
 def predict_missing_values(df, models, logs_to_fill):
-    """Memprediksi nilai yang hilang menggunakan model yang sudah dilatih."""
+    """
+    Memprediksi nilai yang hilang. Fitur dijamin sudah cocok.
+    """
     df_filled = df.copy()
 
     for log in logs_to_fill:
@@ -152,9 +146,9 @@ def predict_missing_values(df, models, logs_to_fill):
 
         model_info = models[log]
         model = model_info['model']
+        # Fitur dari model sekarang dijamin ada di dataframe 'df'
         features = model_info['features']
 
-        # Cari baris di mana log targetnya NaN, tapi semua fiturnya lengkap
         mask_missing = df_filled[log].isna(
         ) & df_filled[features].notna().all(axis=1)
 
@@ -166,8 +160,11 @@ def predict_missing_values(df, models, logs_to_fill):
         if X_to_predict.empty:
             continue
 
+        new_col_name = f"{log}_FM"
+        df_filled[new_col_name] = df_filled[log]
+
         predicted_values = model.predict(X_to_predict)
-        df_filled.loc[mask_missing, log] = predicted_values
+        df_filled.loc[mask_missing, new_col_name] = predicted_values
 
     return df_filled
 
@@ -187,11 +184,11 @@ def run_ml_imputation_for_well(target_well_path, logs_to_fill, coord_df, well_co
     print(
         f"Memulai proses imputasi ML untuk: {os.path.basename(target_well_path)}")
 
-    # 1. Muat data sumur target
+    # Muat data sumur target
     df_target = pd.read_csv(target_well_path)
     target_well_name = os.path.basename(target_well_path).replace('.csv', '')
 
-    # 2. Cari sumur tetangga terdekat
+    # Cari sumur tetangga terdekat
     neighbor_wells = rank_dist(target_well_name, coord_df, well_count)
     if not neighbor_wells:
         print(
@@ -200,7 +197,7 @@ def run_ml_imputation_for_well(target_well_path, logs_to_fill, coord_df, well_co
 
     print(f"Sumur tetangga ditemukan: {neighbor_wells}")
 
-    # 3. Muat data training dari sumur tetangga
+    # Muat data training dari sumur tetangga
     base_dir = os.path.dirname(target_well_path)
     training_dfs = []
     for well in neighbor_wells:
@@ -214,9 +211,19 @@ def run_ml_imputation_for_well(target_well_path, logs_to_fill, coord_df, well_co
 
     df_training = pd.concat(training_dfs, ignore_index=True)
 
-    # 4. Latih model
+    train_cols = df_training.columns
+    target_cols = df_target.columns
+    common_features = train_cols.intersection(target_cols).tolist()
+
+    # Pastikan hanya fitur numerik yang dipakai
+    common_numeric_features = [
+        col for col in common_features if pd.api.types.is_numeric_dtype(df_training[col])
+    ]
+    print(
+        f"Fitur yang akan digunakan untuk training & prediksi: {common_numeric_features}")
+
     print("Melatih model Random Forest...")
-    models = train_rf_models(df_training)
+    models = train_rf_models(df_training, common_numeric_features)
 
     print("\n--- Hasil Evaluasi Kinerja Model (dari data tetangga) ---")
     if not models:

@@ -878,7 +878,22 @@ def run_depth_matching(ref_path: str, lwd_path: str, ref_curve: str, lwd_curve: 
 
     # 3. Penyesuaian Nilai (Sumbu X)
     print("\n>>> TAHAP 2: Menyesuaikan nilai (sumbu X)...")
-    final_aligned_curve = scale_curve_to_reference(ref_data, cow_aligned_curve)
+
+    # -----------
+    # Robust Scaler
+    # -----------
+    final_aligned_curve = scale_curve_globally(ref_data, cow_aligned_curve)
+
+    # -----------
+    # Z-Score Scaler
+    # -----------
+    # final_aligned_curve = scale_curve_locally(ref_data, cow_aligned_curve)
+
+    # -----------
+    # Hybrid Scaler
+    # -----------
+    # final_aligned_curve = scale_curve_to_reference(ref_data, cow_aligned_curve)
+
     evaluate_performance(ref_data, final_aligned_curve,
                          initial_lwd_on_ref_depth, "Hasil Akhir (Setelah Penyesuaian Nilai)")
 
@@ -901,3 +916,83 @@ def run_depth_matching(ref_path: str, lwd_path: str, ref_curve: str, lwd_curve: 
 
     print("=== Proses Depth Matching Selesai ===")
     return result_df.dropna(subset=[ref_curve])
+
+
+# ====================
+# METODE ROBUST SCALER
+# =====================
+def scale_curve_globally(reference_curve: np.ndarray, curve_to_scale: np.ndarray) -> np.ndarray:
+    """
+    Menyesuaikan nilai kurva menggunakan satu faktor skala global yang robust (Median/MAD).
+    Metode ini stabil dan tidak mudah terpengaruh oleh outlier.
+
+    Args:
+        reference_curve (np.ndarray): Kurva referensi.
+        curve_to_scale (np.ndarray): Kurva yang nilainya akan disesuaikan.
+
+    Returns:
+        np.ndarray: Versi 'curve_to_scale' yang nilainya telah disesuaikan secara global.
+    """
+    # Menggunakan statistik robust (median dan MAD) untuk stabilitas
+    source_median = np.median(curve_to_scale)
+    target_median = np.median(reference_curve)
+
+    source_mad = np.median(np.abs(curve_to_scale - source_median))
+    target_mad = np.median(np.abs(reference_curve - target_median))
+
+    # Hindari pembagian dengan nol
+    if source_mad == 0 or target_mad == 0:
+        return curve_to_scale
+
+    # Terapkan rumus penskalaan robust
+    scaled_curve = target_median + \
+        (curve_to_scale - source_median) * (target_mad / source_mad)
+    return scaled_curve
+
+# ====================
+# METODE Z-SCORE SCALER
+# =====================
+
+
+def scale_curve_locally(reference_curve: np.ndarray, curve_to_scale: np.ndarray, window_size: int = 51) -> np.ndarray:
+    """
+    Menyesuaikan nilai kurva secara dinamis menggunakan metode moving window (Z-Score lokal).
+    Metode ini sangat adaptif terhadap perubahan kondisi di sepanjang kurva.
+
+    Args:
+        reference_curve (np.ndarray): Kurva referensi.
+        curve_to_scale (np.ndarray): Kurva yang nilainya akan disesuaikan.
+        window_size (int): Ukuran jendela geser untuk analisis lokal.
+
+    Returns:
+        np.ndarray: Versi 'curve_to_scale' yang nilainya telah disesuaikan secara lokal.
+    """
+    if window_size % 2 == 0:
+        window_size += 1
+
+    source_s = pd.Series(curve_to_scale)
+    target_s = pd.Series(reference_curve)
+
+    # Statistik lokal (moving window)
+    source_mean = source_s.rolling(
+        window=window_size, center=True, min_periods=1).mean()
+    target_mean = target_s.rolling(
+        window=window_size, center=True, min_periods=1).mean()
+    source_std = source_s.rolling(
+        window=window_size, center=True, min_periods=1).std()
+    target_std = target_s.rolling(
+        window=window_size, center=True, min_periods=1).std()
+
+    # Fallback ke statistik global jika std lokal adalah nol atau NaN
+    global_source_std = np.std(curve_to_scale)
+    global_target_std = np.std(reference_curve)
+    source_std.fillna(global_source_std, inplace=True)
+    target_std.fillna(global_target_std, inplace=True)
+    source_std.replace(0, global_source_std, inplace=True)
+    target_std.replace(0, global_target_std, inplace=True)
+
+    # Terapkan rumus Z-Score lokal
+    local_scaled = target_mean + \
+        (source_s - source_mean) * (target_std / source_std)
+
+    return local_scaled.values

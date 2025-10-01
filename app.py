@@ -618,6 +618,66 @@ def get_gr_ma_sh_defaults():
     except Exception as e:
         return jsonify({"error": f"Terjadi kesalahan internal: {str(e)}"}), 500
 
+# Tambahkan ini di dalam app.py
+
+
+@app.route('/api/get-default-rtsh', methods=['POST'])
+def get_default_rtsh():
+    """
+    Endpoint untuk menghitung nilai RT_SH default dari sumur yang dipilih.
+    """
+    try:
+        payload = request.get_json()
+        selected_wells = payload.get('selected_wells', [])
+        full_path = payload.get('full_path', '')
+
+        if not selected_wells:
+            # Jika tidak ada sumur, kembalikan nilai default standar
+            return jsonify({"default_rt_sh": 2.2})
+
+        # --- Logika Perhitungan ---
+        all_well_data = []
+        for well_name in selected_wells:
+            file_path = os.path.join(full_path, f"{well_name}.csv")
+            if os.path.exists(file_path):
+                # Baca data dari setiap sumur yang ada
+                df_well = pd.read_csv(file_path, on_bad_lines='warn')
+                all_well_data.append(df_well)
+
+        if not all_well_data:
+            # Jika file dari sumur yang dipilih tidak ada, kembalikan default
+            return jsonify({"default_rt_sh": 2.2})
+
+        # 1. Gabungkan semua data dari sumur yang dipilih menjadi satu DataFrame
+        combined_df = pd.concat(all_well_data, ignore_index=True)
+
+        # 2. Filter data di mana VSH > cutoff
+        # CATATAN: VSH (V/V) biasanya antara 0-1. Cutoff '5' tidak mungkin.
+        # Saya asumsikan maksud Anda adalah VSH > 0.5 (50%). Anda bisa ubah nilai ini.
+        VSH_SHALE_CUTOFF = 0.5
+        shale_zones_df = combined_df[combined_df['VSH_LINEAR']
+                                     > VSH_SHALE_CUTOFF]
+
+        # 3. Hitung nilai rata-rata (mean) dari kolom RT pada data yang sudah difilter
+        if not shale_zones_df.empty and 'RT' in shale_zones_df.columns:
+            # Hitung rata-rata jika ada data shale
+            rt_sh_mean = shale_zones_df['RT'].mean()
+        else:
+            # Jika tidak ada zona shale yang ditemukan, gunakan default standar
+            rt_sh_mean = 2.2
+
+        # 4. Periksa apakah hasilnya valid, jika tidak, kembalikan default
+        if pd.isna(rt_sh_mean):
+            rt_sh_mean = 2.2
+
+        # Kembalikan hasilnya dalam format JSON, dibulatkan untuk kebersihan
+        return jsonify({"default_rt_sh": round(rt_sh_mean, 4)})
+
+    except Exception as e:
+        print(f"Error calculating default RT_SH: {e}")
+        # Jika terjadi error, kembalikan saja nilai default standar
+        return jsonify({"default_rt_sh": 2.2})
+
 # PLOT AND CALCULATION API
 
 

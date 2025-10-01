@@ -792,6 +792,71 @@ def list_wells():
         return jsonify({"error": str(e)}), 500
 
 
+# @app.route('/api/run-interval-normalization', methods=['POST', 'OPTIONS'])
+# def run_interval_normalization():
+#     if request.method == 'OPTIONS':
+#         return jsonify({'status': 'ok'}), 200
+
+#     try:
+#         payload = request.get_json()
+#         params = payload.get('params', {})
+#         full_path = payload.get('full_path')
+#         selected_wells = payload.get('selected_wells', [])
+#         selected_intervals = payload.get('selected_intervals', [])
+#         selected_zones = payload.get('selected_zones', [])
+#         isDataPrep = payload.get('isDataPrep', False)
+
+#         if not selected_wells:
+#             return jsonify({"error": "No wells were provided to process."}), 400
+
+#         file_paths = [os.path.join(
+#             full_path, f"{well_name}.csv") for well_name in selected_wells]
+
+#         print(f"Mulai normalisasi untuk {len(file_paths)} file...")
+#         processed_dfs = []
+
+#         for path in file_paths:
+#             safe_path = os.path.abspath(path)
+#             if not safe_path.startswith(os.path.abspath('data')):
+#                 print(f"Warning: Access denied for path '{path}'")
+#                 continue
+#             if not os.path.exists(safe_path):
+#                 print(f"Peringatan: File di {safe_path} tidak ditemukan.")
+#                 continue
+
+#             df = pd.read_csv(safe_path)
+
+#             # Panggil fungsi normalisasi baru dari normalization.py
+#             # Semua parameter yang dibutuhkan ada di dalam 'params'
+#             df_norm = calculate_gr_normalized(
+#                 df=df,
+#                 params=params,
+#                 target_intervals=selected_intervals,
+#                 target_zones=selected_zones
+#             )
+
+#             # Simpan data yang telah dimodifikasi kembali ke file CSV
+#             df_norm.to_csv(safe_path, index=False)
+#             processed_dfs.append(df_norm)
+#             print(f"Normalisasi selesai untuk {os.path.basename(safe_path)}")
+
+#         if not processed_dfs:
+#             return jsonify({"error": "Tidak ada file yang berhasil diproses."}), 400
+
+#         final_df = pd.concat(processed_dfs, ignore_index=True)
+#         result_json = final_df.to_json(orient='records')
+
+#         return jsonify({
+#             "message": f"Normalisasi selesai untuk {len(processed_dfs)} file.",
+#             "data": result_json
+#         })
+
+#     except Exception as e:
+#         import traceback
+#         traceback.print_exc()
+#         return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/run-interval-normalization', methods=['POST', 'OPTIONS'])
 def run_interval_normalization():
     if request.method == 'OPTIONS':
@@ -804,7 +869,6 @@ def run_interval_normalization():
         selected_wells = payload.get('selected_wells', [])
         selected_intervals = payload.get('selected_intervals', [])
         selected_zones = payload.get('selected_zones', [])
-        isDataPrep = payload.get('isDataPrep', False)
 
         if not selected_wells:
             return jsonify({"error": "No wells were provided to process."}), 400
@@ -812,8 +876,13 @@ def run_interval_normalization():
         file_paths = [os.path.join(
             full_path, f"{well_name}.csv") for well_name in selected_wells]
 
-        print(f"Mulai normalisasi untuk {len(file_paths)} file...")
+        print(f"Mulai normalisasi individual untuk {len(file_paths)} file...")
         processed_dfs = []
+
+        # Ekstrak parameter yang akan digunakan untuk menghitung persentil
+        log_column = params.get('LOG_IN', 'GR')
+        low_percentile = float(params.get('LOW_IN', 5.0))
+        high_percentile = float(params.get('HIGH_IN', 95.0))
 
         for path in file_paths:
             safe_path = os.path.abspath(path)
@@ -826,14 +895,58 @@ def run_interval_normalization():
 
             df = pd.read_csv(safe_path)
 
-            # Panggil fungsi normalisasi baru dari normalization.py
-            # Semua parameter yang dibutuhkan ada di dalam 'params'
+            # --- PERUBAHAN UTAMA DIMULAI DI SINI ---
+
+            # 1. Buat salinan DataFrame untuk difilter
+            df_filtered = df.copy()
+
+            # 2. Terapkan filter interval dan zona PADA SUMUR INI SAJA
+            if selected_intervals and 'MARKER' in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered['MARKER'].isin(
+                    selected_intervals)]
+
+            if selected_zones and 'ZONE' in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered['ZONE'].isin(
+                    selected_zones)]
+
+            if df_filtered.empty or log_column not in df_filtered.columns:
+                print(
+                    f"Peringatan: Tidak ada data yang cocok dengan filter untuk {os.path.basename(safe_path)}. Melewati sumur ini.")
+                # Tetap proses sumur lain, jangan hentikan semuanya
+                # Tambahkan df original jika tidak ada yg bisa dinormalisasi
+                processed_dfs.append(df)
+                continue
+
+            # 3. Hitung persentil spesifik UNTUK SUMUR INI
+            log_data = df_filtered[log_column].dropna()
+            if log_data.empty:
+                print(
+                    f"Peringatan: Tidak ada data log valid untuk {os.path.basename(safe_path)}. Melewati sumur ini.")
+                processed_dfs.append(df)
+                continue
+
+            well_specific_pct_low_old = np.nanpercentile(
+                log_data, low_percentile)
+            well_specific_pct_high_old = np.nanpercentile(
+                log_data, high_percentile)
+
+            # 4. Buat salinan parameter dan update dengan nilai persentil sumur ini
+            current_params = params.copy()
+            current_params['PCT_LOW_OLD'] = well_specific_pct_low_old
+            current_params['PCT_HIGH_OLD'] = well_specific_pct_high_old
+
+            print(
+                f"  - Menjalankan normalisasi untuk {os.path.basename(safe_path)} dengan PCT_OLD: {well_specific_pct_low_old:.2f} & {well_specific_pct_high_old:.2f}")
+
+            # 5. Panggil fungsi normalisasi dengan parameter yang sudah disesuaikan
             df_norm = calculate_gr_normalized(
-                df=df,
-                params=params,
+                df=df,  # Gunakan df original agar normalisasi diterapkan ke semua data, bukan hanya yg difilter
+                params=current_params,  # Gunakan parameter yang sudah di-update
                 target_intervals=selected_intervals,
                 target_zones=selected_zones
             )
+
+            # --- AKHIR DARI PERUBAHAN UTAMA ---
 
             # Simpan data yang telah dimodifikasi kembali ke file CSV
             df_norm.to_csv(safe_path, index=False)
@@ -847,7 +960,7 @@ def run_interval_normalization():
         result_json = final_df.to_json(orient='records')
 
         return jsonify({
-            "message": f"Normalisasi selesai untuk {len(processed_dfs)} file.",
+            "message": f"Normalisasi individual selesai untuk {len(processed_dfs)} file.",
             "data": result_json
         })
 

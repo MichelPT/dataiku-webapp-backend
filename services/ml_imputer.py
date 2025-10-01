@@ -106,7 +106,7 @@ def train_rf_models(df, available_features, n_est=50, random_state=1337):
             y = train_data[target_col]
 
             X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=random_state
+                X, y, test_size=0.3, random_state=random_state
             )
 
             model = RandomForestRegressor(

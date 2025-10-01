@@ -706,6 +706,15 @@ def _import_cow():
             "Pastikan file 'utils/cow_fixed.py' ada untuk menggunakan fungsi COW.")
 
 
+# def smooth_curve(curve_data: np.ndarray, window_size: int = 5) -> np.ndarray:
+#     """Menghaluskan data kurva menggunakan metode moving average."""
+#     if window_size % 2 == 0:
+#         window_size += 1
+#     smoothed_series = pd.Series(curve_data).rolling(
+#         window=window_size, center=True, min_periods=1
+#     ).mean()
+#     return smoothed_series.values
+
 def smooth_curve(curve_data: np.ndarray, window_size: int = 5) -> np.ndarray:
     """
     Menghaluskan data kurva menggunakan filter Savitzky-Golay untuk mengurangi noise
@@ -717,97 +726,83 @@ def smooth_curve(curve_data: np.ndarray, window_size: int = 5) -> np.ndarray:
     # polyorder=2 adalah standar yang baik untuk kurva log
     return savgol_filter(curve_data, window_length=window_size, polyorder=2)
 
+# --- FUNGSI BARU: DTW Per Potongan (Chunking) ---
 
-def align_curve_with_dtw(reference_curve: np.ndarray, curve_to_align: np.ndarray,
-                         ref_depths: np.ndarray, align_depths: np.ndarray) -> np.ndarray:
+
+def align_curve_with_chunking_dtw(ref_df_proc: pd.DataFrame, lwd_df_proc: pd.DataFrame,
+                                  ref_curve: str, lwd_curve: str, num_chunks: int) -> pd.DataFrame:
     """
-    Menyelaraskan kedalaman (sumbu Y) dari 'curve_to_align' ke 'reference_curve'
-    menggunakan DTW dengan metode yang stabil dan robust.
+    Menyelaraskan kurva menggunakan metode DTW yang dipecah menjadi beberapa potongan (chunks).
     """
     from dtaidistance import dtw
     from scipy.interpolate import interp1d
 
-    norm_ref = (reference_curve - np.median(reference_curve)) / \
-        (np.median(np.abs(reference_curve - np.median(reference_curve))) * 1.4826)
-    norm_align = (curve_to_align - np.median(curve_to_align)) / \
-        (np.median(np.abs(curve_to_align - np.median(curve_to_align))) * 1.4826)
+    N_ref, N_lwd = len(ref_df_proc), len(lwd_df_proc)
+    ref_chunk_size, lwd_chunk_size = N_ref // num_chunks, N_lwd // num_chunks
+    all_chunks = []
 
-    path = dtw.warping_path(norm_align, norm_ref)
+    for i in range(num_chunks):
+        ref_start = i * ref_chunk_size
+        ref_end = N_ref if i == num_chunks - 1 else (i + 1) * ref_chunk_size
+        ref_chunk = ref_df_proc.iloc[ref_start:ref_end]
 
-    ref_depths_from_path = ref_depths[[p[1] for p in path]]
-    align_depths_from_path = align_depths[[p[0] for p in path]]
+        lwd_start = i * lwd_chunk_size
+        lwd_end = N_lwd if i == num_chunks - 1 else (i + 1) * lwd_chunk_size
+        lwd_chunk = lwd_df_proc.iloc[lwd_start:lwd_end]
 
-    sort_indices = np.argsort(ref_depths_from_path)
-    unique_ref_depths, unique_indices = np.unique(
-        ref_depths_from_path[sort_indices], return_index=True)
-    unique_align_depths = align_depths_from_path[sort_indices][unique_indices]
+        if len(ref_chunk) < 2 or len(lwd_chunk) < 2:
+            continue
 
-    warping_function = interp1d(unique_ref_depths, unique_align_depths,
-                                kind='linear', bounds_error=False, fill_value="extrapolate")
-    warped_align_depths = warping_function(ref_depths)
+        # Normalisasi sederhana untuk setiap potongan
+        norm_ref = (
+            ref_chunk[ref_curve] - ref_chunk[ref_curve].mean()) / ref_chunk[ref_curve].std()
+        norm_lwd = (
+            lwd_chunk[lwd_curve] - lwd_chunk[lwd_curve].mean()) / lwd_chunk[lwd_curve].std()
 
-    value_interpolator = interp1d(
-        align_depths, curve_to_align, kind='linear', bounds_error=False, fill_value=np.nan)
-    aligned_curve = pd.Series(value_interpolator(warped_align_depths)).interpolate(
-        method='linear', limit_direction='both').values
+        path = dtw.warping_path(norm_lwd.values, norm_ref.values)
 
-    return aligned_curve
+        aligned_depths = [ref_chunk['DEPTH'].iloc[ref_idx]
+                          for _, ref_idx in path]
+        aligned_lwd_vals = [lwd_chunk[lwd_curve].iloc[lwd_idx]
+                            for lwd_idx, _ in path]
+
+        aligned_df_chunk = pd.DataFrame({
+            "DEPTH": aligned_depths,
+            "LWD_DTW_Aligned": aligned_lwd_vals
+        }).sort_values(by="DEPTH")
+
+        interp_func = interp1d(aligned_df_chunk["DEPTH"], aligned_df_chunk["LWD_DTW_Aligned"],
+                               kind='linear', bounds_error=False, fill_value="extrapolate")
+        interp_lwd_vals = interp_func(ref_chunk["DEPTH"].values)
+
+        chunk_result = pd.DataFrame({
+            "DEPTH": ref_chunk["DEPTH"].values,
+            ref_curve: ref_chunk[ref_curve].values,
+            "LWD_DTW_Aligned": interp_lwd_vals
+        })
+        all_chunks.append(chunk_result)
+
+    final_df_dtw = pd.concat(all_chunks, ignore_index=True)
+    return final_df_dtw.drop_duplicates(subset="DEPTH").sort_values(by="DEPTH").reset_index(drop=True)
 
 
 def align_curve_with_cow(reference_curve: np.ndarray, curve_to_align: np.ndarray, num_segments: int, slack: int) -> np.ndarray:
-    """
-    Menyempurnakan penyelarasan kedalaman (sumbu Y) menggunakan COW pada segmen-segmen kecil.
-    """
+    """Menyempurnakan penyelarasan kedalaman (sumbu Y) menggunakan COW."""
     cow = _import_cow()
     smooth_ref = smooth_curve(reference_curve)
     smooth_align = smooth_curve(curve_to_align)
-
     aligner = cow.COW(smooth_align.tolist(), smooth_ref.tolist(),
                       nbFrames=num_segments, slack=slack)
-    aligned_list = aligner.warp_sample_to_target()
-
-    return np.array(aligned_list)
+    return np.array(aligner.warp_sample_to_target())
 
 
-def scale_curve_to_reference(reference_curve: np.ndarray, curve_to_scale: np.ndarray, window_size: int = 51, alpha: float = 0.7) -> np.ndarray:
-    """
-    Menyesuaikan nilai (sumbu X) secara dinamis agar 'curve_to_scale' sangat mirip
-    dengan 'reference_curve' menggunakan metode moving window yang canggih.
-    """
-    if window_size % 2 == 0:
-        window_size += 1
-
-    source_s, target_s = pd.Series(curve_to_scale), pd.Series(reference_curve)
-    source_mean = source_s.rolling(
-        window=window_size, center=True, min_periods=1).mean()
-    target_mean = target_s.rolling(
-        window=window_size, center=True, min_periods=1).mean()
-    source_std = source_s.rolling(
-        window=window_size, center=True, min_periods=1).std()
-    target_std = target_s.rolling(
-        window=window_size, center=True, min_periods=1).std()
-
-    global_source_std, global_target_std = np.std(
-        curve_to_scale), np.std(reference_curve)
-    source_std.fillna(global_source_std, inplace=True)
-    target_std.fillna(global_target_std, inplace=True)
-    source_std.replace(0, global_source_std, inplace=True)
-    target_std.replace(0, global_target_std, inplace=True)
-
-    local_scaled = target_mean + \
-        (source_s - source_mean) * (target_std / source_std)
-
-    source_median, target_median = np.median(
-        curve_to_scale), np.median(reference_curve)
-    source_mad = np.median(np.abs(curve_to_scale - source_median))
-    target_mad = np.median(np.abs(reference_curve - target_median))
-    if source_mad == 0:
-        source_mad = 1
-    global_scaled = target_median + \
-        (curve_to_scale - source_median) * (target_mad / source_mad)
-
-    final_scaled = alpha * local_scaled + (1 - alpha) * global_scaled
-    return final_scaled.values
+def scale_curve_to_reference(reference_curve: np.ndarray, curve_to_scale: np.ndarray) -> np.ndarray:
+    """Menyesuaikan nilai (sumbu X) kurva agar cocok dengan statistik referensi."""
+    mean_ref, std_ref = np.mean(reference_curve), np.std(reference_curve)
+    mean_curve, std_curve = np.mean(curve_to_scale), np.std(curve_to_scale)
+    if std_curve == 0 or std_ref == 0:
+        return curve_to_scale
+    return mean_ref + (curve_to_scale - mean_curve) * (std_ref / std_curve)
 
 
 def evaluate_performance(ref_curve: np.ndarray, processed_curve: np.ndarray, original_curve: np.ndarray, stage_name: str):
@@ -816,14 +811,11 @@ def evaluate_performance(ref_curve: np.ndarray, processed_curve: np.ndarray, ori
     ref, processed = ref_curve[mask], processed_curve[mask]
     if len(ref) < 2:
         return
-
     correlation = np.corrcoef(ref, processed)[0, 1]
     rmse = np.sqrt(np.mean((ref - processed) ** 2))
-
     print(f"\n--- {stage_name} ---")
     print(f"Korelasi Pearson      : {correlation:.4f}")
     print(f"Root Mean Square Error: {rmse:.4f}")
-
     orig_mask = ~np.isnan(ref_curve) & ~np.isnan(original_curve)
     ref_orig, orig = ref_curve[orig_mask], original_curve[orig_mask]
     if len(ref_orig) > 1:
@@ -837,10 +829,10 @@ def evaluate_performance(ref_curve: np.ndarray, processed_curve: np.ndarray, ori
 
 def run_depth_matching(ref_path: str, lwd_path: str, ref_curve: str, lwd_curve: str, num_chunks: int, slack: int) -> pd.DataFrame:
     """
-    Menjalankan pipeline depth matching lengkap (Sumbu Y & X) dengan input dan output standar.
+    Menjalankan pipeline depth matching lengkap dengan DTW per potongan (chunking).
     """
     from scipy.interpolate import interp1d
-    print("\n=== Memulai Proses Depth Matching Lengkap (Sumbu Y & X) ===")
+    print("\n=== Memulai Proses Depth Matching (DTW per Potongan) ===")
 
     # 1. Muat dan Persiapkan Data
     print("1. Memuat dan mempersiapkan data kerja...")
@@ -858,49 +850,42 @@ def run_depth_matching(ref_path: str, lwd_path: str, ref_curve: str, lwd_curve: 
     lwd_proc[lwd_curve] = lwd_proc[lwd_curve].interpolate(
         method='linear', limit_direction='both').dropna()
 
-    ref_depths, ref_data = ref_proc['DEPTH'].values, ref_proc[ref_curve].values
-    lwd_depths, lwd_data = lwd_proc['DEPTH'].values, lwd_proc[lwd_curve].values
-
+    # Ambil data array untuk evaluasi awal
+    ref_depths_eval, ref_data_eval = ref_proc['DEPTH'].values, ref_proc[ref_curve].values
+    lwd_depths_eval, lwd_data_eval = lwd_proc['DEPTH'].values, lwd_proc[lwd_curve].values
     initial_lwd_interp = interp1d(
-        lwd_depths, lwd_data, kind='linear', bounds_error=False, fill_value=np.nan)
-    initial_lwd_on_ref_depth = initial_lwd_interp(ref_depths)
-    evaluate_performance(ref_data, initial_lwd_on_ref_depth,
+        lwd_depths_eval, lwd_data_eval, kind='linear', bounds_error=False, fill_value=np.nan)
+    initial_lwd_on_ref_depth = initial_lwd_interp(ref_depths_eval)
+    evaluate_performance(ref_data_eval, initial_lwd_on_ref_depth,
                          initial_lwd_on_ref_depth, "Kondisi Awal")
 
     # 2. Penyelarasan Kedalaman (Sumbu Y)
-    print("\n>>> TAHAP 1: Menyelaraskan kedalaman (sumbu Y)...")
-    dtw_aligned_curve = align_curve_with_dtw(
-        ref_data, lwd_data, ref_depths, lwd_depths)
+    print("\n>>> TAHAP 1: Menyelaraskan kedalaman dengan DTW per Potongan...")
+    # --- PERUBAHAN UTAMA DI SINI ---
+    dtw_aligned_df = align_curve_with_chunking_dtw(
+        ref_proc, lwd_proc, ref_curve, lwd_curve, 2)
+
+    # Ekstrak hasil dari dataframe untuk tahap selanjutnya
+    ref_data = dtw_aligned_df[ref_curve].values
+    dtw_aligned_curve = dtw_aligned_df['LWD_DTW_Aligned'].values
+
+    # Lanjutkan dengan COW seperti biasa
+    print("\n>>> TAHAP 2: Menyempurnakan alignment dengan COW...")
     cow_aligned_curve = align_curve_with_cow(
         ref_data, dtw_aligned_curve, num_chunks, slack)
     evaluate_performance(ref_data, cow_aligned_curve,
                          initial_lwd_on_ref_depth, "Setelah Penyelarasan Kedalaman")
 
     # 3. Penyesuaian Nilai (Sumbu X)
-    print("\n>>> TAHAP 2: Menyesuaikan nilai (sumbu X)...")
-
-    # -----------
-    # Robust Scaler
-    # -----------
-    final_aligned_curve = scale_curve_globally(ref_data, cow_aligned_curve)
-
-    # -----------
-    # Z-Score Scaler
-    # -----------
-    # final_aligned_curve = scale_curve_locally(ref_data, cow_aligned_curve)
-
-    # -----------
-    # Hybrid Scaler
-    # -----------
-    # final_aligned_curve = scale_curve_to_reference(ref_data, cow_aligned_curve)
-
+    print("\n>>> TAHAP 3: Menyesuaikan nilai (sumbu X)...")
+    final_aligned_curve = scale_curve_to_reference(ref_data, cow_aligned_curve)
     evaluate_performance(ref_data, final_aligned_curve,
                          initial_lwd_on_ref_depth, "Hasil Akhir (Setelah Penyesuaian Nilai)")
 
     # 4. Finalisasi Hasil
     print("\n4. Memetakan hasil ke rentang kedalaman referensi asli...")
     final_interpolator = interp1d(
-        ref_depths, final_aligned_curve, kind='linear', bounds_error=False, fill_value=np.nan)
+        dtw_aligned_df['DEPTH'], final_aligned_curve, kind='linear', bounds_error=False, fill_value=np.nan)
     full_range_dm_curve = final_interpolator(ref_df_full['DEPTH'])
 
     original_lwd_interpolator = interp1d(
@@ -916,83 +901,3 @@ def run_depth_matching(ref_path: str, lwd_path: str, ref_curve: str, lwd_curve: 
 
     print("=== Proses Depth Matching Selesai ===")
     return result_df.dropna(subset=[ref_curve])
-
-
-# ====================
-# METODE ROBUST SCALER
-# =====================
-def scale_curve_globally(reference_curve: np.ndarray, curve_to_scale: np.ndarray) -> np.ndarray:
-    """
-    Menyesuaikan nilai kurva menggunakan satu faktor skala global yang robust (Median/MAD).
-    Metode ini stabil dan tidak mudah terpengaruh oleh outlier.
-
-    Args:
-        reference_curve (np.ndarray): Kurva referensi.
-        curve_to_scale (np.ndarray): Kurva yang nilainya akan disesuaikan.
-
-    Returns:
-        np.ndarray: Versi 'curve_to_scale' yang nilainya telah disesuaikan secara global.
-    """
-    # Menggunakan statistik robust (median dan MAD) untuk stabilitas
-    source_median = np.median(curve_to_scale)
-    target_median = np.median(reference_curve)
-
-    source_mad = np.median(np.abs(curve_to_scale - source_median))
-    target_mad = np.median(np.abs(reference_curve - target_median))
-
-    # Hindari pembagian dengan nol
-    if source_mad == 0 or target_mad == 0:
-        return curve_to_scale
-
-    # Terapkan rumus penskalaan robust
-    scaled_curve = target_median + \
-        (curve_to_scale - source_median) * (target_mad / source_mad)
-    return scaled_curve
-
-# ====================
-# METODE Z-SCORE SCALER
-# =====================
-
-
-def scale_curve_locally(reference_curve: np.ndarray, curve_to_scale: np.ndarray, window_size: int = 51) -> np.ndarray:
-    """
-    Menyesuaikan nilai kurva secara dinamis menggunakan metode moving window (Z-Score lokal).
-    Metode ini sangat adaptif terhadap perubahan kondisi di sepanjang kurva.
-
-    Args:
-        reference_curve (np.ndarray): Kurva referensi.
-        curve_to_scale (np.ndarray): Kurva yang nilainya akan disesuaikan.
-        window_size (int): Ukuran jendela geser untuk analisis lokal.
-
-    Returns:
-        np.ndarray: Versi 'curve_to_scale' yang nilainya telah disesuaikan secara lokal.
-    """
-    if window_size % 2 == 0:
-        window_size += 1
-
-    source_s = pd.Series(curve_to_scale)
-    target_s = pd.Series(reference_curve)
-
-    # Statistik lokal (moving window)
-    source_mean = source_s.rolling(
-        window=window_size, center=True, min_periods=1).mean()
-    target_mean = target_s.rolling(
-        window=window_size, center=True, min_periods=1).mean()
-    source_std = source_s.rolling(
-        window=window_size, center=True, min_periods=1).std()
-    target_std = target_s.rolling(
-        window=window_size, center=True, min_periods=1).std()
-
-    # Fallback ke statistik global jika std lokal adalah nol atau NaN
-    global_source_std = np.std(curve_to_scale)
-    global_target_std = np.std(reference_curve)
-    source_std.fillna(global_source_std, inplace=True)
-    target_std.fillna(global_target_std, inplace=True)
-    source_std.replace(0, global_source_std, inplace=True)
-    target_std.replace(0, global_target_std, inplace=True)
-
-    # Terapkan rumus Z-Score lokal
-    local_scaled = target_mean + \
-        (source_s - source_mean) * (target_std / source_std)
-
-    return local_scaled.values

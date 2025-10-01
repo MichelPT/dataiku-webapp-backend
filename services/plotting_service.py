@@ -42,6 +42,7 @@ data_col = {
     'MARKER': ['MARKER'],
     'ZONE': ['ZONE'],
     'GR': ['GR'],
+    'GR_RAW': ['GR_RAW'],
     'GR_NORM': ['GR_NORM'],
     'GR_DUAL': ['GR', 'GR_NORM'],
     'GR_DUAL_2': ['GR', 'GR_NORM'],
@@ -145,6 +146,7 @@ unit_col = {
     'ZONE': [''],
     'GR_NORM': ['GAPI'],
     'GR': ['GAPI'],
+    'GR_RAW': ['GAPI'],
     'DGRCC_DM': ['GAPI', 'GAPI'],
     'DGRCC_GR_CAL': ['GAPI', 'GAPI'],
     'GR_DUAL': ['GAPI', 'GAPI'],
@@ -244,7 +246,7 @@ color_col = {
     'DNS': ['darkgreen'],
     'MARKER': [colors_dict['black']],
     'ZONE': [colors_dict['black']],
-    'GR_NORM': ['orange'],
+    'GR_NORM': ['blue'],
     'GR_DUAL': ['darkgreen', 'orange'],
     'GR_DUAL_2': ['darkgreen', 'orange'],
     'GR_RAW_NORM': ['orange'],
@@ -252,6 +254,7 @@ color_col = {
     'GR_MovingAvg_5': ['darkgreen'],
     'GR_MovingAvg_10': ['darkgreen'],
     'GR': ['darkblue'],
+    'GR_RAW': ['darkblue'],
     'RT': [colors_dict['red']],
     'RT_RO': [colors_dict['red'], colors_dict['purple']],
     'X_RT_RO': [colors_dict['black']],
@@ -381,6 +384,7 @@ flag_color = {
 
 range_col = {
     'GR': [[0, 250]],
+    'GR_RAW': [[0, 250]],
     'GR_NORM': [[0, 250]],
     'GR_DUAL': [[0, 250], [0, 250]],
     'GR_DUAL_2': [[0, 250], [0, 250]],
@@ -473,6 +477,7 @@ ratio_plots = {
     'MARKER': 0.2,
     'ZONE': 0.3,
     'GR': 1,
+    'GR_RAW': 1,
     'GR_NORM': 1,
     'GR_DUAL': 1,
     'GR_DUAL_2': 1,
@@ -2144,7 +2149,7 @@ def layout_range_all_axis(fig, axes, plot_sequence):
                             'xaxis') else True,
                     )}
                 )
-            elif key in ['GR', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'SW_Z4', 'PHIE_PHIT', 'PHIE_PHIT_Z4', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT_Z4', 'PHIE', 'PHIE_Z4', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE', 'DGRCC', 'GR_CAL', 'RHOZ', 'ALCDLC', 'TNPL', 'TNPH', 'DGRCC_GR_CAL', 'DGRCC_DM']:
+            elif key in ['GR', 'GR_RAW', 'SP', 'GR_NORM', 'GR_DUAL', 'GR_RAW_NORM', 'GR_DUAL_2', 'GR_MovingAvg_5', 'GR_MovingAvg_10', 'RTRO', 'NPHI_RHOB', 'SW', 'SW_Z4', 'PHIE_PHIT', 'PHIE_PHIT_Z4', 'VCL', 'X_RWA_RW', 'X_RT_F', 'X_RT_RHOB', 'NPHI_NGSA', 'RHOB_DGSA', 'VSH_LINEAR', 'VSH_DN', 'VSH_SP', 'RHOB', 'PHIE_DEN', 'PHIT_DEN', 'PHIE_PHIT_Z4', 'PHIE', 'PHIE_Z4', 'DNS', 'DNSV', 'VSH', 'VSH_GR_DN', 'RGBE', 'RPBE', 'TG_SUMC', 'C3_C1', 'C3_C1_BASELINE', 'DGRCC', 'GR_CAL', 'RHOZ', 'ALCDLC', 'TNPL', 'TNPH', 'DGRCC_GR_CAL', 'DGRCC_DM', 'GR_FM']:
                 fig.update_layout(
                     **{axis: dict(
                         # gridcolor='rgba(0,0,0,0)',
@@ -2640,7 +2645,6 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
             df = df.rename(columns={'R0': 'RO'})
 
     plot_sequence = {i+1: v for i, v in enumerate(sequence)}
-    print(plot_sequence)
 
     ratio_plots_seq = []
     for key in plot_sequence.values():
@@ -2661,9 +2665,12 @@ def main_plot(df, sequence=[], title="", height_plot=1600):
         axes[i] = []
 
     for n_seq, col in plot_sequence.items():
-        if col == 'GR' or col == 'GR_NORM':
+        if col == 'GR' or col == 'GR_NORM' or col == 'GR_RAW':
             fig, axes = plot_line(
                 df, fig, axes, base_key='GR', n_seq=n_seq, col=col, label=col)
+        elif col == 'GR_DUAL':
+            fig, axes, counter = plot_dual_gr(
+                df, fig, axes, col, n_seq, counter, n_plots=subplot_col)
         elif col == 'RT':
             fig, axes = plot_line(
                 df, fig, axes, base_key='RT', n_seq=n_seq, type="log", col=col, label=col)
@@ -3140,79 +3147,22 @@ def plot_log_default(df):
 
 
 def plot_normalization(df):
-    df_marker = extract_markers_with_mean_depth(df)
-    df_well_marker = df.copy()
-    sequence = ['MARKER', 'GR', 'GR_DUAL_2', 'GR_DUAL', 'GR_RAW_NORM']
-    plot_sequence = {i+1: v for i, v in enumerate(sequence)}
-    print(plot_sequence)
+    """
+    Membuat plot multi-panel untuk visualisasi hasil normalisasi log.
+    """
+    marker_zone_sequence = ['ZONE', 'MARKER']
 
-    ratio_plots_seq = []
-    ratio_plots_seq.append(ratio_plots['MARKER'])
-    sequence_keys = list(plot_sequence.values())
-    for key in sequence_keys[1:]:
-        ratio_plots_seq.append(ratio_plots[key])
+    # Filter the sequence to include only columns that exist in the DataFrame
+    filtered_sequence = [
+        col for col in marker_zone_sequence if col in df.columns]
 
-    subplot_col = len(plot_sequence.keys())
+    # Create a flat list by extending filtered_sequence with other track names
+    sequence_default = filtered_sequence + ['GR', 'GR_NORM', 'GR_DUAL']
 
-    fig = make_subplots(
-        rows=1, cols=subplot_col,
-        shared_yaxes=True,
-        column_widths=ratio_plots_seq,
-        horizontal_spacing=0.0
-    )
-
-    counter = 0
-    axes = {}
-    for i in plot_sequence.values():
-        axes[i] = []
-
-    # Plot Marker
-    fig, axes = plot_flag(df_well_marker, fig, axes,
-                          "MARKER", 1)  # n_seq=1 for marker
-    fig, axes = plot_texts_marker(
-        df_marker, df_well_marker['DEPTH'].max(), fig, axes, "MARKER", 1)
-
-    # Plot GR - start from n_seq=2 which is 'GR' in your sequence
-    for n_seq, col in plot_sequence.items():
-        if n_seq > 1:
-            if col == 'GR':  # Skip n_seq=1 which is 'MARKER'
-                fig, axes = plot_line(
-                    df, fig, axes, base_key=col, n_seq=n_seq, col=col, label=col)
-            elif col == 'GR_DUAL_2':
-                fig, axes, counter = plot_dual_gr(
-                    df, fig, axes, col, n_seq, counter, subplot_col)
-            elif col == 'GR_DUAL':
-                fig, axes, counter = plot_dual_gr(
-                    df, fig, axes, col, n_seq, counter, subplot_col)
-            elif col == 'GR_RAW_NORM':
-                fig, axes = plot_line(
-                    df, fig, axes, base_key=col, n_seq=n_seq, col=col, label=col)
-
-    fig = layout_range_all_axis(fig, axes, plot_sequence)
-
-    fig.update_layout(
-        margin=dict(l=20, r=20, t=40, b=20), height=1300,
-        paper_bgcolor='white',
-        plot_bgcolor='white',
-        showlegend=False,
-        hovermode='y unified', hoverdistance=-1,
-        title_text="Normalization",
-        title_x=0.5,
-        modebar_remove=['lasso', 'autoscale', 'zoom',
-                        'zoomin', 'zoomout', 'pan', 'select']
-    )
-
-    fig.update_yaxes(showspikes=True,
-                     range=[df[depth].max(), df[depth].min()])
-    fig.update_traces(yaxis='y')
-
-    fig = layout_draw_lines(fig, ratio_plots_seq, df, xgrid_intv=0)
-
-    fig = layout_axis(fig, axes, ratio_plots_seq, plot_sequence)
-
-    print(axes)
-
-    return fig
+    # Create the plot with the filtered sequence
+    fig, fig_header = main_plot(df, sequence=sequence_default,
+                                title="Plot Well Log Selected", height_plot=1600)
+    return fig, fig_header
 
 
 def plot_phie_den(df):
